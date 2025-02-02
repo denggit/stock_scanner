@@ -2,8 +2,43 @@
 PyQt6>=6.4.0
 PyQt6-Qt6>=6.4.0
 PyQt6-sip>=13.4.0
+plotly
 
 # Data Processing
 pandas>=1.3.0
 numpy>=1.23.5
 openpyxl>=3.0.0
+python-dateutil>=2.8.2
+
+# Data Source
+baostock>=0.8.8
+
+# Task Scheduling
+schedule>=1.1.0
+APScheduler>=3.10.1
+
+# System
+requests>=2.31.0
+tqdm>=4.65.0
+pydantic_settings
+
+# Database
+SQLAlchemy>=2.0.0
+pymysql>=1.1.0
+redis>=4.5.0
+
+# Utils
+python-dotenv>=1.0.0
+
+# Analysis
+matplotlib>=3.7.0
+seaborn>=0.12.0
+scikit-learn>=1.3.0
+statsmodels>=0.14.0
+
+# backend
+uvicorn
+fastapi
+
+# frontend
+streamlit
