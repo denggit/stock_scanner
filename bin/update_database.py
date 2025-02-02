@@ -55,7 +55,6 @@ def update_database(args, logger):
             traceback.print_exc()
         sys.exit(1)
 
-
 def main():
     parser = argparse.ArgumentParser(description="更新股票数据库")
     parser.add_argument("--full", action="store_true", help="强制全量更新(默认增量更新)")
