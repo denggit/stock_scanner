@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from backend.services.stock_service import StockService
 from backend.utils.logger import setup_logger
 
-router = APIRouter(prefix="/api/stocks")
+router = APIRouter(prefix="/api/stock")
 stock_service = StockService()
 
 logger = setup_logger("stock_service")

@@ -10,7 +10,9 @@ import datetime
 from typing import Any, Dict, List
 
 from backend.data.stock_data_fetcher import StockDataFetcher
+from backend.strategies.breakout import BreakoutStrategy
 from backend.strategies.double_up import DoubleUpStrategy
+from backend.strategies.long_term_uptrend import LongTermUpTrendStrategy
 from backend.strategies.ma_pullback import MAPullbackStrategy
 from backend.strategies.swing_trading import SwingTradingStrategy
 from backend.utils.api_response import convert_to_python_types
@@ -27,7 +29,7 @@ class StrategyService:
             "突破策略": BreakoutStrategy,
             "波段交易策略": SwingTradingStrategy,
             "扫描翻倍股": DoubleUpStrategy,
-            "多头排列策略": LongTermUpTrendStrategy,
+            "长期上涨策略": LongTermUpTrendStrategy,
         }
 
     def scan_stocks(self, strategy: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
