@@ -10,6 +10,9 @@ import datetime
 from typing import Any, Dict, List
 
 from backend.data.stock_data_fetcher import StockDataFetcher
+from backend.strategies.double_up import DoubleUpStrategy
+from backend.strategies.ma_pullback import MAPullbackStrategy
+from backend.strategies.swing_trading import SwingTradingStrategy
 from backend.utils.api_response import convert_to_python_types
 from backend.utils.logger import setup_logger
 
@@ -20,11 +23,11 @@ class StrategyService:
     def __init__(self):
         self.data_fetcher = StockDataFetcher()
         self.strategies = {
-            "均线回踩策略": MAPullbackStrategy(),
-            "突破策略": BreakoutStrategy(),
-            "波段交易策略": SwingTradingStrategy(),
-            "扫描翻倍股": DoubleUpStrategy(),
-            "多头排列策略": LongTermUpTrendStrategy(),
+            "均线回踩策略": MAPullbackStrategy,
+            "突破策略": BreakoutStrategy,
+            "波段交易策略": SwingTradingStrategy,
+            "扫描翻倍股": DoubleUpStrategy,
+            "多头排列策略": LongTermUpTrendStrategy,
         }
 
     def scan_stocks(self, strategy: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -60,7 +63,7 @@ class StrategyService:
 
                 # 获取股票数据
                 stock_data = self.data_fetcher.fetch_stock_data(code=stock.code, start_date=start_date, end_date=end_date)
-                strategy_instance = self.strategies[strategy]
+                strategy_instance = self.strategies[strategy]()
                 strategy_instance.set_parameters(params)
 
                 # 生成信号
@@ -90,7 +93,7 @@ class StrategyService:
     async def list_strategies(self) -> List[Dict[str, Any]]:
         """列出所有策略"""
         try:
-            return [{"name": strategy_name, "description": strategy_instance.description} for strategy_name, strategy_instance in self.strategies.items()]
+            return [{"name": strategy_name, "description": strategy_instance().get_description()} for strategy_name, strategy_instance in self.strategies.items()]
         except Exception as e:
             logger.error(f"Error listing strategies: {e}", exc_info=True)
             raise Exception(f"Error listing strategies: {e}")
