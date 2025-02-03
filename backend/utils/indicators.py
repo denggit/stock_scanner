@@ -29,12 +29,12 @@ class CalIndicators:
     @staticmethod
     def ema(df: pd.DataFrame, period: int, cal_value: str = 'close') -> pd.Series:
         """计算EMA指标"""
-        return df[cal_value].ewm(span=period, adjust=False).mean().round(2)
+        return df[cal_value].ewm(span=period, min_periods=period, adjust=False).mean().round(2)
 
     @staticmethod
     def sma(df: pd.DataFrame, period: int, cal_value: str = 'close') -> pd.Series:
         """计算SMA指标"""
-        return df[cal_value].rolling(window=period).mean().round(2)
+        return df[cal_value].rolling(window=period, min_periods=period, center=False).mean().round(2)
 
     @staticmethod
     def amplitude(df: pd.DataFrame, lookback_period: int = 14) -> pd.Series:
