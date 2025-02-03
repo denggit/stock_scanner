@@ -33,7 +33,8 @@ class DataUpdateManager:
             try:
                 return operation(**kwargs)
             except Exception as e:
-                logging.warning(f"Operation {operation.__name__} with params {kwargs} failed: {e}. Retrying in {retry_delay} seconds...")
+                logging.warning(
+                    f"Operation {operation.__name__} with params {kwargs} failed: {e}. Retrying in {retry_delay} seconds...")
                 time.sleep(retry_delay)
                 if not self.data_source.is_connected():
                     self._init_connection()
@@ -45,9 +46,9 @@ class DataUpdateManager:
 
     def update_stock_list(self, stock_list: pd.DataFrame):
         """更新股票列表"""
-        self._retry_operation(self.db.save_stock_basic, stock_list=stock_list)
+        self._retry_operation(self.db.save_stock_basic, stock_basic=stock_list)
 
-    def update_all_stocks(self, force_full_update: bool = False, progress_callback = None):
+    def update_all_stocks(self, force_full_update: bool = False, progress_callback=None):
         """更新所有股票数据
         
         :param force_full_update: 是否强制全量更新
@@ -73,7 +74,7 @@ class DataUpdateManager:
             except Exception as e:
                 failed_count += 1
                 failed_codes.append(code)
-                logging.error(f"更新股票 {code} 数据失败: {e}")
+                logging.exception(f"更新股票 {code} 数据失败: {e}")
                 if not self.data_source.is_connected():
                     self._init_connection()
                 if progress_callback:
@@ -86,16 +87,14 @@ class DataUpdateManager:
             "total": total_stocks,
             "updated": updated_count,
             "failed": failed_count,
+            "failed_codes": failed_codes
         }
-        
-        
-        
 
     def update_stock_data(self, code: str, force_full_update: bool = False, lastest_date: Optional[str] = None):
         """更新单个股票数据"""
         if force_full_update or lastest_date is None:
             # 如果强制全量更新或者是新股票（没有历史数据），则从5年前开始更新
-            start_date = (datetime.now() - timedelta(days=5*365)).strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=5 * 365)).strftime('%Y-%m-%d')
         else:
             # 从最新数据的前三天开始更新
             start_date = (datetime.strptime(lastest_date, '%Y-%m-%d') - timedelta(days=3)).strftime('%Y-%m-%d')
@@ -107,7 +106,7 @@ class DataUpdateManager:
             logging.warning(f"股票 {code} 的开始日期晚于结束日期，不更新")
             return
 
-        df = self._retry_operation(self.data_source.get_stock_data, code, start_date, end_date)
+        df = self._retry_operation(self.data_source.get_stock_data, code=code, start_date=start_date, end_date=end_date)
 
         if df.empty:
             logging.warning(f"股票 {code} 没有更新数据")

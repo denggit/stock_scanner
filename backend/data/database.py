@@ -12,8 +12,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import pandas as pd
-import mysql.connector as mysql
-
+import pymysql as mysql
 from backend.config.database import Config
 
 
@@ -64,7 +63,7 @@ class DatabaseManager:
             type CHAR(1),
             status CHAR(1),
             update_time TIMESTAMP,
-            INDEX idx_status(status)
+            INDEX idx_status(status),
             INDEX idx_type(type))
         """)
         self.conn.commit()
@@ -93,7 +92,7 @@ class DatabaseManager:
             high DECIMAL(10, 2),
             low DECIMAL(10, 2),
             close DECIMAL(10, 2),
-            pre_close DECIMAL(10, 2),
+            preclose DECIMAL(10, 2),
             volume BIGINT,
             amount DECIMAL(16, 2),
             turn DECIMAL(10, 2),
@@ -129,10 +128,10 @@ class DatabaseManager:
         self.conn.commit()
         cursor.close()
 
-    def save_stock_basic(self, stock_df: pd.DataFrame):
+    def save_stock_basic(self, stock_basic: pd.DataFrame):
         """保存股票基本信息"""
         cursor = self.conn.cursor()
-        for _, row in stock_df.iterrows():
+        for _, row in stock_basic.iterrows():
             # 处理日期字段的 NaT 值
             ipo_date = row['ipo_date'] if not pd.isna(row['ipo_date']) else None
             out_date = row['out_date'] if not pd.isna(row['out_date']) else None
@@ -152,70 +151,72 @@ class DatabaseManager:
             return
 
         # 确保所有必须的列存在
-        required_columns = ['code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close', 'volume', 'amount',
+        required_columns = ['code', 'trade_date', 'open', 'high', 'low', 'close', 'preclose', 'volume', 'amount',
                             'turn', 'tradestatus', 'pct_chg', 'pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm', 'is_st']
-        if not all(col in stock_df.columns for col in required_columns):
-            logging.error(f"Missing required columns in stock_df for code: {code}")
-            return
+        missing_columns = [col for col in required_columns if col not in stock_df.columns]
+        if missing_columns:
+            raise ValueError(f"Missing required columns in stock_df for code: {code}. Columns: {missing_columns}")
 
         # 检查NaN值
         for col in required_columns:
             nan_count = stock_df[col].isna().sum()
             if nan_count > 0:
-                logging.warning(f"NaN values found in {col} for code: {code}")
+                logging.debug(f"NaN values found in {col} for code: {code}")
                 # 对不同类型的列使用不同的填充策略
-                if col in ['open', 'high', 'low', 'close', 'pre_close']:
-                    stock_df[col] = stock_df[col].fillna(0)
-                elif col in ['volume', 'amount', 'turn']:
+                if col in ["volume", "amount", "turn", "tradestatus", "is_st"]:
                     stock_df[col] = stock_df[col].fillna(0)
                 elif col in ['pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm']:
-                    stock_df[col] = stock_df[col].fillna(0.0)
-                elif col == 'is_st':
                     stock_df[col] = stock_df[col].fillna(0)
                 elif col == 'pct_chg':
-                    # 使用收盘价和前收盘价计算涨跌幅
-                    stock_df[col] = stock_df.apply(
-                        lambda row: (row['close'] - row['pre_close']) / row['pre_close'] if stock_df.isna(
-                            row[col]) and not stock_df.isna(row['close']) and not stock_df.isna(row['pre_close']) else
-                        row[col], axis=1
-                    )
+                    # 使用向量化操作计算涨跌幅
+                    mask = stock_df[col].isna() & stock_df['close'].notna() & stock_df['preclose'].notna()
+                    stock_df.loc[mask, col] = (stock_df.loc[mask, 'close'] - stock_df.loc[mask, 'preclose']) / stock_df.loc[mask, 'preclose'] * 100
+                    # 如果还有NaN值，填充0
+                    stock_df[col] = stock_df[col].fillna(0)
+                elif col in ['open', 'high', 'low', 'close', 'preclose']:
+                    # 使用前一个有效值填充
+                    stock_df[col] = stock_df[col].fillna(method='ffill')
+                    # 如果还有NaN（比如第一行就是NaN），使用后一个有效值填充
+                    stock_df[col] = stock_df[col].fillna(method='bfill')
+                    # 如果仍然有NaN，填充0
+                    stock_df[col] = stock_df[col].fillna(0)
 
-            total_records = 0
-            # 按年份分组处理数据
-            stock_df['year'] = pd.to_datetime(stock_df['trade_date']).dt.year
-            for year, group in stock_df.groupby('year'):
-                try:
-                    self._ensure_daily_table(year)
-                    table_name = f"stock_daily_{year}"
+        total_records = 0
+        # 按年份分组处理数据
+        stock_df['year'] = pd.to_datetime(stock_df['trade_date']).dt.year
+        for year, group in stock_df.groupby('year'):
+            try:
+                self._ensure_daily_table(year)
+                table_name = f"stock_daily_{year}"
 
-                    # 准备SQL语句
-                    columns = ','.join(required_columns)
-                    placeholders = ','.join(['%s'] * len(required_columns))
+                # 准备SQL语句
+                columns = ','.join(required_columns)
+                placeholders = ','.join(['%s'] * len(required_columns))
 
-                    insert_sql = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders}) ON DUPLICATE KEY UPDATE {', '.join([f'{col} = VALUES({col})' for col in required_columns if col not in ('code', 'trade_date')])}"
+                insert_sql = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders}) ON DUPLICATE KEY UPDATE {', '.join([f'{col} = VALUES({col})' for col in required_columns if col not in ('code', 'trade_date')])}"
 
-                    # 准备数据
-                    values = []
-                    for _, row in group.iterrows():
-                        value = tuple(row[col] for col in required_columns)
-                        values.append(value)
+                # 准备数据
+                values = []
+                for _, row in group.iterrows():
+                    value = tuple(row[col] for col in required_columns)
+                    values.append(value)
 
-                    # 执行更新
-                    with self.conn.cursor() as cursor:
-                        cursor.executemany(insert_sql, values)
+                # 执行更新
+                with self.conn.cursor() as cursor:
+                    cursor.executemany(insert_sql, values)
 
-                    self.conn.commit()
-                    total_records += len(values)
-                    logging.debug(f"Updated {len(values)} records for {code} in {year}")
-                except Exception as e:
-                    logging.error(f"Failed to update {code} in {year}: {e}")
-                    logging.error(f"问题数据实例：{group.head().to_dict('records')}")
-                    raise
+                self.conn.commit()
+                total_records += len(values)
+                logging.debug(f"Updated {len(values)} records for {code} in {year}")
+            except Exception as e:
+                logging.error(f"Failed to update {code} in {year}: {e}")
+                logging.error(f"问题数据实例：{group.head().to_dict('records')}")
+                raise
 
-            logging.info(f"Total records updated for {code}: {total_records}")
+        logging.info(f"Total records updated for {code}: {total_records}")
 
-            # 更新股票列表中的更新时间
-            self.save_stock_update_time(pd.DataFrame({'code': [code], 'update_time': [datetime.now()]}))
+        # 更新股票列表中的更新时间
+        self.save_stock_update_time(pd.DataFrame({'code': [code], 'update_time': [datetime.now()]}))
 
     def get_stock_update_time(self, stock_code: str) -> Optional[datetime]:
         """获取股票更新时间"""

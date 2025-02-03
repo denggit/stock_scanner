@@ -133,10 +133,14 @@ class BaostockSource(DataSource):
         numeric_columns = ['open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn', 'pct_chg', 'pe_ttm',
                            'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm']
 
+        for col in numeric_columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
         # 确保所有必须的列都存在
         required_columns = ['code', 'trade_date', 'open', 'high', 'low', 'close', 'preclose', 'volume', 'amount',
                             'turn', 'tradestatus', 'pct_chg', 'pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm', 'is_st']
-        if not all(col in df.columns for col in required_columns):
-            raise ValueError(f"Missing required columns in stock data for code: {code}")
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            raise ValueError(f"数据源返回的数据缺少必须的列：{missing_columns}")
 
         return df[required_columns]  # 只返回必须的列，并按照固定顺去配置
