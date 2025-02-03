@@ -88,11 +88,11 @@ if __name__ == "__main__":
     main()
 
     # class A:
-    #     full = True
+    #     full = False
     #     silent = False
     #
     #
     # args = A()
-    # args.full = True
+    # args.full = False
     # args.silent = False
     # update_database(args, setup_logger("update_database", log_level=logging.INFO))

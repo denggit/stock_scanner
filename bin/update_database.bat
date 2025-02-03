@@ -1,0 +1,1 @@
+D:\Code_Project\stock_scanner\venv\Scripts\python.exe update_database.py --silent

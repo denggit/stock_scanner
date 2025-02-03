@@ -231,11 +231,18 @@ class DatabaseManager:
         try:
             cursor = self.conn.cursor()
             cursor.execute("SELECT code, update_time FROM stock_list")
-            result = cursor.fetchall()
+            data = cursor.fetchall()
             cursor.close()
-            return {row[0]: row[1].strftime('%Y-%m-%d') for row in result}
+            result = {}
+            for row in data:
+                if pd.isnull(row[1]):
+                    result[row[0]] = None
+                else:
+                    result[row[0]] = row[1].strftime('%Y-%m-%d')
+
+            return result
         except Exception as e:
-            logging.error(f"Failed to get all update time: {e}")
+            logging.exception(f"Failed to get all update time: {e}")
             return {}
 
     def get_stock_list(self, fields='*') -> pd.DataFrame:
