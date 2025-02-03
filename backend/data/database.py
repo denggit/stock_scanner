@@ -238,7 +238,7 @@ class DatabaseManager:
                 if pd.isnull(row[1]):
                     result[row[0]] = None
                 else:
-                    result[row[0]] = row[1].strftime('%Y-%m-%d')
+                    result[row[0]] = row[1].strftime('%Y-%m-%d %H:%M:%S')
 
             return result
         except Exception as e:

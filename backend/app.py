@@ -29,3 +29,16 @@ app.add_middleware(
 )
 
 # 注册路由
+app.include_router(stock_interface.router, tags=["stock"])
+app.include_router(strategy_interface.router, tags=["strategy"])
+app.include_router(backtest_interface.router, tags=["backtest"])
+
+
+@app.get("/")
+async def root():
+    return {"message": "Welcome to the Stock Screener API"}
+
+
+@app.get("/test")
+async def test():
+    return {"message": "Test successful"}

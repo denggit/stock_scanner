@@ -22,9 +22,13 @@ def setup_logger(name: str, log_dir: str = "logs", log_level=logging.INFO, set_r
     logger = logging.getLogger(name)
     logger.setLevel(log_level)
 
-    # 清除现有的处理器
-    for handler in logger.handlers:
-        logger.removeHandler(handler)
+    # 如果logger已经有处理器，就不再添加
+    if logger.hasHandlers():
+        return logger
+
+    # # 清除现有的处理器
+    # for handler in logger.handlers:
+    #     logger.removeHandler(handler)
 
     # 创建日志文件处理器
     today = datetime.now().strftime('%Y-%m-%d')
