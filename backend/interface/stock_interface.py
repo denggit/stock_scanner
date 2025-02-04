@@ -46,11 +46,16 @@ async def get_stock_data(
             end_date=end_date,
             ma_periods=ma_periods
         )
+        if data is None:
+            raise HTTPException(status_code=404, detail=f"No data found for stock code: {code}")
         logger.info(f"Successfully get stock data for code: {code}")
         return data
-    except Exception as e:
-        logger.exception(f"Error in get_stock_data: {e}", exc_info=True)
+    except ValueError as e:
+        logger.error(f"Value error in get_stock_data: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Internal error in get_stock_data: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.post("/{code}/indicators")
@@ -61,7 +66,13 @@ async def get_stock_indicators(
 ):
     """获取股票指标数据"""
     try:
-        return await stock_service.get_stock_indicators(code, indicators, date)
-    except Exception as e:
-        logger.exception(f"Error in get_stock_indicators: {e}", exc_info=True)
+        result = await stock_service.get_stock_indicators(code, indicators, date)
+        if result is None:
+            raise HTTPException(status_code=404, detail=f"No indicators found for stock code: {code}")
+        return result
+    except ValueError as e:
+        logger.error(f"Value error in get_stock_indicators: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Internal error in get_stock_indicators: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

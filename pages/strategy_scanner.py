@@ -7,12 +7,15 @@
 @Description: 
 """
 
+import base64
 import os
 from datetime import datetime, timedelta
 
 import pandas as pd
 import requests
 import streamlit as st
+
+from backend.utils.file_check import ensure_dir
 
 
 def scan_stocks(strategy: str, params: dict):
@@ -31,6 +34,12 @@ def scan_stocks(strategy: str, params: dict):
 
 def main():
     st.title("策略扫描器")
+
+    # 创建必要的目录
+    results_dir = os.path.join(os.getcwd(), "results")
+    cache_dir = os.path.join(os.getcwd(), "cache")
+    ensure_dir(results_dir)
+    ensure_dir(cache_dir)
 
     # 计算日期范围
     today = datetime.today()
@@ -351,15 +360,65 @@ def main():
 
             st.dataframe(df, column_config=column_config, hide_index=True)
 
-            # 添加下载按钮
-            csv = df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(
-                label="下载选股结果",
-                data=csv,
-                file_name="stock_signals.csv",
-                mime="text/csv",
-                key="download-csv"
-            )
+            # # 添加下载按钮
+            # csv = df.to_csv(index=False).encode('utf-8-sig')
+            # st.download_button(
+            #     label="下载选股结果",
+            #     data=csv,
+            #     file_name="stock_signals.csv",
+            #     mime="text/csv",
+            #     key="download-csv"
+            # )
+
+            # 设置文件路径
+            scan_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{strategy}_{scan_time}.xlsx"
+            temp_file = os.path.join(cache_dir, f"temp_{filename}")
+            final_file = os.path.join(results_dir, filename)
+            
+            # 创建一个ExcelWriter对象，先保存到临时文件
+            with pd.ExcelWriter(temp_file, engine='openpyxl') as writer:
+                # 将参数写入第一个sheet
+                params_df = pd.DataFrame([params])
+                params_df.to_excel(writer, sheet_name='参数设置', index=False)
+                
+                # 将扫描结果写入第二个sheet
+                df.to_excel(writer, sheet_name='扫描结果', index=False)
+            
+            # 将文件从临时目录移动到最终目录
+            if os.path.exists(final_file):
+                os.remove(final_file)  # 如果文件已存在，先删除
+            os.rename(temp_file, final_file)
+            
+            # 显示保存成功消息
+            st.success(f"结果已保存到: {final_file}")
+
+            # 读取生成的Excel文件并提供下载
+            with open(final_file, 'rb') as f:
+                excel_data = f.read()
+            
+            # 创建下载链接并自动触发
+            b64 = base64.b64encode(excel_data).decode()
+            js = f'''
+                <script>
+                    function download(filename, content) {{
+                        const element = document.createElement('a');
+                        element.setAttribute('href', 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,' + content);
+                        element.setAttribute('download', filename);
+                        element.style.display = 'none';
+                        document.body.appendChild(element);
+                        element.click();
+                        document.body.removeChild(element);
+                    }}
+                    download("{filename}", "{b64}");
+                </script>
+            '''
+            st.components.v1.html(js, height=0)
+            
+            # 删除临时文件
+            os.remove(filename)
+
+
         else:
             st.info("未找到符合条件的股票")
 

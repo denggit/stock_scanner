@@ -28,9 +28,14 @@ class ScanRequest(BaseModel):
 async def scan(request: ScanRequest):
     """使用策略扫描股票"""
     try:
-        return await strategy_service.scan_stocks(strategy=request.strategy, params=request.params)
-    except Exception as e:
+        result = await strategy_service.scan_stocks(strategy=request.strategy, params=request.params)
+        if result is None:
+            raise HTTPException(status_code=404, detail="No results found")
+        return result
+    except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.get("/list")
