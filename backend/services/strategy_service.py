@@ -32,7 +32,7 @@ class StrategyService:
             "长期上涨策略": LongTermUpTrendStrategy,
         }
 
-    def scan_stocks(self, strategy: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
+    async def scan_stocks(self, strategy: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
         """使用策略扫描股票"""
         try:
             logger.info(f"Scanning stocks with strategy: {strategy}, params: {params}")
