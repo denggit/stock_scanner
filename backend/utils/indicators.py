@@ -88,11 +88,11 @@ class CalIndicators:
         return (100 - 100 / (1 + rs)).round(2)
 
     @staticmethod
-    def support_resistance(df: pd.DataFrame, lookback_period: int = 14) -> Tuple[pd.Series, pd.Series]:
+    def support(df: pd.DataFrame, lookback_period: int = 14) -> Tuple[pd.Series, pd.Series]:
         """计算支撑"""
         return df['low'].rolling(window=lookback_period).min()
 
     @staticmethod
-    def support_resistance(df: pd.DataFrame, lookback_period: int = 14) -> Tuple[pd.Series, pd.Series]:
+    def resistance(df: pd.DataFrame, lookback_period: int = 14) -> Tuple[pd.Series, pd.Series]:
         """计算阻力"""
         return df['high'].rolling(window=lookback_period).max()
