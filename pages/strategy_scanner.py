@@ -33,6 +33,14 @@ def scan_stocks(strategy: str, params: dict):
 
 
 def main():
+    # 初始化 session state
+    if 'scanning' not in st.session_state:
+        st.session_state.scanning = False
+    if 'scan_results' not in st.session_state:
+        st.session_state.scan_results = None
+    if 'last_params' not in st.session_state:
+        st.session_state.last_params = {}
+
     st.title("策略扫描器")
 
     # 计算日期范围
@@ -263,11 +271,43 @@ def main():
             }
 
     # 主界面
-    if st.button("开始扫描", key='start_scan'):
+    col1, col2 = st.columns([1, 4])  # 创建两列，比例为1:4
+    with col1:
+        if st.button("开始扫描", key='start_scan', disabled=st.session_state.scanning):
+            st.session_state.scanning = True
+            st.session_state.last_params = {"strategy": strategy, "params": params}  # 保存当前参数
+            st.rerun()
+        
+    with col2:
+        # 添加取消扫描按钮
+        if st.session_state.scanning:
+            if st.button("取消扫描", type="secondary"):
+                st.session_state.scanning = False
+                st.rerun()
+
+    # 如果正在扫描，显示进度
+    if st.session_state.scanning:
         with st.spinner("正在扫描，请稍等..."):
             start_time = datetime.now()
-            results = scan_stocks(strategy, params)
+            results = scan_stocks(st.session_state.last_params['strategy'],
+                                  st.session_state.last_params['params'])
             end_time = datetime.now()
+
+            if results:
+                st.session_state.scan_results = {
+                    'results': results,
+                    'start_time': start_time,
+                    'end_time': end_time
+                }
+
+            st.session_state.scanning = False
+            st.rerun()
+
+    # 显示结果
+    if st.session_state.scan_results:
+        results = st.session_state.scan_results['results']
+        start_time = st.session_state.scan_results['start_time']
+        end_time = st.session_state.scan_results['end_time']
 
         if results:
             # 将结果转换为DataFrame
@@ -282,7 +322,7 @@ def main():
                 avg_strength = df['signal_strength'].mean() if 'signal_strength' in df.columns else 0
                 st.metric("平均信号强度", f"{avg_strength:.1f}")
             with col3:
-                st.metric("扫描时间", f"{datetime.now().strftime("%m-%d %H:%M")}")
+                st.metric("扫描时间", f"{datetime.now().strftime("%m月%d日 %H:%M")}")
 
             # 显示结果表格
             st.subheader("扫描结果")
@@ -377,7 +417,7 @@ def main():
             # 创建一个ExcelWriter对象，先保存到临时文件
             with pd.ExcelWriter(final_file, engine='openpyxl') as writer:
                 # 将参数写入第一个sheet
-                params_df = pd.DataFrame([params])
+                params_df = pd.DataFrame([st.session_state.last_params['params']])
                 params_df.to_excel(writer, sheet_name='参数设置', index=False)
 
                 # 将扫描结果写入第二个sheet
