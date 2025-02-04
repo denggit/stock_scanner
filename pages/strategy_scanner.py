@@ -289,6 +289,8 @@ def main():
     if st.session_state.scanning:
         with st.spinner("正在扫描，请稍等..."):
             start_time = datetime.now()
+            # 清楚之前的结果
+            st.session_state.scan_results = None
             results = scan_stocks(st.session_state.last_params['strategy'],
                                   st.session_state.last_params['params'])
             end_time = datetime.now()
