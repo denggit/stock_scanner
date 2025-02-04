@@ -75,8 +75,8 @@ class DatabaseManager:
         cursor.execute("""
             SELECT COUNT(*) 
             FROM information_schema.tables
-            WHERE table_name = %s 
-            AND table_schema = %s
+            WHERE table_schema = %s 
+            AND table_name = %s
         """, (self.config.MYSQL_DATABASE, table_name))
         cursor.close()
         return cursor.fetchone()[0] > 0
