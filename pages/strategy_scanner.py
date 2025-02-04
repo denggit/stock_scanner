@@ -277,7 +277,7 @@ def main():
             st.session_state.scanning = True
             st.session_state.last_params = {"strategy": strategy, "params": params}  # 保存当前参数
             st.rerun()
-        
+
     with col2:
         # 添加取消扫描按钮
         if st.session_state.scanning:
@@ -289,8 +289,6 @@ def main():
     if st.session_state.scanning:
         with st.spinner("正在扫描，请稍等..."):
             start_time = datetime.now()
-            # 清楚之前的结果
-            st.session_state.scan_results = None
             results = scan_stocks(st.session_state.last_params['strategy'],
                                   st.session_state.last_params['params'])
             end_time = datetime.now()
@@ -298,6 +296,12 @@ def main():
             if results:
                 st.session_state.scan_results = {
                     'results': results,
+                    'start_time': start_time,
+                    'end_time': end_time
+                }
+            else:
+                st.session_state.scan_results = {
+                    'results': None,
                     'start_time': start_time,
                     'end_time': end_time
                 }

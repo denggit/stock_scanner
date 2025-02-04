@@ -23,7 +23,7 @@ class DoubleUpStrategy(BaseStrategy):
             "times": 2.00,  # 翻倍倍数
         }
 
-    def generate_signals(self, data: pd.DataFrame) -> pd.Series:
+    def generate_signal(self, data: pd.DataFrame) -> pd.Series:
         """生成交易信号"""
         if not self.validate_data(data):
             raise ValueError("数据格式不正确")
