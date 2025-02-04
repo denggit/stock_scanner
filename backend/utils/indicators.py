@@ -46,7 +46,7 @@ class CalIndicators:
         if lookback_period > 1:
             amplitude = amplitude.rolling(window=lookback_period).mean().round(2)
         return amplitude
-    
+
     @staticmethod
     def volatility(df: pd.DataFrame, lookback_period: int = 14, annualized: bool = True) -> pd.Series:
         """计算波动率
@@ -61,11 +61,11 @@ class CalIndicators:
         log_returns = np.log(df['close'] / df['close'].shift(1))
         # 计算滚动标准差
         vol = log_returns.rolling(window=lookback_period).std()
-        
+
         if annualized:
             # 假设一年250个交易日，年化处理
             vol = vol * np.sqrt(250)
-            
+
         return vol.round(4) * 100  # 转换为百分比并保留4位小数
 
     @staticmethod

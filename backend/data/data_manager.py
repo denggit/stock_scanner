@@ -6,9 +6,9 @@
 @File       : data_manager.py
 @Description: 
 """
+import datetime as dt
 import logging
 import time
-import datetime as dt
 from typing import Optional
 
 import pandas as pd
@@ -102,7 +102,8 @@ class DataUpdateManager:
             return
         else:
             # 从最新数据的前三天开始更新
-            start_date = (dt.datetime.strptime(lastest_date, '%Y-%m-%d %H:%M:%S') - dt.timedelta(days=3)).strftime('%Y-%m-%d')
+            start_date = (dt.datetime.strptime(lastest_date, '%Y-%m-%d %H:%M:%S') - dt.timedelta(days=3)).strftime(
+                '%Y-%m-%d')
 
         end_date = dt.datetime.now().strftime('%Y-%m-%d')
 

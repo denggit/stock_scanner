@@ -6,9 +6,10 @@
 @File       : stock_interface.py
 @Description: 
 """
-from fastapi import APIRouter, HTTPException, Query
-from typing import List, Optional
 from datetime import datetime, timedelta
+from typing import List, Optional
+
+from fastapi import APIRouter, HTTPException, Query
 
 from backend.services.stock_service import StockService
 from backend.utils.logger import setup_logger

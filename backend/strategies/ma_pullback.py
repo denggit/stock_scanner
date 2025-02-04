@@ -8,6 +8,7 @@
 """
 
 import pandas as pd
+
 from backend.strategies.base import BaseStrategy
 from backend.utils.indicators import CalIndicators
 
@@ -75,11 +76,11 @@ class MAPullbackStrategy(BaseStrategy):
         signals['code'] = data['code']
         signals['trade_date'] = data['trade_date']
         signals['price'] = data['close']
-        signals['change_pct'] = data['chg_pct']
+        signals['pct_chg'] = data['pct_chg']
         signals['ma_price'] = ma
         signals['price_to_ma'] = pd.Series(index=data.index, dtype=float)
         signals.loc[valid_ma, 'price_to_ma'] = (
-                    (data.loc[valid_ma, 'close'] - ma[valid_ma]) / ma[valid_ma] * 100).round(2)  # 价格与均线的偏离度（%）
+                (data.loc[valid_ma, 'close'] - ma[valid_ma]) / ma[valid_ma] * 100).round(2)  # 价格与均线的偏离度（%）
         signals['volume_ratio'] = volume_ratio.round(2)  # 成交量与过去五日交易均量比例
         signals['signal'] = 0
         signals['signal_strength'] = 0
@@ -115,7 +116,7 @@ class MAPullbackStrategy(BaseStrategy):
             'code': str,
             'trade_date': str,
             'price': float,
-            'change_pct': float,
+            'pct_chg': float,
             'ma_price': float,
             'price_to_ma': float,
             'volume_ratio': float,
@@ -154,22 +155,20 @@ class MAPullbackStrategy(BaseStrategy):
         - 偏离 1%: 5分
         - 偏离 2% 或以上: 0分
         """
-        # 创建一个与输入相同大小的零分数组
-        price_score = pd.Series(0, index=price_distance.index)
+        # 创建一个与输入相同大小的零分数组，使用float类型
+        price_score = pd.Series(0.0, index=price_distance.index)
 
         # 偏离 <= 0.2%: 10分
         mask_1 = price_distance <= 0.002
-        price_score[mask_1] = 10
+        price_score[mask_1] = 10.0
 
         # 偏离在 0.2% - 1% 之间：10-5分，线性递减
         mask_2 = (price_distance > 0.002) & (price_distance <= 0.01)
-        price_score[mask_2] = 10 - (price_distance[mask_2] - 0.002) * (5 / 0.008)
+        price_score[mask_2] = 10.0 - (price_distance[mask_2] - 0.002) * (5.0 / 0.008)
 
         # 偏离在 1% - 2% 之间：5-0分，线性递减
         mask_3 = (price_distance > 0.01) & (price_distance <= 0.02)
-        price_score[mask_3] = 5 - (price_distance[mask_3] - 0.01) * (5 / 0.01)
-
-        # 偏离 > 2%: 0分 (默认值已经是0，无需额外设置)
+        price_score[mask_3] = 5.0 - (price_distance[mask_3] - 0.01) * (5.0 / 0.01)
 
         return price_score
 
@@ -180,21 +179,21 @@ class MAPullbackStrategy(BaseStrategy):
         - 成交量放大 2 倍：7分
         - 成交量放大 3 倍或以上：10分
         """
-        # 创建一个与输入相同大小的零分数组
-        volume_score = pd.Series(0, index=volume_ratio.index)
+        # 创建一个与输入相同大小的零分数组，使用float类型
+        volume_score = pd.Series(0.0, index=volume_ratio.index)
 
         # 分段计算得分
         # 1.5倍 - 2倍之间：5-7分，线性增长
         mask_1 = (volume_ratio >= 1.5) & (volume_ratio < 2)
-        volume_score[mask_1] = 5 + (volume_ratio[mask_1] - 1.5) * 4
+        volume_score[mask_1] = 5.0 + (volume_ratio[mask_1] - 1.5) * 4.0
 
         # 2倍 - 3倍之间：7-10分，线性增长
         mask_2 = (volume_ratio >= 2) & (volume_ratio < 3)
-        volume_score[mask_2] = 7 + (volume_ratio[mask_2] - 2) * 3
+        volume_score[mask_2] = 7.0 + (volume_ratio[mask_2] - 2) * 3.0
 
         # 3倍及以上：10分
         mask_3 = volume_ratio >= 3
-        volume_score[mask_3] = 10
+        volume_score[mask_3] = 10.0
 
         return volume_score
 

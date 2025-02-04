@@ -40,7 +40,7 @@ class StockDataFetcher:
 
     def fetch_stock_data(
             self,
-            code: str, 
+            code: str,
             period: str = 'daily',
             start_date: Optional[str] = (datetime.date.today() - datetime.timedelta(days=365)).strftime("%Y-%m-%d"),
             end_date: Optional[str] = datetime.date.today().strftime("%Y-%m-%d"),

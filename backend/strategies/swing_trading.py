@@ -9,6 +9,7 @@
 
 import numpy as np
 import pandas as pd
+
 from backend.strategies.base import BaseStrategy
 from backend.utils.indicators import CalIndicators
 
@@ -193,15 +194,15 @@ class SwingTradingStrategy(BaseStrategy):
         - 距离 4% 或以上: 0分
         """
         support_distance = data['support_distance'].abs()
-        score = pd.Series(0, index=data.index)
-
+        score = pd.Series(0.0, index=data.index)  # 初始化为浮点数
+        
         # 线性插值计算分数
-        score = np.where(support_distance <= 0.005, 10,  # 距离<=0.5%
-                         np.where(support_distance <= 0.02,  # 距离<=2%
-                                  10 - (support_distance - 0.005) * (5 / 0.015),  # 线性插值
-                                  np.where(support_distance <= 0.04,  # 距离<=4%
-                                           5 - (support_distance - 0.02) * (5 / 0.02),  # 线性插值
-                                           0)))
+        score = np.where(support_distance <= 0.005, 10.0,  # 距离<=0.5%
+                np.where(support_distance <= 0.02,  # 距离<=2%
+                        10.0 - (support_distance - 0.005) * (5.0 / 0.015),  # 线性插值
+                        np.where(support_distance <= 0.04,  # 距离<=4%
+                                5.0 - (support_distance - 0.02) * (5.0 / 0.02),  # 线性插值
+                                0.0)))
         return pd.Series(score, index=data.index)
 
     def _calculate_volatility_score(self, data: pd.DataFrame) -> pd.Series:
@@ -212,15 +213,15 @@ class SwingTradingStrategy(BaseStrategy):
         - 波动 1% 或以下: 0分
         """
         volatility = data['volatility']
-        score = pd.Series(0, index=data.index)
-
+        score = pd.Series(0.0, index=data.index)  # 初始化为浮点数
+        
         # 线性插值计算分数
-        score = np.where(volatility >= 0.05, 10,  # 波动>=5%
-                         np.where(volatility >= 0.02,  # 波动>=2%
-                                  5 + (volatility - 0.02) * (5 / 0.03),  # 线性插值
-                                  np.where(volatility >= 0.01,  # 波动>=1%
-                                           (volatility - 0.01) * (5 / 0.01),  # 线性插值
-                                           0)))
+        score = np.where(volatility >= 0.05, 10.0,  # 波动>=5%
+                np.where(volatility >= 0.02,  # 波动>=2%
+                        5.0 + (volatility - 0.02) * (5.0 / 0.03),  # 线性插值
+                        np.where(volatility >= 0.01,  # 波动>=1%
+                                (volatility - 0.01) * (5.0 / 0.01),  # 线性插值
+                                0.0)))
         return pd.Series(score, index=data.index)
 
     def _calculate_trend_score(self, data: pd.DataFrame) -> pd.Series:
@@ -232,19 +233,20 @@ class SwingTradingStrategy(BaseStrategy):
         trend = data['trend']
         ma_short = data['ma_short']
         ma_long = data['ma_long']
-
+        
         # 计算均线斜率
         ma_short_slope = ma_short.diff() / ma_short.shift(1)
         ma_long_slope = ma_long.diff() / ma_long.shift(1)
-
-        score = pd.Series(0, index=data.index)
+        
+        score = pd.Series(0.0, index=data.index)  # 初始化为浮点数
+        
         # 根据趋势方向和均线斜率计算分数
         score = np.where(trend > 0,
-                         10 * (1 + ma_short_slope) * (1 + ma_long_slope),  # 上升趋势加权
-                         0)  # 下降趋势
-
+                        10.0 * (1.0 + ma_short_slope) * (1.0 + ma_long_slope),  # 上升趋势加权
+                        0.0)  # 下降趋势
+        
         # 限制分数范围在0-10之间
-        return pd.Series(np.clip(score, 0, 10), index=data.index)
+        return pd.Series(np.clip(score, 0.0, 10.0), index=data.index)
 
     def _calculate_macd_score(self, data: pd.DataFrame) -> pd.Series:
         """计算MACD得分（0-10分）
@@ -254,21 +256,21 @@ class SwingTradingStrategy(BaseStrategy):
         macd = data['macd']
         signal = data['macd_signal']
         hist = data['macd_hist']
-
-        score = pd.Series(0, index=data.index)
-
+        
+        score = pd.Series(0.0, index=data.index)  # 初始化为浮点数
+        
         # MACD柱状图由负变正为金叉，由正变负为死叉
         golden_cross = (hist > 0) & (hist.shift(1) <= 0)
         death_cross = (hist < 0) & (hist.shift(1) >= 0)
-
+        
         # 根据MACD柱状图的强度计算分数
-        score = np.where(golden_cross, 10,
-                         np.where(death_cross, 0,
-                                  np.where(hist > 0,
-                                           5 + 5 * (hist / hist.abs().max()),  # 正柱状图
-                                           5 * (1 + hist / hist.abs().max()))))  # 负柱状图
-
-        return pd.Series(np.clip(score, 0, 10), index=data.index)
+        score = np.where(golden_cross, 10.0,
+                        np.where(death_cross, 0.0,
+                                np.where(hist > 0,
+                                        5.0 + 5.0 * (hist / hist.abs().max()),  # 正柱状图
+                                        5.0 * (1.0 + hist / hist.abs().max()))))  # 负柱状图
+        
+        return pd.Series(np.clip(score, 0.0, 10.0), index=data.index)
 
     def _calculate_rsi_score(self, data: pd.DataFrame) -> pd.Series:
         """计算RSI得分（0-10分）
@@ -279,13 +281,13 @@ class SwingTradingStrategy(BaseStrategy):
         rsi = data['rsi']
         oversold = self._params['rsi_oversold']
         overbought = self._params['rsi_overbought']
-
-        score = pd.Series(5, index=data.index)  # 默认中性得分
-
+        
+        score = pd.Series(5.0, index=data.index)  # 默认中性得分，初始化为浮点数
+        
         # 根据RSI值计算分数
-        score = np.where(rsi <= oversold, 10,  # 超卖区间
-                         np.where(rsi >= overbought, 0,  # 超买区间
-                                  # 中性区间，线性插值
-                                  5 + 5 * (overbought - rsi) / (overbought - oversold)))
-
-        return pd.Series(np.clip(score, 0, 10), index=data.index)
+        score = np.where(rsi <= oversold, 10.0,  # 超卖区间
+                np.where(rsi >= overbought, 0.0,  # 超买区间
+                        # 中性区间，线性插值
+                        5.0 + 5.0 * (overbought - rsi) / (overbought - oversold)))
+        
+        return pd.Series(np.clip(score, 0.0, 10.0), index=data.index)

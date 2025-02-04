@@ -13,6 +13,7 @@ from typing import Optional
 
 import pandas as pd
 import pymysql as mysql
+
 from backend.config.database import Config
 
 
@@ -170,7 +171,8 @@ class DatabaseManager:
                 elif col == 'pct_chg':
                     # 使用向量化操作计算涨跌幅
                     mask = stock_df[col].isna() & stock_df['close'].notna() & stock_df['preclose'].notna()
-                    stock_df.loc[mask, col] = (stock_df.loc[mask, 'close'] - stock_df.loc[mask, 'preclose']) / stock_df.loc[mask, 'preclose'] * 100
+                    stock_df.loc[mask, col] = (stock_df.loc[mask, 'close'] - stock_df.loc[mask, 'preclose']) / \
+                                              stock_df.loc[mask, 'preclose'] * 100
                     # 如果还有NaN值，填充0
                     stock_df[col] = stock_df[col].fillna(0)
                 elif col in ['open', 'high', 'low', 'close', 'preclose']:

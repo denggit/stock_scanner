@@ -7,14 +7,12 @@
 @Description: 
 """
 
-
-
 from typing import Any, Dict
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.services.strategy_service import StrategyService
-
 
 router = APIRouter(prefix="/api/strategy")
 strategy_service = StrategyService()
@@ -33,6 +31,7 @@ async def scan(request: ScanRequest):
         return await strategy_service.scan_stocks(strategy=request.strategy, params=request.params)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
 
 @router.get("/list")
 async def list_strategies():

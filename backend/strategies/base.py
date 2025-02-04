@@ -11,8 +11,10 @@ from typing import Any, Dict
 
 import pandas as pd
 
+
 class BaseStrategy(ABC):
     """策略基类"""
+
     def __init__(self, name: str = "", description: str = ""):
         self.name = name
         self.description = description
@@ -25,12 +27,12 @@ class BaseStrategy(ABC):
     def get_parameters(self) -> Dict[str, Any]:
         """获取策略参数"""
         return self._params.copy()
-    
+
     def validate_data(self, data: pd.DataFrame) -> bool:
         """验证数据是否符合策略要求"""
         required_columns = {"open", "high", "low", "close", "volume"}
         return required_columns.issubset(data.columns)
-    
+
     def get_description(self) -> str:
         """获取策略描述"""
         return f"""
@@ -42,7 +44,7 @@ class BaseStrategy(ABC):
         参数说明:
         {self._get_param_description()}
         """
-    
+
     def _get_param_description(self) -> str:
         """生成参数说明"""
         if not self._params:

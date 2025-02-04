@@ -64,7 +64,8 @@ class StrategyService:
                     continue
 
                 # 获取股票数据
-                stock_data = self.data_fetcher.fetch_stock_data(code=stock.code, start_date=start_date, end_date=end_date)
+                stock_data = self.data_fetcher.fetch_stock_data(code=stock.code, start_date=start_date,
+                                                                end_date=end_date)
                 strategy_instance = self.strategies[strategy]()
                 strategy_instance.set_parameters(params)
 
@@ -84,7 +85,7 @@ class StrategyService:
                         result[column] = value
 
                     results.append(result)
-            
+
             logger.info(f"Found {len(results)} stocks with strategy: {strategy}")
             results = convert_to_python_types(results)
             return results
@@ -95,7 +96,8 @@ class StrategyService:
     async def list_strategies(self) -> List[Dict[str, Any]]:
         """列出所有策略"""
         try:
-            return [{"name": strategy_name, "description": strategy_instance().get_description()} for strategy_name, strategy_instance in self.strategies.items()]
+            return [{"name": strategy_name, "description": strategy_instance().get_description()} for
+                    strategy_name, strategy_instance in self.strategies.items()]
         except Exception as e:
             logger.error(f"Error listing strategies: {e}", exc_info=True)
             raise Exception(f"Error listing strategies: {e}")
