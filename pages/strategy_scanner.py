@@ -7,7 +7,6 @@
 @Description: 
 """
 
-import base64
 import os
 from datetime import datetime, timedelta
 
@@ -35,12 +34,6 @@ def scan_stocks(strategy: str, params: dict):
 
 def main():
     st.title("策略扫描器")
-
-    # 创建必要的目录
-    results_dir = os.path.join(os.getcwd(), "results")
-    cache_dir = os.path.join(os.getcwd(), "cache")
-    ensure_dir(results_dir)
-    ensure_dir(cache_dir)
 
     # 计算日期范围
     today = datetime.today()
@@ -106,30 +99,30 @@ def main():
             col1, col2, col3 = st.columns(3)
             with col1:
                 weights['price'] = st.number_input(
-                    "价格权重",
+                    "价格偏离",
                     min_value=0.0,
                     max_value=1.0,
                     value=0.4,
                     format="%.1f",
-                    help='价格对信号强度的影响'
+                    help='价格偏离度对信号强度的影响，计算的是价格距离均线的距离，值越小，信号强度越高'
                 )
             with col2:
                 weights['volume'] = st.number_input(
-                    "成交量权重",
+                    "成交量",
                     min_value=0.0,
                     max_value=1.0,
                     value=0.3,
                     format="%.1f",
-                    help='成交量对信号强度的影响'
+                    help='成交量对信号强度的影响，计算的是成交量与5日均量的比例，值越大，信号强度越高'
                 )
             with col3:
                 weights['frequency'] = st.number_input(
-                    "频率权重",
+                    "回踩频率",
                     min_value=0.0,
                     max_value=1.0,
                     value=0.3,
                     format="%.1f",
-                    help='频率对信号强度的影响'
+                    help='回踩频率对信号强度的影响，计算的是回溯周期内，回踩均线的频率，值越大，信号强度越高'
                 )
 
             # 检查权重和是否为1
@@ -289,7 +282,7 @@ def main():
                 avg_strength = df['signal_strength'].mean() if 'signal_strength' in df.columns else 0
                 st.metric("平均信号强度", f"{avg_strength:.1f}")
             with col3:
-                st.metric("扫描时间", f"##{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}")
+                st.metric("扫描时间", f"{datetime.now().strftime("%m-%d %H:%M")}")
 
             # 显示结果表格
             st.subheader("扫描结果")
@@ -372,10 +365,13 @@ def main():
                 key="download-csv"
             )
 
+            # 创建必要的目录
+            results_dir = os.path.join(os.getcwd(), "results", datetime.today().strftime("%Y%m%d"))
+            ensure_dir(results_dir)
+
             # 设置文件路径
-            scan_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+            scan_time = datetime.now().strftime("%Y%m%d_%H%M")
             filename = f"{strategy}_{scan_time}.xlsx"
-            # temp_file = os.path.join(cache_dir, f"temp_{filename}")
             final_file = os.path.join(results_dir, filename)
 
             # 创建一个ExcelWriter对象，先保存到临时文件
@@ -387,35 +383,8 @@ def main():
                 # 将扫描结果写入第二个sheet
                 df.to_excel(writer, sheet_name='扫描结果', index=False)
 
-            # # 将文件从临时目录移动到最终目录
-            # if os.path.exists(final_file):
-            #     os.remove(final_file)  # 如果文件已存在，先删除
-            # os.rename(temp_file, final_file)
-
             # 显示保存成功消息
             st.success(f"结果已自动保存到: {final_file}")
-
-            # # 读取生成的Excel文件并提供下载
-            # with open(final_file, 'rb') as f:
-            #     excel_data = f.read()
-            #
-            # # 创建下载链接并自动触发
-            # b64 = base64.b64encode(excel_data).decode()
-            # js = f'''
-            #     <script>
-            #         function download(filename, content) {{
-            #             const element = document.createElement('a');
-            #             element.setAttribute('href', 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,' + content);
-            #             element.setAttribute('download', filename);
-            #             element.style.display = 'none';
-            #             document.body.appendChild(element);
-            #             element.click();
-            #             document.body.removeChild(element);
-            #         }}
-            #         download("{filename}", "{b64}");
-            #     </script>
-            # '''
-            # st.components.v1.html(js, height=0)
 
         else:
             st.info("未找到符合条件的股票")
