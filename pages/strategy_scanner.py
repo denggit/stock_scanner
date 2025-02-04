@@ -328,7 +328,7 @@ def main():
                 avg_strength = df['signal_strength'].mean() if 'signal_strength' in df.columns else 0
                 st.metric("平均信号强度", f"{avg_strength:.1f}")
             with col3:
-                st.metric("扫描时间", f"{datetime.now().strftime("%m-%d %H:%M")}")
+                st.metric("扫描时间", f"{datetime.now().strftime('%m-%d %H:%M')}")
 
             # 显示结果表格
             st.subheader(f"扫描结果 - {st.session_state.last_params['strategy']}")
