@@ -130,7 +130,7 @@ class SwingTradingStrategy(BaseStrategy):
                              df['volatility_score'] * weights['volatility'] +
                              df['trend_score'] * weights['trend'] +
                              df['macd_score'] * weights['macd'] +
-                             df['rsi_score'] * weights['rsi'])
+                             df['rsi_score'] * weights['rsi']).round(2)
 
         # 9. 生成信号
         signals = pd.DataFrame(index=df.index)

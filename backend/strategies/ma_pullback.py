@@ -107,7 +107,7 @@ class MAPullbackStrategy(BaseStrategy):
                 volume_score * w['volume'] +
                 frequency_score * w['frequency']
         )
-        signals['total_score'] = total_score
+        signals['total_score'] = total_score.round(2)
 
         # 将得分转换为1-5的信号强度
         signals.loc[basic_condition, 'signal_strength'] = ((total_score * 0.4) + 1).clip(1, 5).round()
