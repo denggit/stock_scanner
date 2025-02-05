@@ -44,17 +44,27 @@ class StrategyService:
             stocks = self.data_fetcher.get_stock_list()
             results = []
 
-            # 获取均线周期两倍的数据
+            # 获取足量数据
             ma_period = params.get("ma_period", 20)  # 假设设置了均线 
             max_ma_period = max(params.get("ma_periods", [20]))
             long_ma_period = params.get("long_ma_period", 20)  # 假设设置了长期均线
             period = params.get("period", 20)  # 假设直接设置了获取数据的周期
             period = max(ma_period, long_ma_period, period, max_ma_period)
+
+            years = period // 250
+            months = period % 250 // 20
+            days = period % 250 % 20
+            take_period = 0
+            take_period += (years + 1) * 365 if years > 0 else 0
+            take_period += (months + 1) * 31 if months > 0 else 0
+            take_period += days * 2 if days > 0 else 0
+            take_period += 30       # 预留一个月
+
             end_date = params.get("end_date", datetime.date.today().strftime("%Y-%m-%d"))
             start_date = params.get(
                 "start_date",
                 (datetime.datetime.strptime(end_date, "%Y-%m-%d") -
-                 datetime.timedelta(days=2 * period)).strftime("%Y-%m-%d")
+                 datetime.timedelta(days=take_period)).strftime("%Y-%m-%d")
             )
 
             # 对每只股票进行策略扫描
@@ -68,7 +78,6 @@ class StrategyService:
                                                                 end_date=end_date)
                 strategy_instance = self.strategies[strategy]()
                 strategy_instance.set_parameters(params)
-
                 # 生成信号
                 signals = strategy_instance.generate_signal(stock_data)
 
