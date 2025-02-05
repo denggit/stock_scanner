@@ -80,7 +80,7 @@ def main():
                 )
                 params['min_pullback_count'] = st.number_input(
                     "最小回踩次数",
-                    min_value=1,
+                    min_value=0,
                     max_value=10,
                     value=2,
                     help='回溯其内最少需要的回踩次数'
@@ -260,14 +260,20 @@ def main():
 
         elif strategy == "长期上涨策略":
             st.subheader("长期上涨策略参数配置")
-            ma_periods = st.multiselect("均线周期", [5, 10, 20, 30, 60, 120, 250], default=[5, 20, 60, 250],
+            ma_periods = st.multiselect("均线周期", [5, 10, 20, 30, 60, 120, 250], default=[20, 60, 250],
                                         help="长期上涨的均线周期")
-            ma_period = st.number_input("回踩均线", min_value=5, value=20, max_value=500,
-                                        help="回踩均线，对比查看回踩哪条均线")
+            col1, col2 = st.columns(2)
+            with col1:
+                continuous_days = st.number_input("连续多头排列天数", min_value=1, value=20, max_value=500,
+                                                  help="连续多头排列的天数")
+            with col2:
+                ma_period = st.number_input("回踩均线", min_value=5, value=20, max_value=500,
+                                            help="回踩均线，对比查看回踩哪条均线")
 
             params = {
                 "ma_periods": ma_periods,
-                "ma_period": ma_period
+                "ma_period": ma_period,
+                "continuous_days": continuous_days
             }
 
     # 主界面
@@ -314,6 +320,7 @@ def main():
         results = st.session_state.scan_results['results']
         start_time = st.session_state.scan_results['start_time']
         end_time = st.session_state.scan_results['end_time']
+        st.session_state.scan_results = None
 
         if results:
             # 将结果转换为DataFrame
@@ -376,6 +383,7 @@ def main():
                     '成交量比',
                     format='%.2f'
                 ),
+                "continuous_trend_days": "连续趋势天数",
                 "pe_ttm": st.column_config.NumberColumn(
                     '市盈率',
                     format='%.2f'

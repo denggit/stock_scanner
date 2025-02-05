@@ -24,6 +24,7 @@ class LongTermUpTrendStrategy(BaseStrategy):
         self._params = {
             "ma_periods": [5, 10, 20, 30, 60, 120, 240],  # 多头排列均线
             "ma_period": 20,  # 回踩均线
+            "continuous_days": 20,  # 连续多头排列的天数要求
         }
 
     def generate_signal(self, data: pd.DataFrame) -> pd.Series:
@@ -44,7 +45,13 @@ class LongTermUpTrendStrategy(BaseStrategy):
         for period in ma_periods[1:]:
             long_ma = CalIndicators.ema(df, period, 'close')
             conditions = conditions & (short_ma > long_ma)
-        df['trend'] = np.where(conditions, 1, -1)
+
+        # 计算连续多头排列的天数
+        continuous_trend = conditions.astype(int)
+        continuous_days = continuous_trend.groupby((continuous_trend != continuous_trend.shift()).cumsum()).cumsum()
+        df['trend'] = np.where(continuous_days >= self._params['continuous_days'], 1, 0)
+        # 计算当前的连续趋势天数
+        current_continuous_days = continuous_days.iloc[-1] if continuous_trend.iloc[-1] == 1 else 0
 
         basic_conditions = (
                 (df['trend'] > 0) &
@@ -72,6 +79,8 @@ class LongTermUpTrendStrategy(BaseStrategy):
         signals['ps_ttm'] = df['ps_ttm']
         signals['pb_mrq'] = df['pb_mrq']
         signals['pcf_ncf_ttm'] = df['pcf_ncf_ttm']
+        # 添加连续趋势天数信息
+        signals['continuous_trend_days'] = current_continuous_days
 
         # 只返回最新一天的信息
         last_day = signals.iloc[-1]
