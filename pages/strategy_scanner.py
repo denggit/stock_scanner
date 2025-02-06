@@ -379,6 +379,7 @@ def main():
                     '价格偏离度',
                     format='%.2f%%'
                 ),
+                "pullback_count": "回踩均线次数",
                 "volume_ratio": st.column_config.NumberColumn(
                     '成交量比',
                     format='%.2f'

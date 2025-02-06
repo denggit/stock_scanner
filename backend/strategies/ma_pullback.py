@@ -81,6 +81,7 @@ class MAPullbackStrategy(BaseStrategy):
         signals['price_to_ma'] = pd.Series(index=data.index, dtype=float)
         signals.loc[valid_ma, 'price_to_ma'] = (
                 (data.loc[valid_ma, 'close'] - ma[valid_ma]) / ma[valid_ma] * 100).round(2)  # 价格与均线的偏离度（%）
+        signals['pullback_count'] = pullback_count
         signals['volume_ratio'] = volume_ratio.round(2)  # 成交量与过去五日交易均量比例
         signals['signal'] = 0
         signals['signal_strength'] = 0
