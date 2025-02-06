@@ -25,6 +25,10 @@ class LongTermUpTrendStrategy(BaseStrategy):
             "ma_periods": [5, 10, 20, 30, 60, 120, 240],  # 多头排列均线
             "ma_period": 20,  # 回踩均线
             "continuous_days": 20,  # 连续多头排列的天数要求
+            "pe_ttm_range": (0.0, 20.0),  # 市盈率范围
+            "ps_ttm_range": (0.0, 20.0),  # 市销率范围
+            "pb_mrq_range": (0.0, 5.0),  # 市净率范围
+            "pcf_ncf_ttm_range": (-30000.0, 30000.0)  # 市现率范围
         }
 
     def generate_signal(self, data: pd.DataFrame) -> pd.Series:
@@ -53,7 +57,7 @@ class LongTermUpTrendStrategy(BaseStrategy):
             # 计算均线间的距离
             ma_distance = short_ma - long_ma
             # 计算均线间的距离的百分比
-            ma_distance_percent = ma_distance / long_ma * 100
+            ma_distance_percent = (ma_distance / long_ma * 100).round(2)
             signals[f'ma{short_period}_to_ma{period}'] = ma_distance_percent
             short_period = period
             short_ma = long_ma
@@ -67,8 +71,14 @@ class LongTermUpTrendStrategy(BaseStrategy):
 
         basic_conditions = (
                 (df['trend'] > 0) &
-                (df['pe_ttm'] > 0) &
-                (df['pb_mrq'] > 0)
+                (df['pe_ttm'] > self._params['pe_ttm_range'][0]) &
+                (df['pe_ttm'] < self._params['pe_ttm_range'][1]) &
+                (df['ps_ttm'] > self._params['ps_ttm_range'][0]) &
+                (df['ps_ttm'] < self._params['ps_ttm_range'][1]) &
+                (df['pb_mrq'] > self._params['pb_mrq_range'][0]) &
+                (df['pb_mrq'] < self._params['pb_mrq_range'][1]) &
+                (df['pcf_ncf_ttm'] > self._params['pcf_ncf_ttm_range'][0]) &
+                (df['pcf_ncf_ttm'] < self._params['pcf_ncf_ttm_range'][1])
         )
 
         # 计算当前股价到回踩均线距离的百分比

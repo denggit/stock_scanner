@@ -266,14 +266,46 @@ def main():
             with col1:
                 continuous_days = st.number_input("连续多头排列天数", min_value=1, value=20, max_value=500,
                                                   help="连续多头排列的天数")
+                pe_ttm_range = st.slider("市盈率范围",
+                                         min_value=-1000.0,
+                                         max_value=1000.0,
+                                         value=(0.0, 20.0),  # 设置默认范围
+                                         step=0.1,
+                                         format="%.1f",
+                                         help="选择市盈率(PE-TTM)的范围")
+                ps_ttm_range = st.slider("市销率范围",
+                                         min_value=-1000.0,
+                                         max_value=1000.0,
+                                         value=(0.0, 20.0),  # 设置默认范围
+                                         step=0.1,
+                                         format="%.1f",
+                                         help="选择市销率(PS-TTM)的范围")
             with col2:
                 ma_period = st.number_input("回踩均线", min_value=5, value=20, max_value=500,
                                             help="回踩均线，对比查看回踩哪条均线")
+                pb_mrq_range = st.slider("市净率范围",
+                                         min_value=-100.0,
+                                         max_value=100.0,
+                                         value=(0.0, 5.0),  # 设置默认范围
+                                         step=0.1,
+                                         format="%.1f",
+                                         help="选择市净率(PB-MRQ)的范围")
+                pcf_ncf_ttm_range = st.slider("市现率范围",
+                                              min_value=-30000.0,
+                                              max_value=30000.0,
+                                              value=(-30000.0, 30000.0),  # 设置默认范围
+                                              step=0.1,
+                                              format="%.1f",
+                                              help="选择市现率(PCF-NCF-TTM)的范围")
 
             params = {
                 "ma_periods": ma_periods,
                 "ma_period": ma_period,
-                "continuous_days": continuous_days
+                "continuous_days": continuous_days,
+                "pe_ttm_range": pe_ttm_range,
+                "ps_ttm_range": ps_ttm_range,
+                "pb_mrq_range": pb_mrq_range,
+                "pcf_ncf_ttm_range": pcf_ncf_ttm_range
             }
 
     # 主界面
