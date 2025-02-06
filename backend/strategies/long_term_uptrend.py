@@ -34,17 +34,29 @@ class LongTermUpTrendStrategy(BaseStrategy):
 
         # 1. 数据预处理 - 确保所有数值列都是float类型
         df = data.copy()
+
         numeric_columns = ['open', 'high', 'low', 'close', 'volume']
         for column in numeric_columns:
             df[column] = df[column].astype(float)
 
+        # 生成条件
+        signals = pd.DataFrame(index=df.index)
+
         # 2. 计算多头排列均线
         ma_periods = sorted(list(set(self._params["ma_periods"])))
-        short_ma = CalIndicators.ema(df, ma_periods[0], 'close')
+        short_period = ma_periods[0]
+        short_ma = CalIndicators.ema(df, short_period, 'close')
         conditions = pd.Series(True, index=df.index)
         for period in ma_periods[1:]:
             long_ma = CalIndicators.ema(df, period, 'close')
             conditions = conditions & (short_ma > long_ma)
+            # 计算均线间的距离
+            ma_distance = short_ma - long_ma
+            # 计算均线间的距离的百分比
+            ma_distance_percent = ma_distance / long_ma * 100
+            signals[f'ma{short_period}_to_ma{period}'] = ma_distance_percent
+            short_period = period
+            short_ma = long_ma
 
         # 计算连续多头排列的天数
         continuous_trend = conditions.astype(int)
@@ -59,12 +71,9 @@ class LongTermUpTrendStrategy(BaseStrategy):
                 (df['pb_mrq'] > 0)
         )
 
-        # 计算股价到回踩均线距离
+        # 计算当前股价到回踩均线距离的百分比
         df['ma_price'] = CalIndicators.ema(df, self._params['ma_period'], 'close')
         df['price_to_ma'] = ((df['close'] - df['ma_price']) / df['ma_price'] * 100).round(2)
-
-        # 生成条件
-        signals = pd.DataFrame(index=df.index)
 
         # 基础条件
         signals['signal'] = 0
