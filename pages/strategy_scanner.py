@@ -56,7 +56,7 @@ def main():
         st.header("策略设置")
         strategy = st.selectbox(
             "选择策略",
-            ["均线回踩策略", "突破策略", "波段交易策略", "扫描翻倍股", "长期上涨策略"]
+            ["均线回踩策略", "突破策略", "波段交易策略", "扫描翻倍股", "长期上涨策略", "头肩底形态策略"]
         )
         params = {}
         if strategy == "均线回踩策略":
@@ -307,6 +307,131 @@ def main():
                 "pb_mrq_range": pb_mrq_range,
                 "pcf_ncf_ttm_range": pcf_ncf_ttm_range
             }
+
+        elif strategy == "头肩底形态策略":
+            st.subheader("头肩底形态策略参数配置")
+            
+            # 基础参数
+            col1, col2 = st.columns(2)
+            with col1:
+                params['lookback_period'] = st.number_input(
+                    "回看天数",
+                    min_value=60,
+                    max_value=250,
+                    value=120,
+                    help='分析头肩底形态的历史数据天数'
+                )
+                params['min_pattern_points'] = st.number_input(
+                    "最小形态点数",
+                    min_value=10,
+                    max_value=30,
+                    value=15,
+                    help='头肩底形态的最小点数要求'
+                )
+                params['volume_ratio'] = st.number_input(
+                    "成交量放大倍数",
+                    min_value=1.0,
+                    max_value=5.0,
+                    value=1.5,
+                    format="%.1f",
+                    help='突破颈线时的成交量要求（相对于平均成交量）'
+                )
+            
+            with col2:
+                params['shoulder_height_diff'] = st.number_input(
+                    "左右肩高度差异",
+                    min_value=0.01,
+                    max_value=0.30,
+                    value=0.10,
+                    format="%.2f",
+                    help='左右肩高度差异的容忍度（百分比）'
+                )
+                params['max_pattern_points'] = st.number_input(
+                    "最大形态点数",
+                    min_value=30,
+                    max_value=120,
+                    value=60,
+                    help='头肩底形态的最大点数限制'
+                )
+                params['neckline_slope_max'] = st.number_input(
+                    "颈线最大斜率",
+                    min_value=0.01,
+                    max_value=0.30,
+                    value=0.10,
+                    format="%.2f",
+                    help='颈线允许的最大斜率'
+                )
+
+            # 高级参数
+            st.subheader("信号强度权重设置")
+            col1, col2, col3 = st.columns(3)
+            weights = {}
+            with col1:
+                weights['pattern'] = st.number_input(
+                    "形态完整度",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.4,
+                    format="%.1f",
+                    help='形态标准度对信号强度的影响'
+                )
+            with col2:
+                weights['volume'] = st.number_input(
+                    "成交量",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.3,
+                    format="%.1f",
+                    help='成交量表现对信号强度的影响'
+                )
+            with col3:
+                weights['breakout'] = st.number_input(
+                    "突破强度",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.3,
+                    format="%.1f",
+                    help='颈线突破强度对信号强度的影响'
+                )
+
+            # 检查权重和是否为1
+            total_weight = sum(weights.values())
+            if abs(total_weight - 1.0) > 0.01:
+                st.warning(f"权重和必须为1.0, 当前权重和为 {total_weight}")
+
+            params['weights'] = weights
+
+            # 添加过滤条件
+            st.subheader("过滤条件")
+            col1, col2 = st.columns(2)
+            with col1:
+                params['min_volume'] = st.number_input(
+                    "最小成交量（手）",
+                    min_value=1000,
+                    max_value=1000000,
+                    value=10000,
+                    step=1000,
+                    help='最小成交量要求（手）'
+                )
+                params['min_amount'] = st.number_input(
+                    "最小成交额（万）",
+                    min_value=100,
+                    max_value=10000,
+                    value=1000,
+                    step=100,
+                    help='最小成交额要求（万元）'
+                )
+            
+            with col2:
+                params['price_range'] = st.slider(
+                    "股价范围",
+                    min_value=0.0,
+                    max_value=1000.0,
+                    value=(5.0, 200.0),
+                    step=0.1,
+                    format="%.1f",
+                    help='选股的价格范围'
+                )
 
     # 主界面
     col1, col2 = st.columns([1, 4])  # 创建两列，比例为1:4

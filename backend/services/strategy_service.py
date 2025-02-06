@@ -12,6 +12,7 @@ from typing import Any, Dict, List
 from backend.data.stock_data_fetcher import StockDataFetcher
 from backend.strategies.breakout import BreakoutStrategy
 from backend.strategies.double_up import DoubleUpStrategy
+from backend.strategies.hs_bottom import HSBottom
 from backend.strategies.long_term_uptrend import LongTermUpTrendStrategy
 from backend.strategies.ma_pullback import MAPullbackStrategy
 from backend.strategies.swing_trading import SwingTradingStrategy
@@ -30,6 +31,7 @@ class StrategyService:
             "波段交易策略": SwingTradingStrategy,
             "扫描翻倍股": DoubleUpStrategy,
             "长期上涨策略": LongTermUpTrendStrategy,
+            "头肩底形态策略": HSBottom
         }
 
     async def scan_stocks(self, strategy: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -48,8 +50,9 @@ class StrategyService:
             ma_period = params.get("ma_period", 20)  # 假设设置了均线 
             max_ma_period = max(params.get("ma_periods", [20]))
             long_ma_period = params.get("long_ma_period", 20)  # 假设设置了长期均线
+            lookback_period = params.get("lookback_period", 20)
             period = params.get("period", 20)  # 假设直接设置了获取数据的周期
-            period = max(ma_period, long_ma_period, period, max_ma_period)
+            period = max(ma_period, long_ma_period, period, max_ma_period, lookback_period)
 
             years = period // 250
             months = period % 250 // 20
