@@ -56,7 +56,8 @@ def main():
         st.header("策略设置")
         strategy = st.selectbox(
             "选择策略",
-            ["均线回踩策略", "突破策略", "波段交易策略", "扫描翻倍股", "长期上涨策略", "头肩底形态策略", "爆发式选股策略"]
+            ["均线回踩策略", "突破策略", "波段交易策略", "扫描翻倍股", "长期上涨策略", "头肩底形态策略",
+             "爆发式选股策略"]
         )
         params = {}
         if strategy == "均线回踩策略":
@@ -310,7 +311,7 @@ def main():
 
         elif strategy == "头肩底形态策略":
             st.subheader("头肩底形态策略参数配置")
-            
+
             # 基础参数
             col1, col2 = st.columns(2)
             with col1:
@@ -336,7 +337,7 @@ def main():
                     format="%.1f",
                     help='突破颈线时的成交量要求（相对于平均成交量）'
                 )
-            
+
             with col2:
                 params['shoulder_height_diff'] = st.number_input(
                     "左右肩高度差异",
@@ -421,7 +422,7 @@ def main():
                     step=100,
                     help='最小成交额要求（万元）'
                 )
-            
+
             with col2:
                 params['price_range'] = st.slider(
                     "股价范围",
@@ -435,7 +436,7 @@ def main():
 
         elif strategy == "爆发式选股策略":
             st.subheader("爆发式选股策略参数配置")
-            
+
             # 基础参数
             col1, col2 = st.columns(2)
             with col1:
@@ -460,7 +461,7 @@ def main():
                     value=20,
                     help='计算布林带的周期'
                 )
-            
+
             with col2:
                 params['bb_std'] = st.number_input(
                     "布林带标准差倍数",
@@ -484,6 +485,46 @@ def main():
                     value=100,
                     help='用于计算的股票交易天数'
                 )
+
+            st.subheader("过滤条件")
+            need_filter = st.checkbox("是否过滤结果", value=True, help="通过下列条件过滤扫描结果")
+            if need_filter:
+                col1, col2 = st.columns(2)
+                with col1:
+                    params["signal"] = st.number_input(
+                        "综合分数",
+                        min_value=0.0,
+                        max_value=100.00,
+                        value=70.0,
+                        format="%.2f",
+                        help="返回结果signal大于该值"
+                    )
+                    params["explosion_probability"] = st.number_input(
+                        "暴涨概率",
+                        min_value=0.0,
+                        max_value=100.0,
+                        value=50.0,
+                        format="%.2f",
+                        help="返回结果暴涨概率大于该值"
+                    )
+                with col2:
+                    params["volume_ratio"] = st.number_input(
+                        "量比",
+                        min_value=0.0,
+                        max_value=10.0,
+                        value=1.5,
+                        format="%.2f",
+                        help="返回结果增量比例需大于该值"
+                    )
+                    params["rsi_range"] = st.slider(
+                        "RSI区间",
+                        min_value=0.0,
+                        max_value=100.0,
+                        value=(45.0, 65.0),  # 设置默认范围
+                        step=0.1,
+                        format="%.1f",
+                        help="返回结果rsi在此区间"
+                    )
 
             # 权重设置
             st.subheader("信号强度权重设置")

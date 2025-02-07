@@ -9,10 +9,10 @@ import logging
 import numpy as np
 import pandas as pd
 
+from backend.ml.data_collector import ExplosiveStockDataCollector
+from backend.ml.model_trainer import ExplosiveStockModelTrainer
 from backend.strategies.base import BaseStrategy
 from backend.utils.indicators import CalIndicators
-from backend.ml.model_trainer import ExplosiveStockModelTrainer
-from backend.ml.data_collector import ExplosiveStockDataCollector
 
 
 class ExplosiveStockStrategy(BaseStrategy):
@@ -37,15 +37,19 @@ class ExplosiveStockStrategy(BaseStrategy):
     def _init_params(self):
         """初始化策略参数"""
         self._params = {
-            "volume_ma": 20,      # 成交量均线周期
-            "rsi_period": 14,     # RSI周期
-            "bb_period": 20,      # 布林带周期
-            "bb_std": 2,          # 布林带标准差倍数
-            "recent_days": 5,     # 近期趋势分析天数
-            "volume_weight": 0.35, # 成交量分析权重
-            "momentum_weight": 0.30, # 动量分析权重
+            "volume_ma": 20,  # 成交量均线周期
+            "rsi_period": 14,  # RSI周期
+            "bb_period": 20,  # 布林带周期
+            "bb_std": 2,  # 布林带标准差倍数
+            "recent_days": 5,  # 近期趋势分析天数
+            "signal": 0.0,  # 返回结果signal大于该值
+            "rsi_range": (0.0, 100.0),  # 返回结果rsi在此区间
+            "volume_ratio": 0.0,  # 返回结果增量比例需大于该值
+            "explosion_probability": 0.0,  # 返回结果暴涨概率大于该值
+            "volume_weight": 0.35,  # 成交量分析权重
+            "momentum_weight": 0.30,  # 动量分析权重
             "pattern_weight": 0.20,  # 形态分析权重
-            "volatility_weight": 0.15 # 波动性分析权重
+            "volatility_weight": 0.15  # 波动性分析权重
         }
 
     def _init_ml_model(self):
@@ -54,7 +58,7 @@ class ExplosiveStockStrategy(BaseStrategy):
         try:
             model_path = "backend/ml/models/explosive_stock_model.joblib"
             scaler_path = "backend/ml/models/explosive_stock_scaler.joblib"
-            
+
             self.ml_trainer = ExplosiveStockModelTrainer()
             self.ml_trainer.load_model(model_path, scaler_path)
             logging.info("成功加载机器学习模型")
@@ -80,7 +84,16 @@ class ExplosiveStockStrategy(BaseStrategy):
             final_score = self._calculate_final_score(scores)
 
             # 生成详细信号
-            return self._generate_detailed_signal(df, scores, final_score)
+            signal = self._generate_detailed_signal(df, scores, final_score)
+
+            # 根据参数过滤结果
+            if (signal['signal'] < self._params['signal'] or  # 信号分数过滤
+                    not (self._params['rsi_range'][0] <= signal['rsi'] <= self._params['rsi_range'][1]) or  # RSI范围过滤
+                    signal['volume_ratio'] < self._params['volume_ratio'] or  # 成交量比率过滤
+                    signal['explosion_probability'] < self._params['explosion_probability']):  # 暴涨概率过滤
+                return pd.Series({'signal': 0})
+
+            return signal
 
         except Exception as e:
             logging.exception("生成信号时发生错误")
@@ -367,10 +380,10 @@ class ExplosiveStockStrategy(BaseStrategy):
         try:
             if not self._is_model_ready():
                 return self._rule_based_prediction(df)
-            
+
             features = self._prepare_features(df)
             return self._make_prediction(features)
-            
+
         except Exception as e:
             logging.exception(f"使用机器学习模型预测暴涨概率时发生错误: {e}")
             return self._rule_based_prediction(df)
@@ -436,7 +449,8 @@ class ExplosiveStockStrategy(BaseStrategy):
             return "下轨区间"
         return "中轨区间"
 
-    def _generate_buy_signal(self, score: float) -> str:
+    @staticmethod
+    def _generate_buy_signal(score: float) -> str:
         """生成买入建议"""
         if score > 0.8:
             return "强烈建议买入"
@@ -446,7 +460,8 @@ class ExplosiveStockStrategy(BaseStrategy):
             return "观察"
         return "暂不建议"
 
-    def _assess_risk(self, df: pd.DataFrame) -> str:
+    @staticmethod
+    def _assess_risk(df: pd.DataFrame) -> str:
         """评估风险等级"""
         volatility = df['close'].pct_change().std() * np.sqrt(252)  # 年化波动率
 

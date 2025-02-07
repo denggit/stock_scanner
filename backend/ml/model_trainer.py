@@ -69,6 +69,6 @@ class ExplosiveStockModelTrainer:
         try:
             self.model = joblib.load(model_path)
             self.scaler = joblib.load(scaler_path)
-            logger.info(f"模型已加载: {model_path}")
+            logger.debug(f"模型已加载: {model_path}")
         except Exception as e:
             logger.exception(f"加载模型失败: {e}")
