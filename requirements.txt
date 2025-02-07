@@ -25,6 +25,7 @@ pydantic_settings
 # Database
 redis>=4.5.0
 pymysql>=1.1.0
+cryptography
 
 # Utils
 python-dotenv>=1.0.0

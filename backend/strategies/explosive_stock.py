@@ -95,7 +95,7 @@ class ExplosiveStockStrategy(BaseStrategy):
 
             return False
         except Exception as e:
-            logging.exception("检查股票过滤条件时发生错误")
+            logging.exception(f"检查股票过滤条件时发生错误: {e}")
             return True
 
     def _calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -136,60 +136,68 @@ class ExplosiveStockStrategy(BaseStrategy):
             float: 0-1之间的成交量异动得分
         """
         try:
-            # 确保数据不含 NaN
+            # 1. 计算成交量比率
             recent_volume = df['volume'].iloc[-self._params['recent_days']:]
             recent_volume_ma = df['volume_ma20'].iloc[-self._params['recent_days']:]
 
             # 处理分母为0的情况
-            mask = recent_volume_ma != 0
+            mask = recent_volume_ma > 0  # 确保分母大于0
             if not mask.any():
-                logging.warning("所有成交量均线为0，无法计算成交量比率")
+                logging.warning("所有成交量均线为0或无效，无法计算成交量比率")
                 return 0.0
 
-            # 计算最近5天的成交量相对于20日均量的比值
             recent_volume_ratio = (recent_volume[mask] / recent_volume_ma[mask]).mean()
 
-            # 计算量价配合度
-            # 使用dropna()去除缺失值后再计算相关系数
-            price_changes = df['pct_chg'].iloc[-self._params['recent_days']:].dropna()
-            volume_changes = df['volume_pct'].iloc[-self._params['recent_days']:].dropna()
+            # 2. 计算量价相关性
+            try:
+                # 确保计算百分比变化时没有0值
+                price_changes = df['close'].pct_change().iloc[-self._params['recent_days']:]
+                volume_changes = df['volume'].pct_change().iloc[-self._params['recent_days']:]
 
-            # 确保两个序列长度相同且不为空
-            if len(price_changes) > 0 and len(volume_changes) > 0:
-                # 取两个序列的交集
-                common_index = price_changes.index.intersection(volume_changes.index)
-                if len(common_index) > 0:
-                    price_changes = price_changes[common_index]
-                    volume_changes = volume_changes[common_index]
-                    price_volume_coord = np.corrcoef(price_changes, volume_changes)[0, 1]
+                # 移除无效值
+                valid_mask = (~np.isnan(price_changes)) & (~np.isnan(volume_changes)) & \
+                             (~np.isinf(price_changes)) & (~np.isinf(volume_changes))
+
+                if valid_mask.sum() >= 3:  # 至少需要3个有效数据点
+                    price_changes = price_changes[valid_mask]
+                    volume_changes = volume_changes[valid_mask]
+
+                    # 使用 pandas 的 corr 方法计算相关系数
+                    price_volume_coord = price_changes.corr(volume_changes)
+
+                    if np.isnan(price_volume_coord) or np.isinf(price_volume_coord):
+                        logging.warning("量价相关系数计算结果无效，使用默认值0")
+                        price_volume_coord = 0
                 else:
+                    logging.warning("有效数据点不足，无法计算量价相关性")
                     price_volume_coord = 0
-            else:
+
+            except Exception as e:
+                logging.warning(f"计算量价相关性时出错: {str(e)}")
                 price_volume_coord = 0
 
-            # 处理 nan 和 inf 值
-            if np.isnan(price_volume_coord) or np.isinf(price_volume_coord):
-                logging.warning("量价相关系数计算结果无效")
-                price_volume_coord = 0
-
+            # 3. 处理异常值
             if np.isnan(recent_volume_ratio) or np.isinf(recent_volume_ratio):
-                logging.warning("成交量比率计算结果无效")
+                logging.warning("成交量比率计算结果无效，使用默认值1")
                 recent_volume_ratio = 1
 
-            # 归一化处理
+            # 4. 计算最终得分
             volume_score = (
-                    min(recent_volume_ratio / 3, 1) * 0.6 +
-                    (price_volume_coord + 1) / 2 * 0.4
+                    min(recent_volume_ratio / 3, 1) * 0.6 +  # 成交量比率得分
+                    (price_volume_coord + 1) / 2 * 0.4  # 量价相关性得分
             )
 
-            logging.debug(f"成交量分析得分: {volume_score:.2f}, "
-                          f"成交量比率: {recent_volume_ratio:.2f}, "
-                          f"量价相关: {price_volume_coord:.2f}")
+            logging.debug(
+                f"成交量分析结果:\n"
+                f"- 成交量比率: {recent_volume_ratio:.2f}\n"
+                f"- 量价相关性: {price_volume_coord:.2f}\n"
+                f"- 最终得分: {volume_score:.2f}"
+            )
 
-            return float(min(max(volume_score, 0), 1))  # 确保返回值在 0-1 之间
+            return float(min(max(volume_score, 0), 1))
 
         except Exception as e:
-            logging.exception(f"分析成交量异动时发生错误: {e}")
+            logging.exception("分析成交量异动时发生错误")
             return 0.0
 
     def _analyze_momentum(self, df: pd.DataFrame) -> float:
@@ -348,7 +356,8 @@ class ExplosiveStockStrategy(BaseStrategy):
             logging.exception(f"使用机器学习模型预测暴涨概率时发生错误: {e}")
             return 0.0
 
-    def _extract_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    @staticmethod
+    def _extract_features(df: pd.DataFrame) -> pd.DataFrame:
         """提取用于机器学习的特征"""
         features = pd.DataFrame()
 
@@ -517,8 +526,7 @@ class ExplosiveStockStrategy(BaseStrategy):
                 score += 0.3
 
             # 4. 均线系统评分
-            if df['close'].iloc[-1] > df['ma20'].iloc[-1] and \
-                    df['ma20'].iloc[-1] > df['ma20'].iloc[-5]:  # 均线向上
+            if df['close'].iloc[-1] > df['ma20'].iloc[-1] > df['ma20'].iloc[-5]:  # 均线向上
                 score += 0.2
 
             return float(min(score, 1.0))
