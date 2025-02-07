@@ -11,6 +11,8 @@ import pandas as pd
 
 from backend.strategies.base import BaseStrategy
 from backend.utils.indicators import CalIndicators
+from backend.ml.model_trainer import ExplosiveStockModelTrainer
+from backend.ml.data_collector import ExplosiveStockDataCollector
 
 
 class ExplosiveStockStrategy(BaseStrategy):
@@ -29,17 +31,35 @@ class ExplosiveStockStrategy(BaseStrategy):
 
     def __init__(self):
         super().__init__(name="爆发式选股策略", description="寻找20个交易日内可能暴涨30%的股票")
+        self._init_params()
+        self._init_ml_model()
+
+    def _init_params(self):
+        """初始化策略参数"""
         self._params = {
-            "volume_ma": 20,  # 成交量均线周期
-            "rsi_period": 14,  # RSI周期
-            "bb_period": 20,  # 布林带周期
-            "bb_std": 2,  # 布林带标准差倍数
-            "recent_days": 5,  # 近期趋势分析天数
-            "volume_weight": 0.35,  # 成交量分析权重
-            "momentum_weight": 0.30,  # 动量分析权重
+            "volume_ma": 20,      # 成交量均线周期
+            "rsi_period": 14,     # RSI周期
+            "bb_period": 20,      # 布林带周期
+            "bb_std": 2,          # 布林带标准差倍数
+            "recent_days": 5,     # 近期趋势分析天数
+            "volume_weight": 0.35, # 成交量分析权重
+            "momentum_weight": 0.30, # 动量分析权重
             "pattern_weight": 0.20,  # 形态分析权重
-            "volatility_weight": 0.15  # 波动性分析权重
+            "volatility_weight": 0.15 # 波动性分析权重
         }
+
+    def _init_ml_model(self):
+        """初始化机器学习模型"""
+        self.ml_trainer = None
+        try:
+            model_path = "backend/ml/models/explosive_stock_model.joblib"
+            scaler_path = "backend/ml/models/explosive_stock_scaler.joblib"
+            
+            self.ml_trainer = ExplosiveStockModelTrainer()
+            self.ml_trainer.load_model(model_path, scaler_path)
+            logging.info("成功加载机器学习模型")
+        except Exception as e:
+            logging.warning(f"加载机器学习模型失败: {e}")
 
     def generate_signal(self, data: pd.DataFrame) -> pd.Series:
         """生成交易信号"""
@@ -48,29 +68,31 @@ class ExplosiveStockStrategy(BaseStrategy):
                 return pd.Series({'signal': 0})
 
             # 数据预处理
-            df = data.copy()
-            for column in ['open', 'high', 'low', 'close', 'volume']:
-                df[column] = df[column].astype(float)
+            df = self._preprocess_data(data)
 
             # 股票筛选条件
             if self._should_filter_stock(df):
                 return pd.Series({'signal': 0})
 
-            # 1. 计算技术指标
+            # 计算技术指标和得分
             df = self._calculate_indicators(df)
-
-            # 2. 计算各维度得分
             scores = self._calculate_dimension_scores(df)
-
-            # 3. 计算综合得分
             final_score = self._calculate_final_score(scores)
 
-            # 4. 生成详细的信号信息
+            # 生成详细信号
             return self._generate_detailed_signal(df, scores, final_score)
 
         except Exception as e:
             logging.exception("生成信号时发生错误")
             return pd.Series({'signal': 0})
+
+    def _preprocess_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """数据预处理"""
+        df = data.copy()
+        numeric_columns = ['open', 'high', 'low', 'close', 'volume']
+        for column in numeric_columns:
+            df[column] = df[column].astype(float)
+        return df
 
     def _should_filter_stock(self, df: pd.DataFrame) -> bool:
         """
@@ -343,36 +365,31 @@ class ExplosiveStockStrategy(BaseStrategy):
     def _predict_with_ml(self, df: pd.DataFrame) -> float:
         """使用机器学习模型预测暴涨概率"""
         try:
-            # 特征工程
-            features = self._extract_features(df)
-
-            # TODO: 加载预训练模型并预测
-            # 这里需要实际训练好的模型
-            # prediction = model.predict_proba(features)[0][1]
-
-            # 临时返回基于规则的预测分数
-            return self._rule_based_prediction(df)
+            if not self._is_model_ready():
+                return self._rule_based_prediction(df)
+            
+            features = self._prepare_features(df)
+            return self._make_prediction(features)
+            
         except Exception as e:
             logging.exception(f"使用机器学习模型预测暴涨概率时发生错误: {e}")
-            return 0.0
+            return self._rule_based_prediction(df)
 
-    @staticmethod
-    def _extract_features(df: pd.DataFrame) -> pd.DataFrame:
-        """提取用于机器学习的特征"""
-        features = pd.DataFrame()
+    def _is_model_ready(self) -> bool:
+        """检查模型是否准备就绪"""
+        return self.ml_trainer is not None and self.ml_trainer.model is not None
 
-        # 价格特征
-        features['price_ma_ratio'] = df['close'] / df['ma20']
-        features['price_bb_position'] = (df['close'] - df['lower_band']) / (df['upper_band'] - df['lower_band'])
+    def _prepare_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """准备预测特征"""
+        collector = ExplosiveStockDataCollector()
+        features = collector._generate_features(df)
+        return features.iloc[-1:].copy()
 
-        # 成交量特征
-        features['volume_ma_ratio'] = df['volume'] / df['volume_ma20']
-
-        # 动量特征
-        features['rsi'] = df['rsi']
-        features['macd_hist'] = df['macd_hist']
-
-        return features.iloc[-1:]  # 只返回最新一行
+    def _make_prediction(self, features: pd.DataFrame) -> float:
+        """使用模型进行预测"""
+        features_scaled = self.ml_trainer.scaler.transform(features)
+        prediction = self.ml_trainer.model.predict_proba(features_scaled)[0][1]
+        return float(prediction)
 
     def _get_trend_strength(self, df: pd.DataFrame) -> str:
         """获取趋势强度描述"""
@@ -567,26 +584,14 @@ class ExplosiveStockStrategy(BaseStrategy):
             return 0.0
 
     def _calculate_dimension_scores(self, df: pd.DataFrame) -> dict:
-        """
-        计算各维度得分
-        
-        Args:
-            df: 包含技术指标的数据
-            
-        Returns:
-            dict: 包含各维度得分的字典
-        """
-        try:
-            return {
-                'volume': self._analyze_volume(df),
-                'momentum': self._analyze_momentum(df),
-                'pattern': self._analyze_pattern(df),
-                'volatility': self._analyze_volatility(df),
-                'ml': self._predict_with_ml(df)
-            }
-        except Exception as e:
-            logging.exception(f"计算维度得分时发生错误: {e}")
-            return {k: 0.0 for k in ['volume', 'momentum', 'pattern', 'volatility', 'ml']}
+        """计算各维度得分"""
+        return {
+            'volume': self._analyze_volume(df),
+            'momentum': self._analyze_momentum(df),
+            'pattern': self._analyze_pattern(df),
+            'volatility': self._analyze_volatility(df),
+            'ml': self._predict_with_ml(df)
+        }
 
     def _calculate_final_score(self, scores: dict) -> float:
         """

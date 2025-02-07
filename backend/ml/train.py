@@ -98,6 +98,6 @@ def train_model(model_save_path: str, scaler_save_path: str):
 
 if __name__ == "__main__":
     train_model(
-        model_save_path="models/explosive_strategy/explosive_stock_model.joblib",
-        scaler_save_path="models/explosive_strategy/explosive_stock_scaler.joblib"
+        model_save_path="back/ml/models/explosive_stock_model.joblib",
+        scaler_save_path="back/ml/models/explosive_stock_scaler.joblib"
     )
