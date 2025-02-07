@@ -149,7 +149,7 @@ def main():
             bullish = st.checkbox("多头排列", value=True, help="是否多头排列")
             ma_periods = []
             if bullish:
-                ma_periods = st.multiselect("均线周期", [5, 10, 20, 30, 60, 120, 250], default=[5, 20, 250],
+                ma_periods = st.multiselect("均线周期", [5, 10, 20, 30, 60, 120, 250], default=[5, 20, 60, 250],
                                             help="多头排列的均线周期")
 
             # 时间周期参数
@@ -180,7 +180,7 @@ def main():
                                                  help="卖出条件需满足RSI大于该值")
                 rsi_period = st.number_input("RSI周期", min_value=1, value=14, max_value=250, help="RSI周期")
             with col2:
-                rsi_oversold = st.number_input("超卖阈值", min_value=1, value=30, max_value=100,
+                rsi_oversold = st.number_input("超卖阈值", min_value=1, value=45, max_value=100,
                                                help="买入条件需满足RSI小于该值")
 
             # 振幅与波动性参数
@@ -355,13 +355,13 @@ def main():
                     value=60,
                     help='头肩底形态的最大点数限制'
                 )
-                params['neckline_slope_max'] = st.number_input(
+                params['neckline_slope_range'] = st.slider(
                     "颈线最大斜率",
-                    min_value=0.01,
-                    max_value=0.30,
-                    value=0.10,
-                    format="%.2f",
-                    help='颈线允许的最大斜率'
+                    min_value=-0.50,
+                    max_value=0.50,
+                    value=(-0.087, 0.268),
+                    format="%.3f",
+                    help='颈线允许的斜率范围'
                 )
 
             # 高级参数
@@ -370,7 +370,7 @@ def main():
             weights = {}
             with col1:
                 weights['pattern'] = st.number_input(
-                    "形态完整度",
+                    "形态完整",
                     min_value=0.0,
                     max_value=1.0,
                     value=0.4,
