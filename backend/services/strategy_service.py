@@ -12,6 +12,7 @@ from typing import Any, Dict, List
 from backend.data.stock_data_fetcher import StockDataFetcher
 from backend.strategies.breakout import BreakoutStrategy
 from backend.strategies.double_up import DoubleUpStrategy
+from backend.strategies.explosive_stock import ExplosiveStockStrategy
 from backend.strategies.hs_bottom import HSBottom
 from backend.strategies.long_term_uptrend import LongTermUpTrendStrategy
 from backend.strategies.ma_pullback import MAPullbackStrategy
@@ -31,7 +32,8 @@ class StrategyService:
             "波段交易策略": SwingTradingStrategy,
             "扫描翻倍股": DoubleUpStrategy,
             "长期上涨策略": LongTermUpTrendStrategy,
-            "头肩底形态策略": HSBottom
+            "头肩底形态策略": HSBottom,
+            "爆发式选股策略": ExplosiveStockStrategy
         }
 
     async def scan_stocks(self, strategy: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:

@@ -56,7 +56,7 @@ def main():
         st.header("策略设置")
         strategy = st.selectbox(
             "选择策略",
-            ["均线回踩策略", "突破策略", "波段交易策略", "扫描翻倍股", "长期上涨策略", "头肩底形态策略"]
+            ["均线回踩策略", "突破策略", "波段交易策略", "扫描翻倍股", "长期上涨策略", "头肩底形态策略", "爆发式选股策略"]
         )
         params = {}
         if strategy == "均线回踩策略":
@@ -432,6 +432,99 @@ def main():
                     format="%.1f",
                     help='选股的价格范围'
                 )
+
+        elif strategy == "爆发式选股策略":
+            st.subheader("爆发式选股策略参数配置")
+            
+            # 基础参数
+            col1, col2 = st.columns(2)
+            with col1:
+                params['volume_ma'] = st.number_input(
+                    "成交量均线周期",
+                    min_value=5,
+                    max_value=60,
+                    value=20,
+                    help='计算成交量均线的周期'
+                )
+                params['rsi_period'] = st.number_input(
+                    "RSI周期",
+                    min_value=5,
+                    max_value=30,
+                    value=14,
+                    help='计算RSI指标的周期'
+                )
+                params['bb_period'] = st.number_input(
+                    "布林带周期",
+                    min_value=5,
+                    max_value=60,
+                    value=20,
+                    help='计算布林带的周期'
+                )
+            
+            with col2:
+                params['bb_std'] = st.number_input(
+                    "布林带标准差倍数",
+                    min_value=1.0,
+                    max_value=4.0,
+                    value=2.0,
+                    format="%.1f",
+                    help='布林带的标准差倍数'
+                )
+                params['recent_days'] = st.number_input(
+                    "近期趋势分析天数",
+                    min_value=3,
+                    max_value=20,
+                    value=5,
+                    help='分析近期趋势的天数'
+                )
+
+            # 权重设置
+            st.subheader("信号强度权重设置")
+            weights = {}
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                weights['volume'] = st.number_input(
+                    "成交量",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.35,
+                    format="%.2f",
+                    help='成交量分析的权重'
+                )
+            with col2:
+                weights['momentum'] = st.number_input(
+                    "动量",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.30,
+                    format="%.2f",
+                    help='动量分析的权重'
+                )
+            with col3:
+                weights['pattern'] = st.number_input(
+                    "形态",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.20,
+                    format="%.2f",
+                    help='形态分析的权重'
+                )
+            with col4:
+                weights['volatility'] = st.number_input(
+                    "波动性",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.15,
+                    format="%.2f",
+                    help='波动性分析的权重'
+                )
+
+            # 检查权重和是否为1
+            total_weight = sum(weights.values())
+            if abs(total_weight - 1.0) > 0.01:
+                st.warning(f"权重和必须为1.0, 当前权重和为 {total_weight}")
+
+            params['weights'] = weights
 
     # 主界面
     col1, col2 = st.columns([1, 4])  # 创建两列，比例为1:4
