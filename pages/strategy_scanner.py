@@ -477,6 +477,13 @@ def main():
                     value=5,
                     help='分析近期趋势的天数'
                 )
+                params['period'] = st.number_input(
+                    "获取股票数据长度",
+                    min_value=60,
+                    max_value=500,
+                    value=100,
+                    help='用于计算的股票交易天数'
+                )
 
             # 权重设置
             st.subheader("信号强度权重设置")
