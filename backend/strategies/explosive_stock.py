@@ -49,7 +49,8 @@ class ExplosiveStockStrategy(BaseStrategy):
             "volume_weight": 0.35,  # 成交量分析权重
             "momentum_weight": 0.30,  # 动量分析权重
             "pattern_weight": 0.20,  # 形态分析权重
-            "volatility_weight": 0.15  # 波动性分析权重
+            "volatility_weight": 0.15,  # 波动性分析权重
+            "holdings": [],  # 持仓股票代码
         }
 
     def _init_ml_model(self):
@@ -74,9 +75,22 @@ class ExplosiveStockStrategy(BaseStrategy):
             # 数据预处理
             df = self._preprocess_data(data)
 
+            # 获取当前股票代码
+            stock_code = data['code'].iloc[-1] if 'code' in data.columns else None
+
+            # 检查是否是持仓股票
+            holdings = self._params.get('holdings', [])
+            holding_info = next(
+                (item for item in holdings if item['code'] == stock_code),
+                None
+            )
+            is_holding = holding_info is not None
+
             # 股票筛选条件
             if self._should_filter_stock(df):
-                return pd.Series({'signal': 0})
+                # 如果是持仓股票，即使不满足筛选条件也继续生成信号
+                if not is_holding:
+                    return pd.Series({'signal': 0})
 
             # 计算技术指标和得分
             df = self._calculate_indicators(df)
@@ -86,20 +100,56 @@ class ExplosiveStockStrategy(BaseStrategy):
             # 生成详细信号
             signal = self._generate_detailed_signal(df, scores, final_score)
 
-            # 根据参数过滤结果
-            if (signal['signal'] < self._params['signal'] or  # 信号分数过滤
-                    not (self._params['rsi_range'][0] <= signal['rsi'] <= self._params['rsi_range'][1]) or  # RSI范围过滤
-                    signal['volume_ratio'] < self._params['volume_ratio'] or  # 成交量比率过滤
-                    signal['explosion_probability'] < self._params['explosion_probability']):  # 暴涨概率过滤
+            # 如果是持仓股票，添加持仓建议
+            if is_holding:
+                entry_price = holding_info['cost']
+                current_price = df['close'].iloc[-1]
+                returns = (current_price - entry_price) / entry_price * 100
+
+                # 生成持仓建议
+                should_sell = any([
+                    returns >= 30,  # 达到预期目标
+                    returns <= -7,  # 止损线
+                    signal['signal'] < 40,  # 信号显著转弱
+                    signal['rsi'] > 85,  # RSI严重超买
+                    signal['volume_ratio'] < 0.5  # 成交量萎缩
+                ])
+
+                should_reduce = (
+                        15 <= returns < 30 and  # 收益在目标区间
+                        signal['signal'] < 60  # 信号转弱
+                )
+
+                signal = pd.concat([signal, pd.Series({
+                    'is_holding': True,
+                    'entry_price': entry_price,
+                    'returns': round(returns, 2),
+                    'position_advice': (
+                        "建议卖出" if should_sell else
+                        "建议减仓" if should_reduce else
+                        "继续持有" if signal['signal'] > 50 else
+                        "密切关注"
+                    ),
+                    'advice_reason': self._generate_advice_reason(
+                        signal, returns, should_sell, should_reduce
+                    )
+                })])
+
+            # 对非持仓股票进行信号过滤
+            elif (signal['signal'] < self._params['signal'] or  # 信号分数过滤
+                  not (self._params['rsi_range'][0] <= signal['rsi'] <= self._params['rsi_range'][1]) or  # RSI范围过滤
+                  signal['volume_ratio'] < self._params['volume_ratio'] or  # 成交量比率过滤
+                  signal['explosion_probability'] < self._params['explosion_probability']):  # 暴涨概率过滤
                 return pd.Series({'signal': 0})
 
             return signal
 
         except Exception as e:
-            logging.exception("生成信号时发生错误")
+            logging.exception(f"生成信号时发生错误: {e}")
             return pd.Series({'signal': 0})
 
-    def _preprocess_data(self, data: pd.DataFrame) -> pd.DataFrame:
+    @staticmethod
+    def _preprocess_data(data: pd.DataFrame) -> pd.DataFrame:
         """数据预处理"""
         df = data.copy()
         numeric_columns = ['open', 'high', 'low', 'close', 'volume']
@@ -107,7 +157,8 @@ class ExplosiveStockStrategy(BaseStrategy):
             df[column] = df[column].astype(float)
         return df
 
-    def _should_filter_stock(self, df: pd.DataFrame) -> bool:
+    @staticmethod
+    def _should_filter_stock(df: pd.DataFrame) -> bool:
         """
         检查是否应该过滤掉该股票
         
@@ -404,7 +455,8 @@ class ExplosiveStockStrategy(BaseStrategy):
         prediction = self.ml_trainer.model.predict_proba(features_scaled)[0][1]
         return float(prediction)
 
-    def _get_trend_strength(self, df: pd.DataFrame) -> str:
+    @staticmethod
+    def _get_trend_strength(df: pd.DataFrame) -> str:
         """获取趋势强度描述"""
         recent_trend = df['close'].iloc[-5:].pct_change().mean()
         if recent_trend > 0.02:
@@ -681,3 +733,36 @@ class ExplosiveStockStrategy(BaseStrategy):
         except Exception as e:
             logging.exception(f"生成详细信号时发生错误: {e}")
             return pd.Series({'signal': 0})
+
+    @staticmethod
+    def _generate_advice_reason(signal: pd.Series, returns: float,
+                                should_sell: bool, should_reduce: bool) -> str:
+        """
+        生成持仓建议原因
+        
+        Args:
+            signal: 信号Series，包含各项技术指标
+            returns: 当前收益率（百分比）
+            should_sell: 是否建议卖出 (已通过其他条件判断)
+            should_reduce: 是否建议减仓
+            
+        Returns:
+            str: 建议原因说明
+        """
+        # 按优先级顺序检查各种情况
+        if returns >= 30:
+            return "已达预期目标(30%)，建议获利了结"
+        elif returns <= -7:
+            return "已触及止损线(-7%)，建议止损出局"
+        elif signal['rsi'] > 85:
+            return f"RSI超买({signal['rsi']:.1f})，建议获利了结"
+        elif signal['signal'] < 40:
+            return f"技术指标显著转弱(信号:{signal['signal']:.1f})，建议清仓观望"
+        elif signal['volume_ratio'] < 0.5:
+            return f"成交量明显萎缩(量比:{signal['volume_ratio']:.2f})，建议注意风险"
+        elif should_reduce:
+            return f"已获利{returns:.1f}%且信号转弱，建议适当减仓"
+        elif signal['signal'] > 70:
+            return f"信号强度良好({signal['signal']:.1f})，可继续持有"
+        else:
+            return f"信号一般({signal['signal']:.1f})，需密切关注"

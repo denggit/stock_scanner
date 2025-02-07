@@ -11,6 +11,7 @@ from typing import Optional, List, Dict, Any
 import pandas as pd
 
 from backend.data.stock_data_fetcher import StockDataFetcher
+from backend.utils import format_info
 from backend.utils.logger import setup_logger
 
 logger = setup_logger("stock_service")
@@ -20,21 +21,6 @@ class StockService:
 
     def __init__(self):
         self.data_fetcher = StockDataFetcher()
-
-    def _format_stock_code(self, stock_code: str) -> str:
-        """格式化股票代码"""
-        stock_code = stock_code.strip()
-        if '.' in stock_code:
-            return stock_code
-        elif stock_code.startswith('6'):
-            return f"sh.{stock_code}"
-        elif stock_code.startswith('3') or stock_code.startswith('0'):
-            return f"sz.{stock_code}"
-        elif stock_code.startswith('8') or stock_code.startswith('4'):
-            return f"bj.{stock_code}"
-        else:
-            logger.warning(f"This stock code is invalid: {stock_code}")
-            return stock_code
 
     async def get_stock_data(
             self,
@@ -47,7 +33,7 @@ class StockService:
         """获取股票数据，考虑均线计算需要的额外数据"""
         try:
             logger.info(f"Fetching {period} data for {code} from {start_date} to {end_date}")
-            formatted_code = self._format_stock_code(code)
+            formatted_code = format_info.stock_code(code)
 
             # 如果有均线周期，计算需要提前获取的天数
             extra_days = 0

@@ -10,6 +10,8 @@ import os
 import sys
 from pathlib import Path
 
+from backend.utils import format_info
+
 root_dir = Path(__file__).parent.parent.absolute()
 sys.path.append(str(root_dir))
 os.chdir(root_dir)
@@ -23,7 +25,6 @@ import dotenv
 
 from tqdm import tqdm
 from backend.data.data_manager import DataUpdateManager
-from backend.utils.format_time import format_time
 from backend.utils.logger import setup_logger
 
 dotenv.load_dotenv()
@@ -51,7 +52,7 @@ def update_database(args, logger):
 
         # 显示最终结果
         logger.info("更新数据库完成")
-        logger.info(f"更新数据库完成，耗时 {format_time(elapsed_time)}")
+        logger.info(f"更新数据库完成，耗时 {format_info.time(elapsed_time)}")
         logger.info(f"处理速度：{total_stocks / elapsed_time:.2f} 只/秒")
 
         if result['failed'] > 0:

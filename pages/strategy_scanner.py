@@ -14,6 +14,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
+from backend.utils import format_info
 from backend.utils.file_check import ensure_dir
 
 
@@ -436,6 +437,53 @@ def main():
 
         elif strategy == "爆发式选股策略":
             st.subheader("爆发式选股策略参数配置")
+            
+            # 添加持仓信息
+            st.subheader("持仓信息")
+            
+            # 初始化持仓列表
+            if 'holdings' not in st.session_state:
+                st.session_state.holdings = []
+            
+            # 使用 expander 来收起持仓信息输入区域
+            with st.expander("添加持仓股票", expanded=False):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    stock_code = st.text_input(
+                        "股票代码",
+                        placeholder="例如: 000001",
+                        help="输入持仓股票代码"
+                    )
+                    stock_code = format_info.stock_code(stock_code)
+                with col2:
+                    cost_price = st.number_input(
+                        "持仓成本",
+                        min_value=0.01,
+                        value=10.0,
+                        format="%.2f",
+                        help="输入持仓成本价"
+                    )
+                with col3:
+                    if st.button("添加持仓"):
+                        hold = {'code': stock_code, 'cost': cost_price}
+                        if stock_code and cost_price > 0 and hold not in st.session_state.holdings:
+                            st.session_state.holdings.append(hold)
+                            st.success(f"已添加持仓: {stock_code}")
+
+            # 显示当前持仓
+            if st.session_state.holdings:
+                st.write("当前持仓:")
+                holdings_df = pd.DataFrame(st.session_state.holdings)
+                holdings_df.columns = ['股票代码', '持仓成本']
+                st.dataframe(holdings_df)
+                
+                # 添加清除持仓按钮
+                if st.button("清除所有持仓"):
+                    st.session_state.holdings = []
+                    st.success("已清除所有持仓信息")
+            
+            # 将持仓信息添加到参数中
+            params['holdings'] = st.session_state.holdings
 
             # 基础参数
             col1, col2 = st.columns(2)
@@ -487,7 +535,7 @@ def main():
                 )
 
             st.subheader("过滤条件")
-            need_filter = st.checkbox("是否过滤结果", value=True, help="通过下列条件过滤扫描结果")
+            need_filter = st.checkbox("是否过滤结果", value=False, help="通过下列条件过滤扫描结果")
             if need_filter:
                 col1, col2 = st.columns(2)
                 with col1:
