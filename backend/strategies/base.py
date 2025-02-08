@@ -9,6 +9,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 
+import numpy as np
 import pandas as pd
 
 
@@ -70,3 +71,25 @@ class BaseStrategy(ABC):
             -1: 卖出
         """
         pass
+
+    @staticmethod
+    def calculate_metrics(returns: pd.Series) -> dict:
+        """计算回测指标"""
+        total_return = (returns.iloc[-1] - 1) * 100
+        daily_returns = returns.pct_change()
+
+        # 计算最大回撤
+        cummax = returns.cummax()
+        drawdown = (returns - cummax) / cummax
+        max_drawdown = drawdown.min() * 100
+
+        # 计算夏普比率
+        risk_free_rate = 0.03  # 假设无风险利率为3%
+        excess_returns = daily_returns - risk_free_rate / 252
+        sharpe_ratio = np.sqrt(252) * excess_returns.mean() / daily_returns.std()
+
+        return {
+            "total_return": total_return,
+            "max_drawdown": max_drawdown,
+            "sharpe_ratio": sharpe_ratio
+        }
