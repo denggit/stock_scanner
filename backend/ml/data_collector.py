@@ -3,6 +3,7 @@ from typing import Tuple
 
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import StandardScaler
 
 from backend.utils.indicators import CalIndicators
 from backend.utils.logger import setup_logger
@@ -19,11 +20,68 @@ class ExplosiveStockDataCollector:
     def __init__(self,
                  price_increase_threshold=0.3,  # 涨幅阈值30%
                  forward_window=20,  # 向前看20个交易日
-                 volume_multiplier=3  # 成交量倍数阈值
-                 ):
+                 volume_multiplier=3,  # 成交量倍数阈值
+                 feature_params=None):
         self.price_threshold = price_increase_threshold
         self.forward_window = forward_window
         self.volume_multiplier = volume_multiplier
+        # 使用默认参数或传入的自定义参数
+        self.feature_params = {
+            # 均线参数
+            'ma_periods': [5, 10, 20, 60],
+
+            # 波动率参数
+            'volatility_window': 20,
+            'volatility_threshold': 0.02,
+
+            # 趋势参数
+            'sideways_threshold': 0.03,
+            'trend_ma_period': 20,
+
+            # 动量参数
+            'momentum_windows': [5, 10, 20, 60],
+            'momentum_weights': [0.4, 0.3, 0.2, 0.1],
+
+            # 周期参数
+            'cycle_window': 120,
+
+            # KDJ参数
+            'kdj_window': 9,
+            'kdj_smooth': 3,
+
+            # MACD参数
+            'macd_fast': 12,
+            'macd_slow': 26,
+            'macd_signal': 9,
+
+            # RSI参数
+            'rsi_window': 14,
+
+            # 布林带参数
+            'bb_window': 20,
+            'bb_std': 2,
+
+            # DMI参数
+            'dmi_window': 14,
+            'dmi_smooth': 14,
+
+            # 成交量参数
+            'volume_ma_windows': [5, 10],
+            'volume_ratio_threshold': 1.5,
+
+            # 历史统计参数
+            'historical_windows': [5, 10, 20, 60],
+            'percentile_window': 250,
+
+            # 趋势强度参数
+            'trend_strength_window': 20,
+
+            # 资金流向参数
+            'mfi_period': 14,
+
+            # 季节性参数
+            'seasonal_period': 20
+        } if feature_params is None else feature_params
 
     def _preprocess_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """预处理数据框，根据字段类型进行适当的转换"""
@@ -436,10 +494,9 @@ class ExplosiveStockDataCollector:
             logger.warning(f"旗形形态检测失败: {e}")
             return False
 
-    def _calculate_sideways_days(self, df: pd.DataFrame, threshold: float = 0.03) -> pd.Series:
-        """计算横盘天数
-        threshold: 价格波动阈值，默认3%
-        """
+    def _calculate_sideways_days(self, df: pd.DataFrame) -> pd.Series:
+        """计算横盘天数"""
+        threshold = self.feature_params['sideways_threshold']
         sideways_days = pd.Series(0, index=df.index)
         price = df['close']
 
@@ -456,13 +513,10 @@ class ExplosiveStockDataCollector:
 
         return sideways_days
 
-    def _calculate_volatility_days(self, df: pd.DataFrame,
-                                   window: int = 20,
-                                   threshold: float = 0.02) -> pd.Series:
-        """计算高波动持续天数
-        window: 计算波动率的窗口期
-        threshold: 高波动阈值
-        """
+    def _calculate_volatility_days(self, df: pd.DataFrame) -> pd.Series:
+        """计算高波动持续天数"""
+        window = self.feature_params['volatility_window']
+        threshold = self.feature_params['volatility_threshold']
         volatility = df['close'].pct_change().rolling(window).std()
         volatility_days = pd.Series(0, index=df.index)
 
@@ -496,12 +550,10 @@ class ExplosiveStockDataCollector:
         return trend_duration
 
     def _calculate_price_momentum(self, df: pd.DataFrame) -> pd.Series:
-        """计算价格动量
-        使用多个时间窗口的收益率来衡量动量
-        """
+        """计算价格动量"""
+        windows = self.feature_params['momentum_windows']
+        weights = self.feature_params['momentum_weights']
         momentum = pd.Series(0, index=df.index)
-        windows = [5, 10, 20, 60]  # 多个时间窗口
-        weights = [0.4, 0.3, 0.2, 0.1]  # 对应权重
 
         for window, weight in zip(windows, weights):
             returns = df['close'].pct_change(window)
@@ -554,11 +606,9 @@ class ExplosiveStockDataCollector:
 
         return monthly_returns
 
-    def _detect_price_cycle(self, df: pd.DataFrame,
-                            window: int = 120) -> pd.Series:
-        """检测价格周期
-        使用傅里叶变换检测主要周期
-        """
+    def _detect_price_cycle(self, df: pd.DataFrame) -> pd.Series:
+        """检测价格周期"""
+        window = self.feature_params['cycle_window']
         try:
             from scipy import fft
 
@@ -584,3 +634,264 @@ class ExplosiveStockDataCollector:
         except Exception as e:
             logger.warning(f"周期检测失败: {e}")
             return pd.Series(0, index=df.index)
+
+    def optimize_feature_params(self, df: pd.DataFrame, test_params: dict) -> dict:
+        """优化特征工程参数"""
+        import json
+        from pathlib import Path
+
+        # 创建临时文件夹存储中间结果
+        temp_dir = Path("temp_results")
+        temp_dir.mkdir(exist_ok=True)
+
+        best_params = {}
+        best_score = 0
+
+        # 将参数分组
+        param_groups = {
+            '基础指标': {
+                'ma_periods': test_params['ma_periods'],
+                'volatility_window': test_params['volatility_window'],
+                'volatility_threshold': test_params['volatility_threshold']
+            },
+            '趋势指标': {
+                'sideways_threshold': test_params['sideways_threshold'],
+                'trend_ma_period': test_params['trend_ma_period'],
+                'trend_strength_window': test_params['trend_strength_window']
+            },
+            '技术指标1': {
+                'kdj_window': test_params['kdj_window'],
+                'kdj_smooth': test_params.get('kdj_smooth', [3]),
+                'rsi_window': test_params['rsi_window']
+            },
+            '技术指标2': {
+                'macd_fast': test_params['macd_fast'],
+                'macd_slow': test_params['macd_slow'],
+                'macd_signal': test_params['macd_signal']
+            },
+            '量价指标': {
+                'volume_ma_windows': test_params['volume_ma_windows'],
+                'volume_ratio_threshold': test_params['volume_ratio_threshold'],
+                'mfi_period': test_params['mfi_period']
+            },
+            '波动指标': {
+                'bb_window': test_params['bb_window'],
+                'bb_std': test_params['bb_std'],
+                'dmi_window': test_params['dmi_window']
+            }
+        }
+
+        # 逐组优化参数
+        for group_name, group_params in param_groups.items():
+            logger.info(f"\n开始优化 {group_name} 参数组...")
+
+            # 生成当前组的参数组合
+            current_combinations = self._generate_param_combinations(group_params)
+
+            # 分批处理参数组合,可以根据机器配置调整 batch_size
+            batch_size = 20  # 每批处理的参数组合数量
+            for batch_idx in range(0, len(current_combinations), batch_size):
+                batch_combinations = current_combinations[batch_idx:batch_idx + batch_size]
+                batch_results = []
+
+                # 处理当前批次的参数组合
+                for params in batch_combinations:
+                    try:
+                        # 合并当前组参数和之前的最优参数
+                        test_params = {**best_params, **params}
+                        self.feature_params = test_params
+
+                        # 生成特征并评估
+                        features, labels = self.collect_training_data(df)
+                        if len(features) == 0 or len(labels) == 0:
+                            continue
+
+                        score = self._evaluate_features(features, labels)
+
+                        # 保存结果
+                        batch_results.append({
+                            'params': test_params,
+                            'score': score
+                        })
+
+                        if score > best_score:
+                            best_score = score
+                            best_params = test_params.copy()
+                            logger.info(f"找到更好的参数组合，得分: {score:.4f}")
+                            logger.info(f"参数: {params}")
+
+                    except Exception as e:
+                        logger.warning(f"参数组合 {params} 评估失败: {e}")
+                        continue
+
+                # 保存当前批次结果到临时文件
+                result_file = temp_dir / f"{group_name}_batch_{batch_idx}.json"
+                with open(result_file, 'w') as f:
+                    json.dump(batch_results, f)
+
+                # 清理内存
+                del batch_results
+                gc.collect()
+
+            # 处理完当前组后，整合该组的所有结果
+            group_results = []
+            for result_file in temp_dir.glob(f"{group_name}_batch_*.json"):
+                with open(result_file, 'r') as f:
+                    group_results.extend(json.load(f))
+                result_file.unlink()  # 删除临时文件
+
+            # 更新最优参数
+            if group_results:
+                best_group_result = max(group_results, key=lambda x: x['score'])
+                if best_group_result['score'] > best_score:
+                    best_score = best_group_result['score']
+                    best_params = best_group_result['params']
+
+            # 保存当前最优结果
+            with open(temp_dir / "best_params.json", 'w') as f:
+                json.dump({
+                    'best_params': best_params,
+                    'best_score': best_score
+                }, f)
+
+        # 清理临时文件夹
+        try:
+            temp_dir.rmdir()
+        except:
+            logger.warning("无法删除临时文件夹，可能还有文件存在")
+
+        return best_params
+
+    def _generate_param_combinations(self, test_params: dict) -> list:
+        """生成参数组合"""
+        from itertools import product
+
+        # 示例参数范围
+        default_test_params = {
+            # 均线参数
+            'ma_periods': [
+                [5, 10, 20, 60],
+                [3, 7, 15, 30],
+                [7, 14, 30, 90]
+            ],
+
+            # 波动率参数
+            'volatility_window': [10, 20, 30],
+            'volatility_threshold': [0.01, 0.02, 0.03],
+
+            # 趋势参数
+            'sideways_threshold': [0.02, 0.03, 0.04],
+            'trend_ma_period': [10, 20, 30],
+
+            # 动量参数
+            'momentum_windows': [
+                [5, 10, 20],
+                [3, 7, 15],
+                [7, 14, 30]
+            ],
+            'momentum_weights': [
+                [0.4, 0.3, 0.3],
+                [0.33, 0.33, 0.34],
+                [0.5, 0.3, 0.2]
+            ],
+
+            # 周期参数
+            'cycle_window': [60, 120, 180],
+
+            # KDJ参数
+            'kdj_window': [7, 9, 14],
+            'kdj_smooth': [2, 3, 4],
+
+            # MACD参数
+            'macd_fast': [8, 12, 15],
+            'macd_slow': [21, 26, 30],
+            'macd_signal': [7, 9, 11],
+
+            # RSI参数
+            'rsi_window': [10, 14, 20],
+
+            # 布林带参数
+            'bb_window': [15, 20, 25],
+            'bb_std': [1.5, 2, 2.5],
+
+            # DMI参数
+            'dmi_window': [10, 14, 20],
+            'dmi_smooth': [10, 14, 20],
+
+            # 成交量参数
+            'volume_ma_windows': [
+                [3, 7],
+                [5, 10],
+                [7, 14]
+            ],
+            'volume_ratio_threshold': [1.3, 1.5, 2.0],
+
+            # 历史统计参数
+            'historical_windows': [
+                [5, 10, 20],
+                [7, 14, 30],
+                [10, 20, 60]
+            ],
+            'percentile_window': [200, 250, 300],
+
+            # 趋势强度参数
+            'trend_strength_window': [15, 20, 25],
+
+            # 资金流向参数
+            'mfi_period': [10, 14, 20],
+
+            # 季节性参数
+            'seasonal_period': [15, 20, 25]
+        }
+
+        # 使用传入的参数范围或默认范围
+        test_params = test_params or default_test_params
+
+        # 生成所有可能的参数组合
+        keys = test_params.keys()
+        values = test_params.values()
+        combinations = list(product(*values))
+
+        return [dict(zip(keys, combo)) for combo in combinations]
+
+    def _evaluate_features(self, features: pd.DataFrame, labels: pd.Series) -> float:
+        """评估特征质量"""
+        try:
+            from sklearn.model_selection import cross_val_score
+            from sklearn.ensemble import RandomForestClassifier  # 使用随机森林进行评估
+
+            # 使用较小的样本进行评估,可以根据机器配置调整 max_samples
+            max_samples = 20000  # 增加样本量以提高评估质量
+            if len(features) > max_samples:
+                from sklearn.model_selection import train_test_split
+                features, _, labels, _ = train_test_split(
+                    features, labels,
+                    train_size=max_samples,
+                    random_state=42
+                )
+
+            # 标准化特征
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(features)
+
+            # 使用随机森林进行评估
+            clf = RandomForestClassifier(
+                n_estimators=100,  # 增加树的数量
+                max_depth=5,
+                random_state=42,
+                n_jobs=-1  # 使用所有CPU核心
+            )
+
+            # 使用5折交叉验证
+            scores = cross_val_score(
+                clf, X_scaled, labels,
+                cv=5,
+                scoring='f1',
+                n_jobs=-1
+            )
+
+            return scores.mean()
+
+        except Exception as e:
+            logger.warning(f"特征评估失败: {e}")
+            return 0.0

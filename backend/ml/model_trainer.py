@@ -160,6 +160,7 @@ class ExplosiveStockModelTrainer:
 
     def optimize_parameters(self, features: pd.DataFrame, labels: pd.Series):
         """使用网格搜索优化模型参数"""
+        # 定义参数网格
         param_grid = {
             'n_estimators': [50, 100, 200],
             'learning_rate': [0.01, 0.1, 0.3],

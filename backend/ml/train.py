@@ -96,6 +96,46 @@ def train_model(model_save_path: str, scaler_save_path: str):
         # 分析特征相关性
         high_corr_features = collector.analyze_feature_correlation(features_df)
 
+        # 优化特征工程参数
+        test_params = {
+            # 均线参数
+            'ma_periods': [[5, 10, 20, 60], [3, 7, 15, 30]],
+            'volatility_window': [10, 20],
+            'volatility_threshold': [0.02, 0.03],
+            'sideways_threshold': [0.02, 0.03],
+            'trend_ma_period': [10, 20],
+            
+            # 动量参数
+            'momentum_windows': [[5, 10, 20], [3, 7, 15]],
+            'momentum_weights': [[0.4, 0.3, 0.3], [0.33, 0.33, 0.34]],
+            
+            # 技术指标参数
+            'kdj_window': [9, 14],
+            'macd_fast': [12, 15],
+            'macd_slow': [26, 30],
+            'macd_signal': [9, 11],
+            'rsi_window': [14, 20],
+            
+            # 布林带和DMI参数
+            'bb_window': [20, 25],
+            'bb_std': [2, 2.5],
+            'dmi_window': [14, 20],
+            
+            # 成交量参数
+            'volume_ma_windows': [[5, 10], [7, 14]],
+            'volume_ratio_threshold': [1.5, 2.0],
+            
+            # 其他参数
+            'cycle_window': [60, 120],
+            'historical_windows': [[5, 10, 20], [7, 14, 30]],
+            'trend_strength_window': [15, 20],
+            'mfi_period': [14, 20],
+            'seasonal_period': [15, 20]
+        }
+        
+        logger.info("开始优化特征工程参数...")
+        best_feature_params = collector.optimize_feature_params(stock_data, test_params)
+
         # 训练模型
         trainer = ExplosiveStockModelTrainer()
         trainer.train(features_df, labels_series)
