@@ -1,10 +1,11 @@
 import joblib
 import pandas as pd
-from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
 from sklearn.preprocessing import StandardScaler
-from imblearn.over_sampling import SMOTE
-from sklearn.metrics import classification_report, confusion_matrix
+from xgboost import XGBClassifier
 
 from backend.utils.logger import setup_logger
 
@@ -15,17 +16,23 @@ class ExplosiveStockModelTrainer:
     """爆发式股票预测模型训练器"""
 
     def __init__(self):
-        self.model = None
+        self.models = {
+            'gbdt': GradientBoostingClassifier(random_state=42),
+            'rf': RandomForestClassifier(random_state=42),
+            'xgb': XGBClassifier(random_state=42),
+            'lr': LogisticRegression(random_state=42)
+        }
+        self.weights = {
+            'gbdt': 0.4,
+            'rf': 0.3,
+            'xgb': 0.2,
+            'lr': 0.1
+        }
         self.scaler = StandardScaler()
+        self.trained_models = {}
 
     def train(self, features: pd.DataFrame, labels: pd.Series):
-        """
-        训练模型
-        
-        Args:
-            features: 特征DataFrame
-            labels: 标签Series
-        """
+        """训练所有模型"""
         try:
             # 数据分割
             X_train, X_test, y_train, y_test = train_test_split(
@@ -36,58 +43,84 @@ class ExplosiveStockModelTrainer:
             X_train_scaled = self.scaler.fit_transform(X_train)
             X_test_scaled = self.scaler.transform(X_test)
 
-            # 使用SMOTE处理不平衡数据
-            smote = SMOTE(random_state=42)
-            X_train_balanced, y_train_balanced = smote.fit_resample(X_train_scaled, y_train)
-            
-            # 训练模型
-            self.model = GradientBoostingClassifier(
-                n_estimators=100,
-                learning_rate=0.1,
-                max_depth=3,
-                random_state=42
-            )
+            # 训练每个模型
+            for name, model in self.models.items():
+                logger.info(f"训练模型: {name}")
+                model.fit(X_train_scaled, y_train)
+                self.trained_models[name] = model
 
-            self.model.fit(X_train_balanced, y_train_balanced)
-
-            # 添加更详细的模型评估
-            y_pred = self.model.predict(X_test_scaled)
-            logger.info("\n分类报告：\n" + classification_report(y_test, y_pred))
-            logger.info("\n混淆矩阵：\n" + str(confusion_matrix(y_test, y_pred)))
+                # 评估模型
+                y_pred = model.predict(X_test_scaled)
+                logger.info(f"\n{name} 模型评估报告：")
+                logger.info("\n分类报告：\n" + classification_report(y_test, y_pred))
+                logger.info("\n混淆矩阵：\n" + str(confusion_matrix(y_test, y_pred)))
 
         except Exception as e:
             logger.exception(f"模型训练失败: {e}")
 
-    def save_model(self, model_path: str, scaler_path: str):
-        """保存模型和标准化器"""
+    def predict(self, features: pd.DataFrame) -> float:
+        """集成预测"""
         try:
-            joblib.dump(self.model, model_path)
+            features_scaled = self.scaler.transform(features)
+            predictions = []
+
+            for name, model in self.trained_models.items():
+                pred = model.predict_proba(features_scaled)[0][1]
+                weighted_pred = pred * self.weights[name]
+                predictions.append(weighted_pred)
+                logger.debug(f"{name} 模型预测概率: {pred:.4f}, 权重: {self.weights[name]}")
+
+            final_prediction = sum(predictions)
+            logger.debug(f"最终集成预测概率: {final_prediction:.4f}")
+
+            return final_prediction
+
+        except Exception as e:
+            logger.exception(f"预测失败: {e}")
+            return 0.0
+
+    def save_models(self, base_path: str):
+        """保存所有模型和scaler"""
+        try:
+            for name, model in self.trained_models.items():
+                model_path = f"{base_path}/{name}_model.joblib"
+                joblib.dump(model, model_path)
+                logger.info(f"模型 {name} 已保存到: {model_path}")
+
+            scaler_path = f"{base_path}/scaler.joblib"
             joblib.dump(self.scaler, scaler_path)
-            logger.info(f"模型已保存到: {model_path}")
+            logger.info(f"Scaler已保存到: {scaler_path}")
+
         except Exception as e:
             logger.exception(f"保存模型失败: {e}")
 
-    def load_model(self, model_path: str, scaler_path: str):
-        """加载模型和标准化器"""
+    def load_models(self, base_path: str):
+        """加载所有模型和scaler"""
         try:
-            self.model = joblib.load(model_path)
+            for name in self.models.keys():
+                model_path = f"{base_path}/{name}_model.joblib"
+                self.trained_models[name] = joblib.load(model_path)
+                logger.info(f"模型 {name} 已加载: {model_path}")
+
+            scaler_path = f"{base_path}/scaler.joblib"
             self.scaler = joblib.load(scaler_path)
-            logger.debug(f"模型已加载: {model_path}")
+            logger.info(f"Scaler已加载: {scaler_path}")
+
         except Exception as e:
             logger.exception(f"加载模型失败: {e}")
 
     def analyze_feature_importance(self, feature_names):
         """分析特征重要性"""
-        if self.model is None:
+        if self.models['gbdt'] is None:
             logger.warning("模型未训练，无法分析特征重要性")
             return
-            
+
         importance = pd.DataFrame({
             'feature': feature_names,
-            'importance': self.model.feature_importances_
+            'importance': self.models['gbdt'].feature_importances_
         })
         importance = importance.sort_values('importance', ascending=False)
-        
+
         logger.info("\n特征重要性排名：\n" + str(importance))
         return importance
 
@@ -95,9 +128,9 @@ class ExplosiveStockModelTrainer:
         """执行交叉验证"""
         try:
             X_scaled = self.scaler.fit_transform(features)
-            scores = cross_val_score(self.model, X_scaled, labels, cv=cv)
+            scores = cross_val_score(self.models['gbdt'], X_scaled, labels, cv=cv)
             logger.info(f"\n交叉验证结果：\n"
-                       f"平均准确率: {scores.mean():.4f} (+/- {scores.std() * 2:.4f})")
+                        f"平均准确率: {scores.mean():.4f} (+/- {scores.std() * 2:.4f})")
             return scores
         except Exception as e:
             logger.exception(f"交叉验证失败: {e}")
@@ -110,7 +143,7 @@ class ExplosiveStockModelTrainer:
             'max_depth': [3, 4, 5],
             'min_samples_split': [2, 5, 10]
         }
-        
+
         grid_search = GridSearchCV(
             GradientBoostingClassifier(random_state=42),
             param_grid,
@@ -118,11 +151,11 @@ class ExplosiveStockModelTrainer:
             scoring='f1',
             n_jobs=-1
         )
-        
+
         X_scaled = self.scaler.fit_transform(features)
         grid_search.fit(X_scaled, labels)
-        
+
         logger.info(f"最佳参数: {grid_search.best_params_}")
         logger.info(f"最佳得分: {grid_search.best_score_:.4f}")
-        
+
         return grid_search.best_estimator_
