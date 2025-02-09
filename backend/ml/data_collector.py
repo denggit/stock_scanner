@@ -589,46 +589,85 @@ class ExplosiveStockDataCollector:
         return pattern
 
     def _calculate_seasonal_pattern(self, df: pd.DataFrame, period: int = 20) -> pd.Series:
-        """计算季节性模式"""
-        # 提取日期特征
+        """计算季节性模式
+        
+        Args:
+            df: 包含价格数据的DataFrame
+            period: 用于计算历史季节性的回溯期（默认20个交易日）
+            
+        Returns:
+            pd.Series: 包含季节性强度的序列
+        """
+        # 初始化结果序列
+        seasonal_pattern = pd.Series(0.0, index=df.index)
         dates = pd.to_datetime(df.index)
-        month = dates.month
-
-        # 计算每个月的历史表现
-        monthly_returns = pd.Series(0, index=df.index)
-
-        for m in range(1, 13):
-            # 计算该月份的历史平均收益
-            month_mask = month == m
-            if month_mask.any():
-                monthly_returns[month_mask] = df['pct_chg'][month_mask].mean()
-
-        return monthly_returns
+        
+        # 对每个时间点进行遍历
+        for i in range(period, len(df)):
+            current_date = dates[i]
+            current_month = current_date.month
+            
+            # 获取历史数据窗口
+            historical_data = df.iloc[:i]
+            historical_dates = dates[:i]
+            
+            # 只查找同月的历史数据
+            same_month_mask = historical_dates.month == current_month
+            same_month_data = historical_data[same_month_mask]
+            
+            if len(same_month_data) > 0:
+                # 计算同月历史平均收益率
+                avg_return = same_month_data['pct_chg'].mean()
+                # 计算同月历史波动率
+                vol = same_month_data['pct_chg'].std()
+                
+                if not pd.isna(avg_return) and not pd.isna(vol) and vol != 0:
+                    # 计算季节性强度（使用收益率与波动率的比值）
+                    seasonal_strength = avg_return / vol
+                    seasonal_pattern.iloc[i] = seasonal_strength
+        
+        return seasonal_pattern
 
     def _detect_price_cycle(self, df: pd.DataFrame, window: int = 120) -> pd.Series:
-        """检测价格周期"""
+        """
+        检测价格周期
+        使用FFT分析价格序列中的主要周期特征
+        返回最显著的周期长度（以天为单位）
+        """
         try:
             from scipy import fft
 
-            cycles = pd.Series(0, index=df.index)
+            cycles = pd.Series(0.0, index=df.index)
             price = df['close'].values
 
             for i in range(window, len(df)):
-                # 获取滑动窗口的价格数据
+                # 获取滑动窗口的价格数据并去除趋势
                 window_prices = price[i - window:i]
-
+                detrended = window_prices - np.mean(window_prices)
+                
                 # 执行傅里叶变换
-                fft_values = fft.fft(window_prices)
-                frequencies = fft.fftfreq(len(window_prices))
-
-                # 找出主要周期
-                main_freq_idx = np.argmax(np.abs(fft_values)[1:]) + 1
-                main_cycle = 1 / frequencies[main_freq_idx]
-
-                cycles.iloc[i] = main_cycle
-
+                fft_values = fft.fft(detrended)
+                frequencies = fft.fftfreq(len(detrended))
+                
+                # 只考虑正频率部分，并过滤掉高频噪声
+                positive_freq_idx = np.where((frequencies > 0) & (frequencies < 0.5))[0]
+                magnitudes = np.abs(fft_values)
+                
+                if len(positive_freq_idx) > 0:
+                    # 找出最显著的周期（振幅最大的频率）
+                    main_freq_idx = positive_freq_idx[np.argmax(magnitudes[positive_freq_idx])]
+                    freq = frequencies[main_freq_idx]
+                    
+                    # 将频率转换为周期（天数），并进行有效性检查
+                    if freq > 0:
+                        cycle_length = abs(1 / freq)
+                        # 限制周期长度在合理范围内 (5到60天)
+                        cycles.iloc[i] = np.clip(cycle_length, 5, 60)
+                    else:
+                        cycles.iloc[i] = 0
+                        
             return cycles
 
         except Exception as e:
             logger.warning(f"周期检测失败: {e}")
-            return pd.Series(0, index=df.index)
+            return pd.Series(0.0, index=df.index)
