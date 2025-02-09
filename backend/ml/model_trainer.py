@@ -1,8 +1,10 @@
 import joblib
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
 from sklearn.preprocessing import StandardScaler
+from imblearn.over_sampling import SMOTE
+from sklearn.metrics import classification_report, confusion_matrix
 
 from backend.utils.logger import setup_logger
 
@@ -34,6 +36,10 @@ class ExplosiveStockModelTrainer:
             X_train_scaled = self.scaler.fit_transform(X_train)
             X_test_scaled = self.scaler.transform(X_test)
 
+            # 使用SMOTE处理不平衡数据
+            smote = SMOTE(random_state=42)
+            X_train_balanced, y_train_balanced = smote.fit_resample(X_train_scaled, y_train)
+            
             # 训练模型
             self.model = GradientBoostingClassifier(
                 n_estimators=100,
@@ -42,15 +48,12 @@ class ExplosiveStockModelTrainer:
                 random_state=42
             )
 
-            self.model.fit(X_train_scaled, y_train)
+            self.model.fit(X_train_balanced, y_train_balanced)
 
-            # 评估模型
-            train_score = self.model.score(X_train_scaled, y_train)
-            test_score = self.model.score(X_test_scaled, y_test)
-
-            logger.info(f"模型训练完成：\n"
-                        f"- 训练集准确率: {train_score:.4f}\n"
-                        f"- 测试集准确率: {test_score:.4f}")
+            # 添加更详细的模型评估
+            y_pred = self.model.predict(X_test_scaled)
+            logger.info("\n分类报告：\n" + classification_report(y_test, y_pred))
+            logger.info("\n混淆矩阵：\n" + str(confusion_matrix(y_test, y_pred)))
 
         except Exception as e:
             logger.exception(f"模型训练失败: {e}")
@@ -72,3 +75,54 @@ class ExplosiveStockModelTrainer:
             logger.debug(f"模型已加载: {model_path}")
         except Exception as e:
             logger.exception(f"加载模型失败: {e}")
+
+    def analyze_feature_importance(self, feature_names):
+        """分析特征重要性"""
+        if self.model is None:
+            logger.warning("模型未训练，无法分析特征重要性")
+            return
+            
+        importance = pd.DataFrame({
+            'feature': feature_names,
+            'importance': self.model.feature_importances_
+        })
+        importance = importance.sort_values('importance', ascending=False)
+        
+        logger.info("\n特征重要性排名：\n" + str(importance))
+        return importance
+
+    def cross_validate(self, features: pd.DataFrame, labels: pd.Series, cv=5):
+        """执行交叉验证"""
+        try:
+            X_scaled = self.scaler.fit_transform(features)
+            scores = cross_val_score(self.model, X_scaled, labels, cv=cv)
+            logger.info(f"\n交叉验证结果：\n"
+                       f"平均准确率: {scores.mean():.4f} (+/- {scores.std() * 2:.4f})")
+            return scores
+        except Exception as e:
+            logger.exception(f"交叉验证失败: {e}")
+
+    def optimize_parameters(self, features: pd.DataFrame, labels: pd.Series):
+        """使用网格搜索优化模型参数"""
+        param_grid = {
+            'n_estimators': [50, 100, 200],
+            'learning_rate': [0.01, 0.1, 0.3],
+            'max_depth': [3, 4, 5],
+            'min_samples_split': [2, 5, 10]
+        }
+        
+        grid_search = GridSearchCV(
+            GradientBoostingClassifier(random_state=42),
+            param_grid,
+            cv=5,
+            scoring='f1',
+            n_jobs=-1
+        )
+        
+        X_scaled = self.scaler.fit_transform(features)
+        grid_search.fit(X_scaled, labels)
+        
+        logger.info(f"最佳参数: {grid_search.best_params_}")
+        logger.info(f"最佳得分: {grid_search.best_score_:.4f}")
+        
+        return grid_search.best_estimator_

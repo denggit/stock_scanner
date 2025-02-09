@@ -96,3 +96,76 @@ class CalIndicators:
     def resistance(df: pd.DataFrame, lookback_period: int = 14) -> Tuple[pd.Series, pd.Series]:
         """计算阻力"""
         return df['high'].rolling(window=lookback_period).max()
+
+    @staticmethod
+    def roc(df: pd.DataFrame, period: int = 12) -> pd.Series:
+        """计算ROC (Rate of Change) 指标
+        ROC = (当前收盘价 - n日前收盘价) / n日前收盘价 × 100
+        """
+        roc = ((df['close'] - df['close'].shift(period)) / df['close'].shift(period) * 100).round(2)
+        return roc
+
+    @staticmethod
+    def kdj(df: pd.DataFrame, n: int = 9, m1: int = 3, m2: int = 3) -> Tuple[pd.Series, pd.Series, pd.Series]:
+        """计算KDJ指标
+        Args:
+            df: 数据框
+            n: RSV计算周期
+            m1: K值平滑因子
+            m2: D值平滑因子
+        Returns:
+            K, D, J值序列
+        """
+        low_list = df['low'].rolling(window=n).min()
+        high_list = df['high'].rolling(window=n).max()
+        
+        rsv = ((df['close'] - low_list) / (high_list - low_list) * 100).round(2)
+        
+        k = pd.Series(index=df.index, dtype=float)
+        d = pd.Series(index=df.index, dtype=float)
+        
+        k[0] = 50
+        d[0] = 50
+        
+        for i in range(1, len(df)):
+            k[i] = (2/3 * k[i-1] + 1/3 * rsv[i]).round(2)
+            d[i] = (2/3 * d[i-1] + 1/3 * k[i]).round(2)
+            
+        j = (3 * k - 2 * d).round(2)
+        
+        return k, d, j
+
+    @staticmethod
+    def dmi(df: pd.DataFrame, period: int = 14) -> Tuple[pd.Series, pd.Series, pd.Series]:
+        """计算DMI (Directional Movement Index) 指标
+        Returns:
+            PDI(+DI), MDI(-DI), ADX
+        """
+        # 计算真实波幅（TR）
+        tr = pd.DataFrame(index=df.index)
+        tr['hl'] = df['high'] - df['low']
+        tr['hc'] = abs(df['high'] - df['close'].shift(1))
+        tr['lc'] = abs(df['low'] - df['close'].shift(1))
+        tr = tr.max(axis=1)
+        
+        # 计算方向变动（DM）
+        pdm = df['high'] - df['high'].shift(1)
+        mdm = df['low'].shift(1) - df['low']
+        
+        pdm = pdm.where((pdm > mdm) & (pdm > 0), 0)
+        mdm = mdm.where((mdm > pdm) & (mdm > 0), 0)
+        
+        # 计算平滑值
+        tr14 = tr.ewm(alpha=1/period, adjust=False).mean()
+        pdm14 = pdm.ewm(alpha=1/period, adjust=False).mean()
+        mdm14 = mdm.ewm(alpha=1/period, adjust=False).mean()
+        
+        # 计算DI
+        pdi = (pdm14 / tr14 * 100).round(2)
+        mdi = (mdm14 / tr14 * 100).round(2)
+        
+        # 计算DX和ADX
+        dx = (abs(pdi - mdi) / (pdi + mdi) * 100).round(2)
+        adx = dx.ewm(alpha=1/period, adjust=False).mean().round(2)
+        
+        return pdi, mdi, adx

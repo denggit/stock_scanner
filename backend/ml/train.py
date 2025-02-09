@@ -89,6 +89,16 @@ def train_model(model_save_path: str, scaler_save_path: str):
         trainer = ExplosiveStockModelTrainer()
         trainer.train(features_df, labels_series)
 
+        # 添加参数优化
+        best_model = trainer.optimize_parameters(features_df, labels_series)
+        trainer.model = best_model
+        
+        # 执行交叉验证
+        trainer.cross_validate(features_df, labels_series)
+        
+        # 分析特征重要性
+        trainer.analyze_feature_importance(features_df.columns)
+
         # 7. 保存模型
         trainer.save_model(model_save_path, scaler_save_path)
 
