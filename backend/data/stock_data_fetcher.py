@@ -12,6 +12,7 @@ from typing import Optional
 import pandas as pd
 
 from backend.data.database import DatabaseManager
+from backend.data_source.baostock_source import BaostockSource
 
 
 class StockDataFetcher:
@@ -43,9 +44,27 @@ class StockDataFetcher:
             raise ValueError(f"Invalid period: {period}")
         return df
 
-    def get_stock_list(self) -> pd.DataFrame:
+    def get_stock_list(self, pool_name: str = "full") -> pd.DataFrame:
         """
         获取股票列表
         :return: 股票列表
         """
+        if pool_name == "full":
+            return self.db.get_stock_list()
+        elif pool_name == "no_st":
+            stock_list = self.db.get_stock_list()
+            return stock_list[~stock_list['name'].str.contains("ST")]
+        elif pool_name == "st":
+            stock_list = self.db.get_stock_list()
+            return stock_list[stock_list['name'].str.contains("ST")]
+        elif pool_name == "sz50":
+            bs = BaostockSource()
+            return bs.get_sz50()
+        elif pool_name == "hs300":
+            bs = BaostockSource()
+            return bs.get_hs300()
+        elif pool_name == "zz500":
+            bs = BaostockSource()
+            return bs.get_zz500()
+
         return self.db.get_stock_list()

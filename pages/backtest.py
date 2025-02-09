@@ -13,35 +13,61 @@ def backtest_page():
 
     with st.sidebar:
         st.header("回测设置")
+        
         # 策略选择
         strategy = st.selectbox(
             "选择策略",
-            ["explosive_stock"],  # 可以添加更多策略
-            format_func=lambda x: {
-                "explosive_stock": "爆发型股票策略"
-            }.get(x, x)
+            ["爆发式选股策略"],  # 可以添加更多策略
+
+        )
+
+        # 股票池选择
+        stock_pool = st.selectbox(
+            "选择股票池",
+            ["全量股票", "非ST股票", "上证50", "沪深300", "中证500", "创业板指"],
+            index=1,  # 默认选择非ST股票
+            help="选择要回测的股票池范围"
         )
 
         # 回测参数设置
         col1, col2 = st.columns(2)
         with col1:
-            default_start = datetime.now() - timedelta(days=366)
-            start_date = st.date_input("开始日期", value=default_start)
+            start_date = st.date_input(
+                "开始日期",
+                value=datetime.now() - timedelta(days=366)
+            )
+            initial_capital = st.number_input(
+                "初始资金",
+                value=100000.0,
+                step=10000.0,
+                help="设置回测的初始资金金额"
+        )
         with col2:
-            end_date = st.date_input("结束日期", value=datetime.now())
+            end_date = st.date_input(
+                "结束日期",
+                value=datetime.now()
+            )
+            max_positions = st.number_input(
+                "最大持仓数量",
+                min_value=1,
+                max_value=100,
+                value=4,
+                help="同时持有的最大股票数量"
+        )
 
-        initial_capital = st.number_input(
-            "初始资金",
-            value=100000.0,
-            step=10000.0,
-            help="设置回测的初始资金金额"
+        # 资金分配策略
+        allocation_strategy = st.selectbox(
+            "资金分配策略",
+            ["信号强度加权", "市值加权", "等权重"],
+            help="选择多股票间的资金分配方式"
         )
 
         # 策略特定参数
         with st.expander("策略参数设置", expanded=True):
             params = {}
-            if strategy == "explosive_stock":
+            if strategy == "爆发式选股策略":
                 # 基础参数
+                st.subheader("基础参数")
                 col1, col2 = st.columns(2)
                 with col1:
                     params['volume_ma'] = st.number_input(
@@ -241,13 +267,19 @@ def backtest_page():
     if start_backtest:
         try:
             with st.spinner('正在运行回测...'):
+                backtest_init_params = {
+                    "stock_pool": stock_pool,
+                    "allocation_strategy": allocation_strategy,
+                    "initial_capital": initial_capital,
+                    "max_positions": max_positions
+                }
                 # 调用后端API
                 response = run_backtest(
                     strategy=strategy,
                     params=params,
                     start_date=start_date.strftime("%Y-%m-%d"),
                     end_date=end_date.strftime("%Y-%m-%d"),
-                    initial_capital=initial_capital
+                    backtest_init_params=backtest_init_params
                 )
 
                 if response.status_code == 200:
@@ -264,10 +296,10 @@ def backtest_page():
     # 显示回测结果
     if hasattr(st.session_state, 'backtest_results'):
         results = st.session_state.backtest_results
-        
+
         # 使用tabs来组织不同的结果展示
         tab1, tab2, tab3 = st.tabs(["收益分析", "交易记录", "最新信号"])
-        
+
         with tab1:
             # 显示主要指标
             st.subheader("回测指标")
@@ -328,7 +360,7 @@ def backtest_page():
                 st.info("暂无最新信号")
 
 
-def run_backtest(strategy: str, params: dict, start_date: str, end_date: str, initial_capital: float):
+def run_backtest(strategy: str, params: dict, start_date: str, end_date: str, backtest_init_params: dict):
     """运行回测"""
     backend_url = os.getenv('BACKEND_URL', 'http://localhost')
     backend_port = os.getenv('BACKEND_PORT', '8000')
@@ -338,11 +370,12 @@ def run_backtest(strategy: str, params: dict, start_date: str, end_date: str, in
         "strategy": strategy,
         "start_date": start_date,
         "end_date": end_date,
-        "initial_capital": initial_capital,
+        "backtest_init_params": backtest_init_params,
         "params": params
     })
 
     return response
+
 
 if __name__ == "__main__":
     # 直接调用页面函数

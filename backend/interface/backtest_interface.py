@@ -20,16 +20,32 @@ async def run_backtest(
         strategy: str,
         start_date: str,
         end_date: str,
-        initial_capital: float = 100000,
-        params: dict = {},
+        backtest_init_params: dict,
+        params: dict = None,
 ):
-    """运行回测"""
+    """运行回测
+    
+    Args:
+        strategy: 策略名称
+        start_date: 开始日期 YYYY-MM-DD
+        end_date: 结束日期 YYYY-MM-DD
+        backtest_init_params: 回测初始化参数 {
+            "stock_pool": str,  # 股票池名称
+            "initial_capital": float,  # 初始资金
+            "max_positions": int,  # 最大持仓数量
+            "allocation_strategy": str,  # 资金分配策略
+        }
+        params: 策略参数
+    """
     try:
+        if params is None:
+            params = {}
+            
         result = await backtest_service.run_backtest(
             strategy=strategy,
             start_date=start_date,
             end_date=end_date,
-            initial_capital=initial_capital,
+            backtest_init_params=backtest_init_params,
             params=params,
         )
         if result is None:

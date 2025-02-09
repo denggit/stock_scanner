@@ -144,3 +144,24 @@ class BaostockSource(DataSource):
             raise ValueError(f"数据源返回的数据缺少必须的列：{missing_columns}")
 
         return df[required_columns]  # 只返回必须的列，并按照固定顺去配置
+
+    def get_sz50(self):
+        """获取上证50股票"""
+        if not self._connected:
+            self.connect()
+
+        return bs.query_sz50_stocks().get_data()
+
+    def get_hs300(self):
+        """获取沪深300股票"""
+        if not self._connected:
+            self.connect()
+
+        return bs.query_hs300_stocks().get_data()
+
+    def get_zz500(self):
+        """获取中证500股票"""
+        if not self._connected:
+            self.connect()
+
+        return bs.query_zz500_stocks().get_data()
