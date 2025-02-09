@@ -20,7 +20,7 @@ from data_collector import ExplosiveStockDataCollector
 from model_trainer import ExplosiveStockModelTrainer
 
 dotenv.load_dotenv()
-logger = setup_logger("train_model")
+logger = setup_logger("train_model", set_root_logger=True)
 
 
 def train_model(model_save_path: str, scaler_save_path: str):
@@ -133,8 +133,26 @@ def train_model(model_save_path: str, scaler_save_path: str):
             'seasonal_period': [15, 20]
         }
         
-        logger.info("开始优化特征工程参数...")
-        best_feature_params = collector.optimize_feature_params(stock_data, test_params)
+        logger.info("开始特征工程参数优化...")
+        with tqdm(total=100, desc="特征优化进度") as pbar:
+            def progress_callback(progress):
+                pbar.n = progress
+                pbar.refresh()
+            
+            collector = ExplosiveStockDataCollector(cache_dir="temp_results")  # 确保指定缓存目录
+            best_params = collector.optimize_feature_params(
+                stock_data, 
+                test_params,
+                progress_callback=progress_callback
+            )
+
+        logger.info("使用最优参数生成特征...")
+        features, labels = collector.collect_training_data(stock_data)
+
+        # 保存特征和标签的统计信息
+        feature_stats = features.describe()
+        logger.info(f"\n特征统计信息:\n{feature_stats}")
+        logger.info(f"标签分布:\n{labels.value_counts()}")
 
         # 训练模型
         trainer = ExplosiveStockModelTrainer()
@@ -156,6 +174,7 @@ def train_model(model_save_path: str, scaler_save_path: str):
 
     except Exception as e:
         logger.exception(f"模型训练过程出错: {e}")
+        raise
 
 
 if __name__ == "__main__":

@@ -1,4 +1,7 @@
 import decimal
+import gc
+import json
+from pathlib import Path
 from typing import Tuple
 
 import numpy as np
@@ -8,7 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from backend.utils.indicators import CalIndicators
 from backend.utils.logger import setup_logger
 
-logger = setup_logger("train_model")
+logger = setup_logger("train_model", set_root_logger=True)
 
 
 class ExplosiveStockDataCollector:
@@ -21,10 +24,12 @@ class ExplosiveStockDataCollector:
                  price_increase_threshold=0.3,  # 涨幅阈值30%
                  forward_window=20,  # 向前看20个交易日
                  volume_multiplier=3,  # 成交量倍数阈值
-                 feature_params=None):
+                 feature_params=None,
+                 cache_dir="temp_results"):  # 添加缓存目录参数
         self.price_threshold = price_increase_threshold
         self.forward_window = forward_window
         self.volume_multiplier = volume_multiplier
+        self.cache_dir = Path(cache_dir)
         # 使用默认参数或传入的自定义参数
         self.feature_params = {
             # 均线参数
@@ -142,82 +147,78 @@ class ExplosiveStockDataCollector:
             features = pd.DataFrame(index=df.index)
 
             # 1. 基础价格特征
-            features['price_ma5'] = CalIndicators.ema(df, 5, 'close')
-            features['price_ma10'] = CalIndicators.ema(df, 10, 'close')
-            features['price_ma20'] = CalIndicators.ema(df, 20, 'close')
-            features['price_ma60'] = CalIndicators.ema(df, 60, 'close')
+            for period in self.feature_params['ma_periods']:
+                features[f'price_ma{period}'] = CalIndicators.ema(df, period, 'close')
 
-            # 计算均线多空排列
+            features['volatility'] = self._calculate_volatility(df, 
+                window=self.feature_params['volatility_window'])
+
             features['ma_trend'] = self._calculate_ma_trend(features)
 
             # 2. 成交量特征
-            features['volume_ma5'] = CalIndicators.sma(df, 5, 'volume')
-            features['volume_ma10'] = CalIndicators.sma(df, 10, 'volume')
+            for period in self.feature_params['volume_ma_windows'][0]:  # 使用第一组参数
+                features[f'volume_ma{period}'] = CalIndicators.sma(df, period, 'volume')
+            
             features['volume_ratio'] = df['volume'] / features['volume_ma5']
             features['volume_trend'] = self._calculate_volume_trend(df)
 
-            # 新增：成交额特征
-            features['amount_ma5'] = df['amount'].rolling(5).mean()
-            features['amount_ratio'] = df['amount'] / features['amount_ma5']
-
-            # 新增：换手率特征
-            features['turn_ma5'] = df['turn'].rolling(5).mean()
-            features['turn_ma20'] = df['turn'].rolling(20).mean()
-            features['turn_ratio'] = df['turn'] / features['turn_ma20']
-
             # 3. 动量指标
-            features['roc'] = CalIndicators.roc(df, 12)
-            features['kdj_k'], features['kdj_d'], features['kdj_j'] = CalIndicators.kdj(df)
-            features['rsi'] = CalIndicators.rsi(df, 14)
-            features['macd'], features['macd_signal'], features['macd_hist'] = CalIndicators.macd(df)
+            momentum_result = 0
+            for window, weight in zip(
+                self.feature_params['momentum_windows'][0],
+                self.feature_params['momentum_weights'][0]
+            ):
+                momentum_result += weight * CalIndicators.roc(df, window)
+            features['momentum'] = momentum_result
 
-            # 新增：涨跌幅特征
-            features['pct_chg_ma5'] = df['pct_chg'].rolling(5).mean()
-            features['pct_chg_std'] = df['pct_chg'].rolling(20).std()
-            features['up_down_streak'] = self._calculate_streak(df['pct_chg'])
+            features['kdj_k'], features['kdj_d'], features['kdj_j'] = CalIndicators.kdj(
+                df, window=self.feature_params['kdj_window']
+            )
 
-            # 4. 波动率特征
-            features['volatility'] = self._calculate_volatility(df)
-            features['atr'] = self._calculate_atr(df)
-            features['bb_width'] = self._calculate_bb_width(df)
+            features['rsi'] = CalIndicators.rsi(
+                df, window=self.feature_params['rsi_window']
+            )
 
-            # 新增：日内波动特征
-            features['daily_range'] = (df['high'] - df['low']) / df['preclose'] * 100
-            features['gap'] = (df['open'] - df['preclose']) / df['preclose'] * 100
+            features['macd'], features['macd_signal'], features['macd_hist'] = CalIndicators.macd(
+                df,
+                fast=self.feature_params['macd_fast'],
+                slow=self.feature_params['macd_slow'],
+                signal=self.feature_params['macd_signal']
+            )
 
-            # 5. 估值特征（新增）
-            for col in ['pe_ttm', 'pb_mrq', 'ps_ttm']:
-                if col in df.columns:
-                    features[f'{col}_percentile'] = self._calculate_percentile(df[col], 250)
-                    features[f'{col}_change'] = df[col].pct_change(5)
+            bb_mid, bb_upper, bb_lower = CalIndicators.bollinger_bands(
+                df,
+                window=self.feature_params['bb_window'],
+                std=self.feature_params['bb_std']
+            )
+            features['bb_width'] = (bb_upper - bb_lower) / bb_mid
 
-            # 6. 趋势强度特征
-            features['dmi_pdi'], features['dmi_mdi'], features['dmi_adx'] = CalIndicators.dmi(df)
-            features['trend_strength'] = self._calculate_trend_strength(df)
+            features['dmi_pdi'], features['dmi_mdi'], features['dmi_adx'] = CalIndicators.dmi(
+                df, window=self.feature_params['dmi_window']
+            )
 
-            # 7. 资金流向特征
-            features['mfi'] = self._calculate_mfi(df)
-            features['obv'] = self._calculate_obv(df)
+            features['trend_strength'] = self._calculate_trend_strength(
+                df, window=self.feature_params['trend_strength_window']
+            )
 
-            # 7. 交易状态特征（新增）
-            if 'is_st' in df.columns:
-                features['is_st'] = df['is_st'].astype(float)
-            if 'tradestatus' in df.columns:
-                features['tradestatus'] = df['tradestatus'].astype(float)
+            features['mfi'] = self._calculate_mfi(
+                df, period=self.feature_params['mfi_period']
+            )
 
-            # 新增：趋势持续性特征
+            features['price_cycle'] = self._detect_price_cycle(
+                df, window=self.feature_params['cycle_window']
+            )
+
+            features['seasonal_pattern'] = self._calculate_seasonal_pattern(
+                df, period=self.feature_params['seasonal_period']
+            )
+
+            for window in self.feature_params['historical_windows'][0]:
+                features[f'historical_vol_{window}'] = self._calculate_historical_volatility(
+                    df, window=window
+                )
+
             features['sideways_days'] = self._calculate_sideways_days(df)
-            features['volatility_days'] = self._calculate_volatility_days(df)
-            features['trend_duration'] = self._calculate_trend_duration(df)
-
-            # 新增：历史统计特征
-            features['price_momentum'] = self._calculate_price_momentum(df)
-            features['historical_volatility'] = self._calculate_historical_volatility(df)
-            features['volume_pattern'] = self._calculate_volume_pattern(df)
-
-            # 新增：周期性特征
-            features['seasonal_pattern'] = self._calculate_seasonal_pattern(df)
-            features['price_cycle'] = self._detect_price_cycle(df)
 
             return features
 
@@ -324,11 +325,11 @@ class ExplosiveStockDataCollector:
 
         return levels
 
-    def _calculate_trend_strength(self, df: pd.DataFrame) -> pd.Series:
+    def _calculate_trend_strength(self, df: pd.DataFrame, window: int = 20) -> pd.Series:
         """计算趋势强度"""
         # 使用ADX和价格趋势计算综合趋势强度
-        pdi, mdi, adx = CalIndicators.dmi(df)
-        price_trend = df['close'].pct_change().rolling(window=20).mean()
+        pdi, mdi, adx = CalIndicators.dmi(df, window=window)
+        price_trend = df['close'].pct_change().rolling(window).mean()
 
         trend_strength = pd.Series(0, index=df.index)
         trend_strength = np.where(price_trend > 0, adx * 1, adx * -1)
@@ -561,17 +562,11 @@ class ExplosiveStockDataCollector:
 
         return momentum
 
-    def _calculate_historical_volatility(self, df: pd.DataFrame) -> pd.Series:
+    def _calculate_historical_volatility(self, df: pd.DataFrame, window: int = 20) -> pd.Series:
         """计算历史波动率特征"""
-        windows = [5, 10, 20, 60]
-        vol_features = pd.Series(0, index=df.index)
-
-        for window in windows:
-            # 计算不同周期的波动率
-            vol = df['close'].pct_change().rolling(window).std() * np.sqrt(252)
-            vol_features += vol / len(windows)
-
-        return vol_features
+        returns = df['close'].pct_change()
+        vol = returns.rolling(window).std() * np.sqrt(252)
+        return vol
 
     def _calculate_volume_pattern(self, df: pd.DataFrame) -> pd.Series:
         """分析成交量模式
@@ -589,7 +584,7 @@ class ExplosiveStockDataCollector:
 
         return pattern
 
-    def _calculate_seasonal_pattern(self, df: pd.DataFrame) -> pd.Series:
+    def _calculate_seasonal_pattern(self, df: pd.DataFrame, period: int = 20) -> pd.Series:
         """计算季节性模式"""
         # 提取日期特征
         dates = pd.to_datetime(df.index)
@@ -606,9 +601,8 @@ class ExplosiveStockDataCollector:
 
         return monthly_returns
 
-    def _detect_price_cycle(self, df: pd.DataFrame) -> pd.Series:
+    def _detect_price_cycle(self, df: pd.DataFrame, window: int = 120) -> pd.Series:
         """检测价格周期"""
-        window = self.feature_params['cycle_window']
         try:
             from scipy import fft
 
@@ -635,132 +629,322 @@ class ExplosiveStockDataCollector:
             logger.warning(f"周期检测失败: {e}")
             return pd.Series(0, index=df.index)
 
+    def _ensure_cache_dir(self):
+        """确保缓存目录存在"""
+        self.cache_dir.mkdir(exist_ok=True)
+
+    def _clean_cache(self):
+        """清理缓存文件"""
+        try:
+            for file in self.cache_dir.glob("*.json"):
+                file.unlink()
+            self.cache_dir.rmdir()
+        except Exception as e:
+            logger.warning(f"清理缓存文件失败: {e}")
+
+    def analyze_best_params(self, best_params: dict, all_results: list) -> dict:
+        """分析最优参数组合并生成报告"""
+        try:
+            # 创建分析报告
+            analysis = {
+                'best_params': best_params,
+                'param_importance': {},
+                'param_stability': {},
+                'recommendations': {}
+            }
+
+            # 计算每个参数的重要性（基于得分变化）
+            for param_name in best_params.keys():
+                param_scores = []
+                for result in all_results:
+                    if param_name in result['params']:
+                        param_scores.append({
+                            'value': result['params'][param_name],
+                            'score': result['score']
+                        })
+                
+                if param_scores:
+                    # 计算参数重要性（得分方差）
+                    score_variance = np.var([s['score'] for s in param_scores])
+                    analysis['param_importance'][param_name] = score_variance
+                    
+                    # 计算参数稳定性
+                    top_scores = sorted(param_scores, key=lambda x: x['score'], reverse=True)[:5]
+                    value_stability = len(set(str(s['value']) for s in top_scores))
+                    analysis['param_stability'][param_name] = {
+                        'stability_score': 1.0 / value_stability,  # 值越少越稳定
+                        'top_values': [s['value'] for s in top_scores]
+                    }
+                    
+                    # 生成建议
+                    if score_variance < 0.001:  # 参数影响很小
+                        analysis['recommendations'][param_name] = {
+                            'importance': 'LOW',
+                            'suggestion': '可以使用默认值，影响较小'
+                        }
+                    elif analysis['param_stability'][param_name]['stability_score'] > 0.5:
+                        analysis['recommendations'][param_name] = {
+                            'importance': 'HIGH',
+                            'suggestion': '建议固定使用最优值'
+                        }
+                    else:
+                        analysis['recommendations'][param_name] = {
+                            'importance': 'MEDIUM',
+                            'suggestion': '建议在每次训练时重新优化'
+                        }
+
+            # 生成总结报告
+            logger.info("\n=== 参数优化分析报告 ===")
+            logger.info("\n1. 最优参数组合:")
+            for param, value in best_params.items():
+                logger.info(f"   {param}: {value}")
+            
+            logger.info("\n2. 参数重要性排名:")
+            sorted_importance = sorted(
+                analysis['param_importance'].items(),
+                key=lambda x: x[1],
+                reverse=True
+            )
+            for param, importance in sorted_importance:
+                logger.info(f"   {param}: {importance:.6f}")
+            
+            logger.info("\n3. 参数优化建议:")
+            for param, rec in analysis['recommendations'].items():
+                logger.info(f"   {param}:")
+                logger.info(f"      重要性: {rec['importance']}")
+                logger.info(f"      建议: {rec['suggestion']}")
+
+            # 保存分析结果
+            analysis_file = self.cache_dir / "param_analysis.json"
+            with open(analysis_file, 'w', encoding='utf-8') as f:
+                json.dump(analysis, f, ensure_ascii=False, indent=2)
+
+            return analysis
+
+        except Exception as e:
+            logger.exception(f"参数分析失败: {e}")
+            return None
+
     def optimize_feature_params(self, df: pd.DataFrame, test_params: dict) -> dict:
         """优化特征工程参数"""
-        import json
-        from pathlib import Path
+        self._ensure_cache_dir()
 
-        # 创建临时文件夹存储中间结果
-        temp_dir = Path("temp_results")
-        temp_dir.mkdir(exist_ok=True)
+        try:
+            # 检查是否存在中断的训练
+            checkpoint_file = self.cache_dir / "checkpoint.json"
+            if checkpoint_file.exists():
+                with open(checkpoint_file, 'r') as f:
+                    checkpoint = json.load(f)
+                    best_params = checkpoint['best_params']
+                    best_score = checkpoint['best_score']
+                    completed_groups = set(checkpoint.get('completed_groups', []))
+                    current_group = checkpoint.get('current_group', '')
+                    current_batch = checkpoint.get('current_batch', 0)
+                    logger.info(f"发现中断的训练，从 {current_group} 组的第 {current_batch} 批次继续")
+            else:
+                best_params = {}
+                best_score = 0
+                completed_groups = set()
+                current_group = ''
+                current_batch = 0
 
-        best_params = {}
-        best_score = 0
-
-        # 将参数分组
-        param_groups = {
-            '基础指标': {
-                'ma_periods': test_params['ma_periods'],
-                'volatility_window': test_params['volatility_window'],
-                'volatility_threshold': test_params['volatility_threshold']
-            },
-            '趋势指标': {
-                'sideways_threshold': test_params['sideways_threshold'],
-                'trend_ma_period': test_params['trend_ma_period'],
-                'trend_strength_window': test_params['trend_strength_window']
-            },
-            '技术指标1': {
-                'kdj_window': test_params['kdj_window'],
-                'kdj_smooth': test_params.get('kdj_smooth', [3]),
-                'rsi_window': test_params['rsi_window']
-            },
-            '技术指标2': {
-                'macd_fast': test_params['macd_fast'],
-                'macd_slow': test_params['macd_slow'],
-                'macd_signal': test_params['macd_signal']
-            },
-            '量价指标': {
-                'volume_ma_windows': test_params['volume_ma_windows'],
-                'volume_ratio_threshold': test_params['volume_ratio_threshold'],
-                'mfi_period': test_params['mfi_period']
-            },
-            '波动指标': {
-                'bb_window': test_params['bb_window'],
-                'bb_std': test_params['bb_std'],
-                'dmi_window': test_params['dmi_window']
+            # 将参数分组
+            param_groups = {
+                '基础指标': {
+                    'ma_periods': test_params['ma_periods'],
+                    'volatility_window': test_params['volatility_window'],
+                    'volatility_threshold': test_params['volatility_threshold']
+                },
+                '趋势指标': {
+                    'sideways_threshold': test_params['sideways_threshold'],
+                    'trend_ma_period': test_params['trend_ma_period'],
+                    'trend_strength_window': test_params['trend_strength_window']
+                },
+                '技术指标1': {
+                    'kdj_window': test_params['kdj_window'],
+                    'kdj_smooth': test_params.get('kdj_smooth', [3]),
+                    'rsi_window': test_params['rsi_window']
+                },
+                '技术指标2': {
+                    'macd_fast': test_params['macd_fast'],
+                    'macd_slow': test_params['macd_slow'],
+                    'macd_signal': test_params['macd_signal']
+                },
+                '量价指标': {
+                    'volume_ma_windows': test_params['volume_ma_windows'],
+                    'volume_ratio_threshold': test_params['volume_ratio_threshold'],
+                    'mfi_period': test_params['mfi_period']
+                },
+                '波动指标': {
+                    'bb_window': test_params['bb_window'],
+                    'bb_std': test_params['bb_std'],
+                    'dmi_window': test_params['dmi_window']
+                },
+                # 添加缺失的参数组
+                '周期指标': {
+                    'cycle_window': test_params['cycle_window'],
+                    'seasonal_period': test_params['seasonal_period']
+                },
+                '历史统计': {
+                    'historical_windows': test_params['historical_windows'],
+                    'trend_strength_window': test_params['trend_strength_window']
+                }
             }
-        }
 
-        # 逐组优化参数
-        for group_name, group_params in param_groups.items():
-            logger.info(f"\n开始优化 {group_name} 参数组...")
+            # 逐组优化参数
+            for group_name, group_params in param_groups.items():
+                # 跳过已完成的组
+                if group_name in completed_groups:
+                    logger.info(f"跳过已完成的参数组: {group_name}")
+                    continue
 
-            # 生成当前组的参数组合
-            current_combinations = self._generate_param_combinations(group_params)
+                logger.info(f"\n开始优化 {group_name} 参数组...")
 
-            # 分批处理参数组合,可以根据机器配置调整 batch_size
-            batch_size = 20  # 每批处理的参数组合数量
-            for batch_idx in range(0, len(current_combinations), batch_size):
-                batch_combinations = current_combinations[batch_idx:batch_idx + batch_size]
-                batch_results = []
+                # 生成当前组的参数组合
+                current_combinations = self._generate_param_combinations(group_params)
 
-                # 处理当前批次的参数组合
-                for params in batch_combinations:
-                    try:
-                        # 合并当前组参数和之前的最优参数
-                        test_params = {**best_params, **params}
-                        self.feature_params = test_params
+                # 分批处理参数组合
+                batch_size = 20  # 每批处理的参数组合数量
+                start_batch = current_batch if group_name == current_group else 0
 
-                        # 生成特征并评估
-                        features, labels = self.collect_training_data(df)
-                        if len(features) == 0 or len(labels) == 0:
+                for batch_idx in range(start_batch, len(current_combinations), batch_size):
+                    # 更新检查点
+                    checkpoint = {
+                        'best_params': best_params,
+                        'best_score': best_score,
+                        'completed_groups': list(completed_groups),
+                        'current_group': group_name,
+                        'current_batch': batch_idx
+                    }
+                    with open(checkpoint_file, 'w') as f:
+                        json.dump(checkpoint, f)
+
+                    batch_combinations = current_combinations[batch_idx:batch_idx + batch_size]
+                    batch_results = []
+
+                    # 处理当前批次的参数组合
+                    for params in batch_combinations:
+                        try:
+                            # 合并当前组参数和之前的最优参数
+                            test_params = {**best_params, **params}
+                            self.feature_params = test_params
+
+                            # 生成特征并评估
+                            features, labels = self.collect_training_data(df)
+                            if len(features) == 0 or len(labels) == 0:
+                                continue
+
+                            score = self._evaluate_features(features, labels)
+
+                            # 保存结果
+                            batch_results.append({
+                                'params': test_params,
+                                'score': score
+                            })
+
+                            if score > best_score:
+                                best_score = score
+                                best_params = test_params.copy()
+                                logger.info(f"找到更好的参数组合，得分: {score:.4f}")
+                                logger.info(f"参数: {params}")
+
+                        except Exception as e:
+                            logger.warning(f"参数组合 {params} 评估失败: {e}")
                             continue
 
-                        score = self._evaluate_features(features, labels)
+                    # 保存当前批次结果到临时文件
+                    result_file = self.cache_dir / f"{group_name}_batch_{batch_idx}.json"
+                    with open(result_file, 'w') as f:
+                        json.dump(batch_results, f)
 
-                        # 保存结果
-                        batch_results.append({
-                            'params': test_params,
-                            'score': score
-                        })
+                    # 清理内存
+                    del batch_results
+                    gc.collect()
 
-                        if score > best_score:
-                            best_score = score
-                            best_params = test_params.copy()
-                            logger.info(f"找到更好的参数组合，得分: {score:.4f}")
-                            logger.info(f"参数: {params}")
+                # 处理完当前组后，整合该组的所有结果
+                group_results = []
+                for result_file in self.cache_dir.glob(f"{group_name}_batch_*.json"):
+                    with open(result_file, 'r') as f:
+                        group_results.extend(json.load(f))
+                    result_file.unlink()  # 删除临时文件
 
-                    except Exception as e:
-                        logger.warning(f"参数组合 {params} 评估失败: {e}")
-                        continue
+                # 更新最优参数
+                if group_results:
+                    best_group_result = max(group_results, key=lambda x: x['score'])
+                    if best_group_result['score'] > best_score:
+                        best_score = best_group_result['score']
+                        best_params = best_group_result['params']
 
-                # 保存当前批次结果到临时文件
-                result_file = temp_dir / f"{group_name}_batch_{batch_idx}.json"
-                with open(result_file, 'w') as f:
-                    json.dump(batch_results, f)
+                # 标记当前组为已完成
+                completed_groups.add(group_name)
+                current_batch = 0  # 重置批次计数
 
-                # 清理内存
-                del batch_results
-                gc.collect()
-
-            # 处理完当前组后，整合该组的所有结果
-            group_results = []
-            for result_file in temp_dir.glob(f"{group_name}_batch_*.json"):
-                with open(result_file, 'r') as f:
-                    group_results.extend(json.load(f))
-                result_file.unlink()  # 删除临时文件
-
-            # 更新最优参数
-            if group_results:
-                best_group_result = max(group_results, key=lambda x: x['score'])
-                if best_group_result['score'] > best_score:
-                    best_score = best_group_result['score']
-                    best_params = best_group_result['params']
-
-            # 保存当前最优结果
-            with open(temp_dir / "best_params.json", 'w') as f:
-                json.dump({
+                # 更新检查点
+                checkpoint = {
                     'best_params': best_params,
-                    'best_score': best_score
-                }, f)
+                    'best_score': best_score,
+                    'completed_groups': list(completed_groups),
+                    'current_group': '',
+                    'current_batch': 0
+                }
+                with open(checkpoint_file, 'w') as f:
+                    json.dump(checkpoint, f)
 
-        # 清理临时文件夹
-        try:
-            temp_dir.rmdir()
-        except:
-            logger.warning("无法删除临时文件夹，可能还有文件存在")
+            # 训练完成后删除检查点文件
+            checkpoint_file.unlink()
 
-        return best_params
+            # 清理临时文件夹
+            try:
+                self.cache_dir.rmdir()
+            except:
+                logger.warning("无法删除临时文件夹，可能还有文件存在")
+
+            # 在完成所有优化后进行分析
+            analysis = self.analyze_best_params(best_params, group_results)
+            
+            # 根据分析结果，将参数分为三类
+            fixed_params = {}  # 可以固定的参数
+            optional_params = {}  # 可选优化的参数
+            required_params = {}  # 必须优化的参数
+            
+            if analysis:
+                for param, rec in analysis['recommendations'].items():
+                    if rec['importance'] == 'LOW':
+                        fixed_params[param] = best_params[param]
+                    elif rec['importance'] == 'HIGH':
+                        required_params[param] = best_params[param]
+                    else:
+                        optional_params[param] = best_params[param]
+                
+                # 保存参数分类结果
+                param_categories = {
+                    'fixed_params': fixed_params,
+                    'optional_params': optional_params,
+                    'required_params': required_params
+                }
+                
+                with open(self.cache_dir / "param_categories.json", 'w', encoding='utf-8') as f:
+                    json.dump(param_categories, f, ensure_ascii=False, indent=2)
+            
+            return best_params
+
+        except Exception as e:
+            # 保存当前状态到检查点文件
+            checkpoint = {
+                'best_params': best_params,
+                'best_score': best_score,
+                'completed_groups': list(completed_groups),
+                'current_group': current_group,
+                'current_batch': current_batch
+            }
+            with open(checkpoint_file, 'w') as f:
+                json.dump(checkpoint, f)
+
+            logger.exception(f"优化过程中断: {e}")
+            raise
+        finally:
+            # 确保在结束时尝试清理缓存
+            self._clean_cache()
 
     def _generate_param_combinations(self, test_params: dict) -> list:
         """生成参数组合"""
@@ -895,3 +1079,71 @@ class ExplosiveStockDataCollector:
         except Exception as e:
             logger.warning(f"特征评估失败: {e}")
             return 0.0
+
+    def _save_checkpoint(self, checkpoint_data: dict):
+        """保存检查点"""
+        checkpoint_file = self.cache_dir / "checkpoint.json"
+        with open(checkpoint_file, 'w') as f:
+            json.dump(checkpoint_data, f)
+
+    def _load_checkpoint(self) -> dict:
+        """加载检查点"""
+        checkpoint_file = self.cache_dir / "checkpoint.json"
+        if checkpoint_file.exists():
+            with open(checkpoint_file, 'r') as f:
+                return json.load(f)
+        return None
+
+    def _validate_features(self, features: pd.DataFrame) -> pd.DataFrame:
+        """验证和清理特征数据"""
+        try:
+            # 1. 替换无穷值
+            features = features.replace([np.inf, -np.inf], np.nan)
+            
+            # 2. 处理过大的值
+            for col in features.columns:
+                # 计算每列的分位数
+                q1 = features[col].quantile(0.25)
+                q3 = features[col].quantile(0.75)
+                iqr = q3 - q1
+                upper_bound = q3 + 3 * iqr
+                lower_bound = q1 - 3 * iqr
+                
+                # 将超出范围的值替换为边界值
+                features.loc[features[col] > upper_bound, col] = upper_bound
+                features.loc[features[col] < lower_bound, col] = lower_bound
+            
+            # 3. 检查是否存在全为NaN的列
+            null_columns = features.columns[features.isnull().all()].tolist()
+            if null_columns:
+                logger.warning(f"删除全为空值的特征列: {null_columns}")
+                features = features.drop(columns=null_columns)
+            
+            # 4. 填充剩余的NaN值
+            features = features.fillna(features.mean())
+            
+            # 5. 检查是否存在常量列
+            constant_columns = features.columns[features.nunique() == 1].tolist()
+            if constant_columns:
+                logger.warning(f"删除常量特征列: {constant_columns}")
+                features = features.drop(columns=constant_columns)
+            
+            # 6. 最终检查确保没有无穷值和NaN
+            if not np.isfinite(features.values).all():
+                problematic_cols = features.columns[~np.isfinite(features).all()].tolist()
+                logger.warning(f"以下特征列仍包含无效值: {problematic_cols}")
+                # 最后的安全检查：将所有剩余的无效值替换为0
+                features = features.replace([np.inf, -np.inf], 0)
+                features = features.fillna(0)
+            
+            return features
+            
+        except Exception as e:
+            logger.exception(f"特征验证清理失败: {e}")
+            # 如果清理过程出错，返回一个空的DataFrame
+            return pd.DataFrame()
+
+    def _log_optimization_progress(self, group_name: str, batch_idx: int, total_batches: int):
+        """记录优化进度"""
+        progress = (batch_idx + 1) / total_batches * 100
+        logger.info(f"参数组 {group_name} 优化进度: {progress:.2f}%")

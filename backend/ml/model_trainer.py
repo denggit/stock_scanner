@@ -11,7 +11,7 @@ from xgboost import XGBClassifier
 
 from backend.utils.logger import setup_logger
 
-logger = setup_logger("train_model")
+logger = setup_logger("train_model", set_root_logger=True)
 
 
 class ExplosiveStockModelTrainer:
@@ -33,49 +33,34 @@ class ExplosiveStockModelTrainer:
         self.scaler = StandardScaler()
         self.trained_models = {}
 
-    def train(self, features: pd.DataFrame, labels: pd.Series):
-        """训练所有模型"""
+    def train(self, X_train, y_train, X_val=None, y_val=None):
+        """训练模型"""
         try:
-            # 数据清理：替换无穷大值和异常值
-            features = features.replace([np.inf, -np.inf], np.nan)
-
-            # 计算每列的均值和标准差
-            means = features.mean()
-            stds = features.std()
-
-            # 处理异常值：将超过3个标准差的值限制在范围内
-            for column in features.columns:
-                upper_limit = means[column] + 3 * stds[column]
-                lower_limit = means[column] - 3 * stds[column]
-                features[column] = features[column].clip(lower_limit, upper_limit)
-
-            # 填充剩余的NaN值
-            features = features.fillna(features.mean())
-
-            # 数据分割
-            X_train, X_test, y_train, y_test = train_test_split(
-                features, labels, test_size=0.2, random_state=42
-            )
-
-            # 特征标准化
+            # 数据验证
+            if not isinstance(X_train, pd.DataFrame):
+                X_train = pd.DataFrame(X_train)
+            
+            # 确保数据有效
+            if not np.isfinite(X_train.values).all():
+                raise ValueError("训练数据包含无效值")
+            
+            # 标准化
             X_train_scaled = self.scaler.fit_transform(X_train)
-            X_test_scaled = self.scaler.transform(X_test)
-
-            # 训练每个模型
+            
+            # 再次验证标准化后的数据
+            if not np.isfinite(X_train_scaled).all():
+                raise ValueError("标准化后的数据包含无效值")
+            
+            # 训练模型
             for name, model in self.models.items():
-                logger.info(f"训练模型: {name}")
+                logger.info(f"开始训练 {name} 模型...")
                 model.fit(X_train_scaled, y_train)
-                self.trained_models[name] = model
-
-                # 评估模型
-                y_pred = model.predict(X_test_scaled)
-                logger.info(f"\n{name} 模型评估报告：")
-                logger.info("\n分类报告：\n" + classification_report(y_test, y_pred))
-                logger.info("\n混淆矩阵：\n" + str(confusion_matrix(y_test, y_pred)))
-
+                
+            logger.info("模型训练完成")
+            
         except Exception as e:
             logger.exception(f"模型训练失败: {e}")
-            raise  # 重新抛出异常，以便上层函数知道训练失败
+            raise
 
     def predict(self, features: pd.DataFrame) -> float:
         """集成预测"""
