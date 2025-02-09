@@ -2,7 +2,7 @@ import joblib
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
@@ -159,3 +159,59 @@ class ExplosiveStockModelTrainer:
         logger.info(f"最佳得分: {grid_search.best_score_:.4f}")
 
         return grid_search.best_estimator_
+
+    def select_features(self, features: pd.DataFrame, importance_threshold: float = 0.01):
+        """根据重要性筛选特征"""
+        try:
+            # 获取特征重要性
+            importance = self.analyze_feature_importance(features)
+            
+            # 筛选重要特征
+            important_features = importance[
+                importance['avg_importance'] > importance_threshold
+            ].index.tolist()
+            
+            logger.info(f"\n筛选出 {len(important_features)} 个重要特征")
+            logger.info("\n重要特征列表：\n" + str(important_features))
+            
+            return important_features
+            
+        except Exception as e:
+            logger.exception(f"特征筛选失败: {e}")
+            return features.columns.tolist()
+
+    def evaluate_models(self, X_test: pd.DataFrame, y_test: pd.Series) -> dict:
+        """评估所有模型的性能"""
+        try:
+            results = {}
+            X_test_scaled = self.scaler.transform(X_test)
+            
+            for name, model in self.trained_models.items():
+                # 获取预测结果
+                y_pred = model.predict(X_test_scaled)
+                y_pred_proba = model.predict_proba(X_test_scaled)[:, 1]
+                
+                # 计算各种评估指标
+                results[name] = {
+                    'accuracy': accuracy_score(y_test, y_pred),
+                    'precision': precision_score(y_test, y_pred),
+                    'recall': recall_score(y_test, y_pred),
+                    'f1': f1_score(y_test, y_pred),
+                    'auc': roc_auc_score(y_test, y_pred_proba),
+                    'confusion_matrix': confusion_matrix(y_test, y_pred).tolist()
+                }
+                
+                # 输出评估报告
+                logger.info(f"\n{name} 模型评估结果：")
+                logger.info(f"准确率: {results[name]['accuracy']:.4f}")
+                logger.info(f"精确率: {results[name]['precision']:.4f}")
+                logger.info(f"召回率: {results[name]['recall']:.4f}")
+                logger.info(f"F1分数: {results[name]['f1']:.4f}")
+                logger.info(f"AUC分数: {results[name]['auc']:.4f}")
+                logger.info("\n混淆矩阵：\n" + str(results[name]['confusion_matrix']))
+            
+            return results
+            
+        except Exception as e:
+            logger.exception(f"模型评估失败: {e}")
+            return {}

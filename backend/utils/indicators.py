@@ -10,6 +10,7 @@ from typing import Tuple
 
 import numpy as np
 import pandas as pd
+import logging
 
 
 class CalIndicators:
@@ -88,14 +89,42 @@ class CalIndicators:
         return (100 - 100 / (1 + rs)).round(2)
 
     @staticmethod
-    def support(df: pd.DataFrame, lookback_period: int = 14) -> Tuple[pd.Series, pd.Series]:
-        """计算支撑"""
-        return df['low'].rolling(window=lookback_period).min()
+    def support(df: pd.DataFrame, window: int = 20) -> float:
+        """计算支撑位"""
+        try:
+            lows = df['low'].iloc[-window:]
+            # 找到局部最低点
+            local_mins = []
+            for i in range(1, len(lows)-1):
+                if lows.iloc[i] < lows.iloc[i-1] and lows.iloc[i] < lows.iloc[i+1]:
+                    local_mins.append(lows.iloc[i])
+            
+            if local_mins:
+                return max(local_mins)  # 返回最高的支撑位
+            return df['low'].min()
+            
+        except Exception as e:
+            logging.warning(f"支撑位计算失败: {e}")
+            return None
 
     @staticmethod
-    def resistance(df: pd.DataFrame, lookback_period: int = 14) -> Tuple[pd.Series, pd.Series]:
-        """计算阻力"""
-        return df['high'].rolling(window=lookback_period).max()
+    def resistance(df: pd.DataFrame, window: int = 20) -> float:
+        """计算阻力位"""
+        try:
+            highs = df['high'].iloc[-window:]
+            # 找到局部最高点
+            local_maxs = []
+            for i in range(1, len(highs)-1):
+                if highs.iloc[i] > highs.iloc[i-1] and highs.iloc[i] > highs.iloc[i+1]:
+                    local_maxs.append(highs.iloc[i])
+            
+            if local_maxs:
+                return min(local_maxs)  # 返回最低的阻力位
+            return df['high'].max()
+            
+        except Exception as e:
+            logging.warning(f"阻力位计算失败: {e}")
+            return None
 
     @staticmethod
     def roc(df: pd.DataFrame, period: int = 12) -> pd.Series:
