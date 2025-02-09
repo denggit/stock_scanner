@@ -92,25 +92,25 @@ def train_model(model_save_path: str, scaler_save_path: str):
 
         # 特征分析
         collector = ExplosiveStockDataCollector()
-        
+
         # 分析特征相关性
         high_corr_features = collector.analyze_feature_correlation(features_df)
-        
+
         # 训练模型
         trainer = ExplosiveStockModelTrainer()
         trainer.train(features_df, labels_series)
-        
+
         # 分析特征重要性
         importance = trainer.analyze_feature_importance(features_df)
-        
+
         # 筛选重要特征
         important_features = trainer.select_features(features_df)
-        
+
         # 使用筛选后的特征重新训练
         if len(important_features) < len(features_df.columns):
             logger.info("使用筛选后的特征重新训练模型...")
             trainer.train(features_df[important_features], labels_series)
-        
+
         # 保存模型
         trainer.save_models(model_save_path)
 

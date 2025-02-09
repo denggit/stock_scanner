@@ -1,9 +1,10 @@
 import joblib
-import pandas as pd
 import numpy as np
+import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, precision_score, recall_score, \
+    f1_score, roc_auc_score
 from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
@@ -37,20 +38,20 @@ class ExplosiveStockModelTrainer:
         try:
             # 数据清理：替换无穷大值和异常值
             features = features.replace([np.inf, -np.inf], np.nan)
-            
+
             # 计算每列的均值和标准差
             means = features.mean()
             stds = features.std()
-            
+
             # 处理异常值：将超过3个标准差的值限制在范围内
             for column in features.columns:
                 upper_limit = means[column] + 3 * stds[column]
                 lower_limit = means[column] - 3 * stds[column]
                 features[column] = features[column].clip(lower_limit, upper_limit)
-            
+
             # 填充剩余的NaN值
             features = features.fillna(features.mean())
-            
+
             # 数据分割
             X_train, X_test, y_train, y_test = train_test_split(
                 features, labels, test_size=0.2, random_state=42
@@ -187,17 +188,17 @@ class ExplosiveStockModelTrainer:
         try:
             # 获取特征重要性
             importance = self.analyze_feature_importance(features)
-            
+
             # 筛选重要特征
             important_features = importance[
                 importance['avg_importance'] > importance_threshold
-            ].index.tolist()
-            
+                ].index.tolist()
+
             logger.info(f"\n筛选出 {len(important_features)} 个重要特征")
             logger.info("\n重要特征列表：\n" + str(important_features))
-            
+
             return important_features
-            
+
         except Exception as e:
             logger.exception(f"特征筛选失败: {e}")
             return features.columns.tolist()
@@ -207,12 +208,12 @@ class ExplosiveStockModelTrainer:
         try:
             results = {}
             X_test_scaled = self.scaler.transform(X_test)
-            
+
             for name, model in self.trained_models.items():
                 # 获取预测结果
                 y_pred = model.predict(X_test_scaled)
                 y_pred_proba = model.predict_proba(X_test_scaled)[:, 1]
-                
+
                 # 计算各种评估指标
                 results[name] = {
                     'accuracy': accuracy_score(y_test, y_pred),
@@ -222,7 +223,7 @@ class ExplosiveStockModelTrainer:
                     'auc': roc_auc_score(y_test, y_pred_proba),
                     'confusion_matrix': confusion_matrix(y_test, y_pred).tolist()
                 }
-                
+
                 # 输出评估报告
                 logger.info(f"\n{name} 模型评估结果：")
                 logger.info(f"准确率: {results[name]['accuracy']:.4f}")
@@ -231,9 +232,9 @@ class ExplosiveStockModelTrainer:
                 logger.info(f"F1分数: {results[name]['f1']:.4f}")
                 logger.info(f"AUC分数: {results[name]['auc']:.4f}")
                 logger.info("\n混淆矩阵：\n" + str(results[name]['confusion_matrix']))
-            
+
             return results
-            
+
         except Exception as e:
             logger.exception(f"模型评估失败: {e}")
             return {}

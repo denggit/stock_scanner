@@ -1,8 +1,8 @@
+import decimal
 from typing import Tuple
 
 import numpy as np
 import pandas as pd
-import decimal
 
 from backend.utils.indicators import CalIndicators
 from backend.utils.logger import setup_logger
@@ -33,10 +33,10 @@ class ExplosiveStockDataCollector:
             'amount', 'turn', 'pct_chg',
             'pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm'
         ]
-        
+
         # 需要保持为整数的字段
         int_columns = ['volume', 'tradestatus', 'is_st']
-        
+
         for column in df.columns:
             if column in float_columns and df[column].dtype == object:
                 try:
@@ -52,7 +52,7 @@ class ExplosiveStockDataCollector:
                     )
                 except Exception as e:
                     logger.warning(f"转换列 {column} 时出错: {e}")
-        
+
         return df
 
     def collect_training_data(self, stock_data: pd.DataFrame) -> tuple:
@@ -60,15 +60,15 @@ class ExplosiveStockDataCollector:
         try:
             # 预处理数据
             df = self._preprocess_dataframe(stock_data.copy())
-            
+
             # 生成特征
             features = self._generate_features(df)
-            
+
             # 生成标签
             labels = self._generate_labels(df)
-            
+
             return features, labels
-            
+
         except Exception as e:
             logger.exception(f"收集训练数据时出错: {e}")
             return pd.DataFrame(), pd.Series()
@@ -97,7 +97,7 @@ class ExplosiveStockDataCollector:
             features['volume_ma10'] = CalIndicators.sma(df, 10, 'volume')
             features['volume_ratio'] = df['volume'] / features['volume_ma5']
             features['volume_trend'] = self._calculate_volume_trend(df)
-            
+
             # 新增：成交额特征
             features['amount_ma5'] = df['amount'].rolling(5).mean()
             features['amount_ratio'] = df['amount'] / features['amount_ma5']
@@ -147,8 +147,22 @@ class ExplosiveStockDataCollector:
             if 'tradestatus' in df.columns:
                 features['tradestatus'] = df['tradestatus'].astype(float)
 
+            # 新增：趋势持续性特征
+            features['sideways_days'] = self._calculate_sideways_days(df)
+            features['volatility_days'] = self._calculate_volatility_days(df)
+            features['trend_duration'] = self._calculate_trend_duration(df)
+
+            # 新增：历史统计特征
+            features['price_momentum'] = self._calculate_price_momentum(df)
+            features['historical_volatility'] = self._calculate_historical_volatility(df)
+            features['volume_pattern'] = self._calculate_volume_pattern(df)
+
+            # 新增：周期性特征
+            features['seasonal_pattern'] = self._calculate_seasonal_pattern(df)
+            features['price_cycle'] = self._detect_price_cycle(df)
+
             return features
-            
+
         except Exception as e:
             logger.exception(f"生成特征时出错: {e}")
             return pd.DataFrame()
@@ -313,7 +327,7 @@ class ExplosiveStockDataCollector:
             # 计算未来成交量是否会放大
             current_volume = df['volume'].iloc[i - 5:i].mean()  # 当前5日平均成交量
             future_max_volume = future_window['volume'].max()
-            
+
             # 添加除零保护
             if current_volume > 0:
                 volume_increase = future_max_volume / current_volume
@@ -357,7 +371,7 @@ class ExplosiveStockDataCollector:
         try:
             # 计算相关性矩阵
             corr_matrix = features.corr()
-            
+
             # 找出高度相关的特征对
             high_corr = []
             for i in range(len(corr_matrix.columns)):
@@ -368,15 +382,15 @@ class ExplosiveStockDataCollector:
                             'feature2': corr_matrix.columns[j],
                             'correlation': corr_matrix.iloc[i, j]
                         })
-            
+
             # 输出结果
             if high_corr:
                 logger.info("\n高度相关的特征对：")
                 for pair in high_corr:
                     logger.info(f"{pair['feature1']} - {pair['feature2']}: {pair['correlation']:.3f}")
-            
+
             return high_corr
-            
+
         except Exception as e:
             logger.exception(f"特征相关性分析失败: {e}")
             return None
@@ -384,8 +398,8 @@ class ExplosiveStockDataCollector:
     def _find_bottoms(self, series: pd.Series) -> list:
         """找出序列中的底部点"""
         bottoms = []
-        for i in range(1, len(series)-1):
-            if series.iloc[i] < series.iloc[i-1] and series.iloc[i] < series.iloc[i+1]:
+        for i in range(1, len(series) - 1):
+            if series.iloc[i] < series.iloc[i - 1] and series.iloc[i] < series.iloc[i + 1]:
                 bottoms.append(series.iloc[i])
         return bottoms
 
@@ -399,25 +413,174 @@ class ExplosiveStockDataCollector:
         try:
             # 计算前期涨幅
             price_change = (section['close'].iloc[-1] - section['close'].iloc[0]) / section['close'].iloc[0]
-            
+
             # 计算通道的上下轨道线斜率
             highs = section['high']
             lows = section['low']
             high_slope = np.polyfit(range(len(highs)), highs, 1)[0]
             low_slope = np.polyfit(range(len(lows)), lows, 1)[0]
-            
+
             # 检查成交量趋势
             volume_trend = np.polyfit(range(len(section)), section['volume'], 1)[0]
-            
+
             # 判断是否符合旗形特征
             is_flag = (
-                price_change > 0.1 and  # 前期涨幅超过10%
-                abs(high_slope - low_slope) < 0.01 and  # 上下轨道基本平行
-                volume_trend < 0  # 成交量萎缩
+                    price_change > 0.1 and  # 前期涨幅超过10%
+                    abs(high_slope - low_slope) < 0.01 and  # 上下轨道基本平行
+                    volume_trend < 0  # 成交量萎缩
             )
-            
+
             return is_flag
-            
+
         except Exception as e:
             logger.warning(f"旗形形态检测失败: {e}")
             return False
+
+    def _calculate_sideways_days(self, df: pd.DataFrame, threshold: float = 0.03) -> pd.Series:
+        """计算横盘天数
+        threshold: 价格波动阈值，默认3%
+        """
+        sideways_days = pd.Series(0, index=df.index)
+        price = df['close']
+
+        for i in range(1, len(df)):
+            # 计算前一天的横盘天数
+            prev_days = sideways_days.iloc[i - 1]
+
+            # 计算当天价格相对前一天的变化幅度
+            price_change = abs((price.iloc[i] - price.iloc[i - 1]) / price.iloc[i - 1])
+
+            # 如果价格变化在阈值内，累加横盘天数
+            if price_change <= threshold:
+                sideways_days.iloc[i] = prev_days + 1
+
+        return sideways_days
+
+    def _calculate_volatility_days(self, df: pd.DataFrame,
+                                   window: int = 20,
+                                   threshold: float = 0.02) -> pd.Series:
+        """计算高波动持续天数
+        window: 计算波动率的窗口期
+        threshold: 高波动阈值
+        """
+        volatility = df['close'].pct_change().rolling(window).std()
+        volatility_days = pd.Series(0, index=df.index)
+
+        for i in range(window, len(df)):
+            if volatility.iloc[i] > threshold:
+                volatility_days.iloc[i] = volatility_days.iloc[i - 1] + 1
+
+        return volatility_days
+
+    def _calculate_trend_duration(self, df: pd.DataFrame,
+                                  ma_period: int = 20) -> pd.Series:
+        """计算趋势持续时间
+        1: 上升趋势持续天数
+        -1: 下降趋势持续天数
+        """
+        ma = df['close'].rolling(ma_period).mean()
+        trend_duration = pd.Series(0, index=df.index)
+
+        for i in range(ma_period, len(df)):
+            if df['close'].iloc[i] > ma.iloc[i]:
+                trend_duration.iloc[i] = (
+                    trend_duration.iloc[i - 1] + 1 if trend_duration.iloc[i - 1] >= 0
+                    else 1
+                )
+            else:
+                trend_duration.iloc[i] = (
+                    trend_duration.iloc[i - 1] - 1 if trend_duration.iloc[i - 1] <= 0
+                    else -1
+                )
+
+        return trend_duration
+
+    def _calculate_price_momentum(self, df: pd.DataFrame) -> pd.Series:
+        """计算价格动量
+        使用多个时间窗口的收益率来衡量动量
+        """
+        momentum = pd.Series(0, index=df.index)
+        windows = [5, 10, 20, 60]  # 多个时间窗口
+        weights = [0.4, 0.3, 0.2, 0.1]  # 对应权重
+
+        for window, weight in zip(windows, weights):
+            returns = df['close'].pct_change(window)
+            momentum += returns * weight
+
+        return momentum
+
+    def _calculate_historical_volatility(self, df: pd.DataFrame) -> pd.Series:
+        """计算历史波动率特征"""
+        windows = [5, 10, 20, 60]
+        vol_features = pd.Series(0, index=df.index)
+
+        for window in windows:
+            # 计算不同周期的波动率
+            vol = df['close'].pct_change().rolling(window).std() * np.sqrt(252)
+            vol_features += vol / len(windows)
+
+        return vol_features
+
+    def _calculate_volume_pattern(self, df: pd.DataFrame) -> pd.Series:
+        """分析成交量模式
+        1: 放量
+        0: 正常
+        -1: 缩量
+        """
+        volume = df['volume']
+        vol_ma5 = volume.rolling(5).mean()
+        vol_ma20 = volume.rolling(20).mean()
+
+        pattern = pd.Series(0, index=df.index)
+        pattern[volume > vol_ma5 * 1.5] = 1  # 放量
+        pattern[volume < vol_ma20 * 0.5] = -1  # 缩量
+
+        return pattern
+
+    def _calculate_seasonal_pattern(self, df: pd.DataFrame) -> pd.Series:
+        """计算季节性模式"""
+        # 提取日期特征
+        dates = pd.to_datetime(df.index)
+        month = dates.month
+
+        # 计算每个月的历史表现
+        monthly_returns = pd.Series(0, index=df.index)
+
+        for m in range(1, 13):
+            # 计算该月份的历史平均收益
+            month_mask = month == m
+            if month_mask.any():
+                monthly_returns[month_mask] = df['pct_chg'][month_mask].mean()
+
+        return monthly_returns
+
+    def _detect_price_cycle(self, df: pd.DataFrame,
+                            window: int = 120) -> pd.Series:
+        """检测价格周期
+        使用傅里叶变换检测主要周期
+        """
+        try:
+            from scipy import fft
+
+            cycles = pd.Series(0, index=df.index)
+            price = df['close'].values
+
+            for i in range(window, len(df)):
+                # 获取滑动窗口的价格数据
+                window_prices = price[i - window:i]
+
+                # 执行傅里叶变换
+                fft_values = fft.fft(window_prices)
+                frequencies = fft.fftfreq(len(window_prices))
+
+                # 找出主要周期
+                main_freq_idx = np.argmax(np.abs(fft_values)[1:]) + 1
+                main_cycle = 1 / frequencies[main_freq_idx]
+
+                cycles.iloc[i] = main_cycle
+
+            return cycles
+
+        except Exception as e:
+            logger.warning(f"周期检测失败: {e}")
+            return pd.Series(0, index=df.index)
