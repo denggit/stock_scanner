@@ -1,0 +1,1 @@
+/Users/zijund/Code/stock_scanner/venv/bin/python /Users/zijund/Code/stock_scanner/backend/ml/train.py

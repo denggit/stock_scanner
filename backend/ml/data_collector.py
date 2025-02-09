@@ -2,6 +2,7 @@ from typing import Tuple
 
 import numpy as np
 import pandas as pd
+import decimal
 
 from backend.utils.indicators import CalIndicators
 from backend.utils.logger import setup_logger
@@ -24,95 +25,133 @@ class ExplosiveStockDataCollector:
         self.forward_window = forward_window
         self.volume_multiplier = volume_multiplier
 
-    def collect_training_data(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
-        """
-        收集训练数据的主方法
+    def _preprocess_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """预处理数据框，根据字段类型进行适当的转换"""
+        # 需要转换为float的decimal字段
+        float_columns = [
+            'open', 'high', 'low', 'close', 'preclose',
+            'amount', 'turn', 'pct_chg',
+            'pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm'
+        ]
         
-        Args:
-            df: 包含OHLCV数据的DataFrame
+        # 需要保持为整数的字段
+        int_columns = ['volume', 'tradestatus', 'is_st']
+        
+        for column in df.columns:
+            if column in float_columns and df[column].dtype == object:
+                try:
+                    df[column] = df[column].apply(
+                        lambda x: float(x) if isinstance(x, decimal.Decimal) else x
+                    )
+                except Exception as e:
+                    logger.warning(f"转换列 {column} 时出错: {e}")
+            elif column in int_columns and df[column].dtype == object:
+                try:
+                    df[column] = df[column].apply(
+                        lambda x: int(x) if isinstance(x, decimal.Decimal) else x
+                    )
+                except Exception as e:
+                    logger.warning(f"转换列 {column} 时出错: {e}")
+        
+        return df
+
+    def collect_training_data(self, stock_data: pd.DataFrame) -> tuple:
+        """收集训练数据"""
+        try:
+            # 预处理数据
+            df = self._preprocess_dataframe(stock_data.copy())
             
-        Returns:
-            features: 特征DataFrame
-            labels: 标签Series (1表示未来20天内会涨30%，0表示不会)
-        """
-        # 1. 生成特征
-        features = self._generate_features(df)
-
-        # 2. 生成标签
-        labels = self._generate_labels(df)
-
-        # 3. 清理数据
-        return self._clean_data(features, labels)
+            # 生成特征
+            features = self._generate_features(df)
+            
+            # 生成标签
+            labels = self._generate_labels(df)
+            
+            return features, labels
+            
+        except Exception as e:
+            logger.exception(f"收集训练数据时出错: {e}")
+            return pd.DataFrame(), pd.Series()
 
     def _generate_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """生成预测特征"""
-        features = pd.DataFrame(index=df.index)
+        try:
+            # 确保所有数值都是float类型
+            numeric_columns = df.select_dtypes(include=[np.number]).columns
+            for col in numeric_columns:
+                df[col] = df[col].astype(float)
 
-        # 1. 基础价格特征
-        features['price_ma5'] = CalIndicators.ema(df, 5, 'close')
-        features['price_ma10'] = CalIndicators.ema(df, 10, 'close')
-        features['price_ma20'] = CalIndicators.ema(df, 20, 'close')
-        features['price_ma60'] = CalIndicators.ema(df, 60, 'close')
+            features = pd.DataFrame(index=df.index)
 
-        # 计算均线多空排列
-        features['ma_trend'] = self._calculate_ma_trend(features)
+            # 1. 基础价格特征
+            features['price_ma5'] = CalIndicators.ema(df, 5, 'close')
+            features['price_ma10'] = CalIndicators.ema(df, 10, 'close')
+            features['price_ma20'] = CalIndicators.ema(df, 20, 'close')
+            features['price_ma60'] = CalIndicators.ema(df, 60, 'close')
 
-        # 2. 成交量特征
-        features['volume_ma5'] = CalIndicators.sma(df, 5, 'volume')
-        features['volume_ma10'] = CalIndicators.sma(df, 10, 'volume')
-        features['volume_ratio'] = df['volume'] / features['volume_ma5']
-        features['volume_trend'] = self._calculate_volume_trend(df)
-        
-        # 新增：成交额特征
-        features['amount_ma5'] = df['amount'].rolling(5).mean()
-        features['amount_ratio'] = df['amount'] / features['amount_ma5']
+            # 计算均线多空排列
+            features['ma_trend'] = self._calculate_ma_trend(features)
 
-        # 新增：换手率特征
-        features['turn_ma5'] = df['turn'].rolling(5).mean()
-        features['turn_ma20'] = df['turn'].rolling(20).mean()
-        features['turn_ratio'] = df['turn'] / features['turn_ma20']
+            # 2. 成交量特征
+            features['volume_ma5'] = CalIndicators.sma(df, 5, 'volume')
+            features['volume_ma10'] = CalIndicators.sma(df, 10, 'volume')
+            features['volume_ratio'] = df['volume'] / features['volume_ma5']
+            features['volume_trend'] = self._calculate_volume_trend(df)
+            
+            # 新增：成交额特征
+            features['amount_ma5'] = df['amount'].rolling(5).mean()
+            features['amount_ratio'] = df['amount'] / features['amount_ma5']
 
-        # 3. 动量指标
-        features['roc'] = CalIndicators.roc(df, 12)
-        features['kdj_k'], features['kdj_d'], features['kdj_j'] = CalIndicators.kdj(df)
-        features['rsi'] = CalIndicators.rsi(df, 14)
-        features['macd'], features['macd_signal'], features['macd_hist'] = CalIndicators.macd(df)
+            # 新增：换手率特征
+            features['turn_ma5'] = df['turn'].rolling(5).mean()
+            features['turn_ma20'] = df['turn'].rolling(20).mean()
+            features['turn_ratio'] = df['turn'] / features['turn_ma20']
 
-        # 新增：涨跌幅特征
-        features['pct_chg_ma5'] = df['pct_chg'].rolling(5).mean()
-        features['pct_chg_std'] = df['pct_chg'].rolling(20).std()
-        features['up_down_streak'] = self._calculate_streak(df['pct_chg'])
+            # 3. 动量指标
+            features['roc'] = CalIndicators.roc(df, 12)
+            features['kdj_k'], features['kdj_d'], features['kdj_j'] = CalIndicators.kdj(df)
+            features['rsi'] = CalIndicators.rsi(df, 14)
+            features['macd'], features['macd_signal'], features['macd_hist'] = CalIndicators.macd(df)
 
-        # 4. 波动率特征
-        features['volatility'] = self._calculate_volatility(df)
-        features['atr'] = self._calculate_atr(df)
-        features['bb_width'] = self._calculate_bb_width(df)
+            # 新增：涨跌幅特征
+            features['pct_chg_ma5'] = df['pct_chg'].rolling(5).mean()
+            features['pct_chg_std'] = df['pct_chg'].rolling(20).std()
+            features['up_down_streak'] = self._calculate_streak(df['pct_chg'])
 
-        # 新增：日内波动特征
-        features['daily_range'] = (df['high'] - df['low']) / df['preclose'] * 100
-        features['gap'] = (df['open'] - df['preclose']) / df['preclose'] * 100
+            # 4. 波动率特征
+            features['volatility'] = self._calculate_volatility(df)
+            features['atr'] = self._calculate_atr(df)
+            features['bb_width'] = self._calculate_bb_width(df)
 
-        # 5. 估值特征（新增）
-        for col in ['pe_ttm', 'pb_mrq', 'ps_ttm']:
-            if col in df.columns:
-                features[f'{col}_percentile'] = self._calculate_percentile(df[col], 250)
-                features[f'{col}_change'] = df[col].pct_change(5)
+            # 新增：日内波动特征
+            features['daily_range'] = (df['high'] - df['low']) / df['preclose'] * 100
+            features['gap'] = (df['open'] - df['preclose']) / df['preclose'] * 100
 
-        # 6. 趋势强度特征
-        features['dmi_pdi'], features['dmi_mdi'], features['dmi_adx'] = CalIndicators.dmi(df)
-        features['trend_strength'] = self._calculate_trend_strength(df)
+            # 5. 估值特征（新增）
+            for col in ['pe_ttm', 'pb_mrq', 'ps_ttm']:
+                if col in df.columns:
+                    features[f'{col}_percentile'] = self._calculate_percentile(df[col], 250)
+                    features[f'{col}_change'] = df[col].pct_change(5)
 
-        # 7. 资金流向特征
-        features['mfi'] = self._calculate_mfi(df)
-        features['obv'] = self._calculate_obv(df)
+            # 6. 趋势强度特征
+            features['dmi_pdi'], features['dmi_mdi'], features['dmi_adx'] = CalIndicators.dmi(df)
+            features['trend_strength'] = self._calculate_trend_strength(df)
 
-        # 7. 交易状态特征（新增）
-        if 'is_st' in df.columns:
-            features['is_st'] = df['is_st'].astype(float)
-        if 'tradestatus' in df.columns:
-            features['tradestatus'] = df['tradestatus'].astype(float)
+            # 7. 资金流向特征
+            features['mfi'] = self._calculate_mfi(df)
+            features['obv'] = self._calculate_obv(df)
 
-        return features
+            # 7. 交易状态特征（新增）
+            if 'is_st' in df.columns:
+                features['is_st'] = df['is_st'].astype(float)
+            if 'tradestatus' in df.columns:
+                features['tradestatus'] = df['tradestatus'].astype(float)
+
+            return features
+            
+        except Exception as e:
+            logger.exception(f"生成特征时出错: {e}")
+            return pd.DataFrame()
 
     def _calculate_ma_trend(self, features: pd.DataFrame) -> pd.Series:
         """计算均线多空排列趋势
@@ -226,10 +265,10 @@ class ExplosiveStockDataCollector:
     def _calculate_mfi(self, df: pd.DataFrame, period: int = 14) -> pd.Series:
         """计算资金流向指标(Money Flow Index)"""
         typical_price = (df['high'] + df['low'] + df['close']) / 3
-        money_flow = typical_price * df['volume']
+        money_flow = typical_price * df['volume'].astype(float)  # 显式转换volume为float用于计算
 
-        positive_flow = pd.Series(0, index=df.index)
-        negative_flow = pd.Series(0, index=df.index)
+        positive_flow = pd.Series(0.0, index=df.index)  # 明确指定dtype为float
+        negative_flow = pd.Series(0.0, index=df.index)  # 明确指定dtype为float
 
         # 计算正向和负向资金流
         price_change = typical_price.diff()
@@ -274,7 +313,12 @@ class ExplosiveStockDataCollector:
             # 计算未来成交量是否会放大
             current_volume = df['volume'].iloc[i - 5:i].mean()  # 当前5日平均成交量
             future_max_volume = future_window['volume'].max()
-            volume_increase = future_max_volume / current_volume
+            
+            # 添加除零保护
+            if current_volume > 0:
+                volume_increase = future_max_volume / current_volume
+            else:
+                volume_increase = 0  # 如果当前成交量为0，则设置volume_increase为0
 
             # 如果未来会出现涨幅超过阈值且成交量放大，则当前时间点标记为1
             if (price_increase >= self.price_threshold and

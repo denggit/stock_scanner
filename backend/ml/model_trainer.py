@@ -1,5 +1,6 @@
 import joblib
 import pandas as pd
+import numpy as np
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
@@ -34,6 +35,22 @@ class ExplosiveStockModelTrainer:
     def train(self, features: pd.DataFrame, labels: pd.Series):
         """训练所有模型"""
         try:
+            # 数据清理：替换无穷大值和异常值
+            features = features.replace([np.inf, -np.inf], np.nan)
+            
+            # 计算每列的均值和标准差
+            means = features.mean()
+            stds = features.std()
+            
+            # 处理异常值：将超过3个标准差的值限制在范围内
+            for column in features.columns:
+                upper_limit = means[column] + 3 * stds[column]
+                lower_limit = means[column] - 3 * stds[column]
+                features[column] = features[column].clip(lower_limit, upper_limit)
+            
+            # 填充剩余的NaN值
+            features = features.fillna(features.mean())
+            
             # 数据分割
             X_train, X_test, y_train, y_test = train_test_split(
                 features, labels, test_size=0.2, random_state=42
@@ -57,6 +74,7 @@ class ExplosiveStockModelTrainer:
 
         except Exception as e:
             logger.exception(f"模型训练失败: {e}")
+            raise  # 重新抛出异常，以便上层函数知道训练失败
 
     def predict(self, features: pd.DataFrame) -> float:
         """集成预测"""
@@ -111,18 +129,22 @@ class ExplosiveStockModelTrainer:
 
     def analyze_feature_importance(self, feature_names):
         """分析特征重要性"""
-        if self.models['gbdt'] is None:
-            logger.warning("模型未训练，无法分析特征重要性")
-            return
+        try:
+            if 'gbdt' not in self.trained_models:
+                logger.warning("GBDT模型未训练，无法分析特征重要性")
+                return pd.DataFrame()
 
-        importance = pd.DataFrame({
-            'feature': feature_names,
-            'importance': self.models['gbdt'].feature_importances_
-        })
-        importance = importance.sort_values('importance', ascending=False)
+            importance = pd.DataFrame({
+                'feature': feature_names,
+                'importance': self.trained_models['gbdt'].feature_importances_
+            })
+            importance = importance.sort_values('importance', ascending=False)
 
-        logger.info("\n特征重要性排名：\n" + str(importance))
-        return importance
+            logger.info("\n特征重要性排名：\n" + str(importance))
+            return importance
+        except Exception as e:
+            logger.warning(f"特征重要性分析失败: {e}")
+            return pd.DataFrame()
 
     def cross_validate(self, features: pd.DataFrame, labels: pd.Series, cv=5):
         """执行交叉验证"""

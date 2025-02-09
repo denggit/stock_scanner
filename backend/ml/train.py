@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 from tqdm import tqdm
+import numpy as np
 
 from backend.data.stock_data_fetcher import StockDataFetcher
 from backend.utils.logger import setup_logger
@@ -63,6 +64,10 @@ def train_model(model_save_path: str, scaler_save_path: str):
                 if len(stock_data) < 60:  # 数据太少的股票跳过
                     logger.warning(f"该股票数据太少，跳过: {stock['code']}")
                     continue
+
+                # 确保数值类型是float32
+                for col in stock_data.select_dtypes(include=[np.number]).columns:
+                    stock_data[col] = stock_data[col].astype(np.float32)
 
                 # 收集该股票的训练数据
                 features, labels = collector.collect_training_data(stock_data)
