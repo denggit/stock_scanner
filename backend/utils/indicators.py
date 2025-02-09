@@ -135,32 +135,41 @@ class CalIndicators:
         return roc
 
     @staticmethod
-    def kdj(df: pd.DataFrame, n: int = 9, m1: int = 3, m2: int = 3) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    def kdj(df: pd.DataFrame, window: int = 9, smooth: int = 3) -> Tuple[pd.Series, pd.Series, pd.Series]:
         """计算KDJ指标
         Args:
             df: 数据框
-            n: RSV计算周期
-            m1: K值平滑因子
-            m2: D值平滑因子
+            window: RSV计算窗口期，默认9
+            smooth: K值和D值的平滑周期，默认3
         Returns:
             K, D, J值序列
         """
-        low_list = df['low'].rolling(window=n).min()
-        high_list = df['high'].rolling(window=n).max()
+        # 计算RSV
+        low_list = df['low'].rolling(window=window, min_periods=1).min()
+        high_list = df['high'].rolling(window=window, min_periods=1).max()
         
-        rsv = ((df['close'] - low_list) / (high_list - low_list) * 100).round(2)
+        rsv = pd.Series(0.0, index=df.index)
+        # 添加除零保护
+        denominator = high_list - low_list
+        rsv = np.where(denominator != 0,
+                      (df['close'] - low_list) / denominator * 100,
+                      0)
         
-        k = pd.Series(index=df.index, dtype=float)
-        d = pd.Series(index=df.index, dtype=float)
+        # 计算K值，使用EMA平滑
+        k = pd.Series(50.0, index=df.index)  # 初始值设为50
+        k = pd.Series(rsv).ewm(alpha=2/(smooth+1), adjust=False).mean()
         
-        k[0] = 50
-        d[0] = 50
+        # 计算D值，使用相同的平滑系数
+        d = pd.Series(50.0, index=df.index)  # 初始值设为50
+        d = k.ewm(alpha=2/(smooth+1), adjust=False).mean()
         
-        for i in range(1, len(df)):
-            k[i] = (2/3 * k[i-1] + 1/3 * rsv[i]).round(2)
-            d[i] = (2/3 * d[i-1] + 1/3 * k[i]).round(2)
-            
-        j = (3 * k - 2 * d).round(2)
+        # 计算J值
+        j = 3 * k - 2 * d
+        
+        # 限制范围在0-100之间
+        k = k.clip(0, 100).round(2)
+        d = d.clip(0, 100).round(2)
+        j = j.clip(0, 100).round(2)
         
         return k, d, j
 

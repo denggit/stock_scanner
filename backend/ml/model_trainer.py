@@ -3,9 +3,8 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, precision_score, recall_score, \
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, \
     f1_score, roc_auc_score
-from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 
@@ -39,25 +38,32 @@ class ExplosiveStockModelTrainer:
             # 数据验证
             if not isinstance(X_train, pd.DataFrame):
                 X_train = pd.DataFrame(X_train)
-            
+
             # 确保数据有效
             if not np.isfinite(X_train.values).all():
                 raise ValueError("训练数据包含无效值")
-            
+
             # 标准化
             X_train_scaled = self.scaler.fit_transform(X_train)
-            
+
             # 再次验证标准化后的数据
             if not np.isfinite(X_train_scaled).all():
                 raise ValueError("标准化后的数据包含无效值")
-            
+
             # 训练模型
-            for name, model in self.models.items():
+            self.trained_models = self.models.copy()
+            for name, model in self.trained_models.items():
                 logger.info(f"开始训练 {name} 模型...")
                 model.fit(X_train_scaled, y_train)
-                
+
             logger.info("模型训练完成")
-            
+
+            if X_val is not None and y_val is not None:
+                X_val_scaled = self.scaler.transform(X_val)
+                for name, model in self.trained_models.items():
+                    val_score = model.score(X_val_scaled, y_val)
+                    logger.info(f"{name} 验证集得分: {val_score:.4f}")
+
         except Exception as e:
             logger.exception(f"模型训练失败: {e}")
             raise
@@ -112,82 +118,6 @@ class ExplosiveStockModelTrainer:
 
         except Exception as e:
             logger.exception(f"加载模型失败: {e}")
-
-    def analyze_feature_importance(self, feature_names):
-        """分析特征重要性"""
-        try:
-            if 'gbdt' not in self.trained_models:
-                logger.warning("GBDT模型未训练，无法分析特征重要性")
-                return pd.DataFrame()
-
-            importance = pd.DataFrame({
-                'feature': feature_names,
-                'importance': self.trained_models['gbdt'].feature_importances_
-            })
-            importance = importance.sort_values('importance', ascending=False)
-
-            logger.info("\n特征重要性排名：\n" + str(importance))
-            return importance
-        except Exception as e:
-            logger.warning(f"特征重要性分析失败: {e}")
-            return pd.DataFrame()
-
-    def cross_validate(self, features: pd.DataFrame, labels: pd.Series, cv=5):
-        """执行交叉验证"""
-        try:
-            X_scaled = self.scaler.fit_transform(features)
-            scores = cross_val_score(self.models['gbdt'], X_scaled, labels, cv=cv)
-            logger.info(f"\n交叉验证结果：\n"
-                        f"平均准确率: {scores.mean():.4f} (+/- {scores.std() * 2:.4f})")
-            return scores
-        except Exception as e:
-            logger.exception(f"交叉验证失败: {e}")
-
-    def optimize_parameters(self, features: pd.DataFrame, labels: pd.Series):
-        """使用网格搜索优化模型参数"""
-        # 定义参数网格
-        param_grid = {
-            'n_estimators': [50, 100, 200],
-            'learning_rate': [0.01, 0.1, 0.3],
-            'max_depth': [3, 4, 5],
-            'min_samples_split': [2, 5, 10]
-        }
-
-        grid_search = GridSearchCV(
-            GradientBoostingClassifier(random_state=42),
-            param_grid,
-            cv=5,
-            scoring='f1',
-            n_jobs=-1
-        )
-
-        X_scaled = self.scaler.fit_transform(features)
-        grid_search.fit(X_scaled, labels)
-
-        logger.info(f"最佳参数: {grid_search.best_params_}")
-        logger.info(f"最佳得分: {grid_search.best_score_:.4f}")
-
-        return grid_search.best_estimator_
-
-    def select_features(self, features: pd.DataFrame, importance_threshold: float = 0.01):
-        """根据重要性筛选特征"""
-        try:
-            # 获取特征重要性
-            importance = self.analyze_feature_importance(features)
-
-            # 筛选重要特征
-            important_features = importance[
-                importance['avg_importance'] > importance_threshold
-                ].index.tolist()
-
-            logger.info(f"\n筛选出 {len(important_features)} 个重要特征")
-            logger.info("\n重要特征列表：\n" + str(important_features))
-
-            return important_features
-
-        except Exception as e:
-            logger.exception(f"特征筛选失败: {e}")
-            return features.columns.tolist()
 
     def evaluate_models(self, X_test: pd.DataFrame, y_test: pd.Series) -> dict:
         """评估所有模型的性能"""

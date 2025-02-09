@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 from tqdm import tqdm
 import numpy as np
+from sklearn.model_selection import train_test_split
 
 from backend.data.stock_data_fetcher import StockDataFetcher
 from backend.utils.logger import setup_logger
@@ -54,7 +55,6 @@ def train_model(model_save_path: str, scaler_save_path: str):
 
         for _, stock in tqdm(stock_list.iterrows(), total=len(stock_list), desc="收集训练数据"):
             try:
-                # 获取单只股票数据
                 stock_data = data_fetcher.fetch_stock_data(
                     code=stock['code'],
                     start_date=start_date,
@@ -69,7 +69,7 @@ def train_model(model_save_path: str, scaler_save_path: str):
                 for col in stock_data.select_dtypes(include=[np.number]).columns:
                     stock_data[col] = stock_data[col].astype(np.float32)
 
-                # 收集该股票的训练数据
+                # 收集训练数据
                 features, labels = collector.collect_training_data(stock_data)
 
                 if len(features) > 0 and len(labels) > 0:
@@ -90,86 +90,32 @@ def train_model(model_save_path: str, scaler_save_path: str):
         logger.info(f"收集到的训练数据大小：{len(features_df)} 行")
         logger.info(f"正样本比例：{labels_series.mean():.2%}")
 
-        # 特征分析
-        collector = ExplosiveStockDataCollector()
-
-        # 分析特征相关性
+        # 6. 特征分析
         high_corr_features = collector.analyze_feature_correlation(features_df)
 
-        # 优化特征工程参数
-        test_params = {
-            # 均线参数
-            'ma_periods': [[5, 10, 20, 60], [3, 7, 15, 30]],
-            'volatility_window': [10, 20],
-            'volatility_threshold': [0.02, 0.03],
-            'sideways_threshold': [0.02, 0.03],
-            'trend_ma_period': [10, 20],
-            
-            # 动量参数
-            'momentum_windows': [[5, 10, 20], [3, 7, 15]],
-            'momentum_weights': [[0.4, 0.3, 0.3], [0.33, 0.33, 0.34]],
-            
-            # 技术指标参数
-            'kdj_window': [9, 14],
-            'macd_fast': [12, 15],
-            'macd_slow': [26, 30],
-            'macd_signal': [9, 11],
-            'rsi_window': [14, 20],
-            
-            # 布林带和DMI参数
-            'bb_window': [20, 25],
-            'bb_std': [2, 2.5],
-            'dmi_window': [14, 20],
-            
-            # 成交量参数
-            'volume_ma_windows': [[5, 10], [7, 14]],
-            'volume_ratio_threshold': [1.5, 2.0],
-            
-            # 其他参数
-            'cycle_window': [60, 120],
-            'historical_windows': [[5, 10, 20], [7, 14, 30]],
-            'trend_strength_window': [15, 20],
-            'mfi_period': [14, 20],
-            'seasonal_period': [15, 20]
-        }
-        
-        logger.info("开始特征工程参数优化...")
-        with tqdm(total=100, desc="特征优化进度") as pbar:
-            def progress_callback(progress):
-                pbar.n = progress
-                pbar.refresh()
-            
-            collector = ExplosiveStockDataCollector(cache_dir="temp_results")  # 确保指定缓存目录
-            best_params = collector.optimize_feature_params(
-                stock_data, 
-                test_params,
-                progress_callback=progress_callback
-            )
-
-        logger.info("使用最优参数生成特征...")
-        features, labels = collector.collect_training_data(stock_data)
-
-        # 保存特征和标签的统计信息
-        feature_stats = features.describe()
+        # 7. 保存特征和标签的统计信息
+        feature_stats = features_df.describe()
         logger.info(f"\n特征统计信息:\n{feature_stats}")
-        logger.info(f"标签分布:\n{labels.value_counts()}")
+        logger.info(f"标签分布:\n{labels_series.value_counts()}")
 
-        # 训练模型
+        # 8. 数据分割
+        X_train, X_test, y_train, y_test = train_test_split(
+            features_df, labels_series,
+            test_size=0.2,
+            random_state=42,
+            stratify=labels_series  # 确保训练集和测试集的标签分布一致
+        )
+
+        # 9. 训练模型
         trainer = ExplosiveStockModelTrainer()
-        trainer.train(features_df, labels_series)
+        trainer.train(X_train, y_train)
 
-        # 分析特征重要性
-        importance = trainer.analyze_feature_importance(features_df)
+        # 10. 模型评估
+        evaluation_results = trainer.evaluate_models(X_test, y_test)
+        logger.info("模型评估结果：")
+        logger.info(evaluation_results)
 
-        # 筛选重要特征
-        important_features = trainer.select_features(features_df)
-
-        # 使用筛选后的特征重新训练
-        if len(important_features) < len(features_df.columns):
-            logger.info("使用筛选后的特征重新训练模型...")
-            trainer.train(features_df[important_features], labels_series)
-
-        # 保存模型
+        # 11. 保存模型
         trainer.save_models(model_save_path)
 
     except Exception as e:
@@ -179,6 +125,6 @@ def train_model(model_save_path: str, scaler_save_path: str):
 
 if __name__ == "__main__":
     train_model(
-        model_save_path="back/ml/models/explosive_stock_model.joblib",
-        scaler_save_path="back/ml/models/explosive_stock_scaler.joblib"
+        model_save_path="backend/ml/models/explosive_stock_model.joblib",
+        scaler_save_path="backend/ml/models/explosive_stock_scaler.joblib"
     )
