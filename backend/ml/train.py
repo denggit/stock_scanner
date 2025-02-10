@@ -24,7 +24,7 @@ dotenv.load_dotenv()
 logger = setup_logger("train_model", set_root_logger=True)
 
 
-def train_model(model_save_path: str, scaler_save_path: str):
+def train_model(model_save_path: str, scaler_save_path: str, stock_pool: str = 'full'):
     """
     训练爆发式股票预测模型
     
@@ -42,7 +42,7 @@ def train_model(model_save_path: str, scaler_save_path: str):
         data_fetcher = StockDataFetcher()
 
         # 2. 获取股票列表
-        stock_list = data_fetcher.get_stock_list()
+        stock_list = data_fetcher.get_stock_list(pool_name=stock_pool)
         logger.info(f"获取到 {len(stock_list)} 只股票")
 
         # 3. 设置时间范围（使用近3年数据）
@@ -87,18 +87,43 @@ def train_model(model_save_path: str, scaler_save_path: str):
         features_df = pd.concat(all_features, axis=0)
         labels_series = pd.concat(all_labels, axis=0)
 
-        logger.info(f"收集到的训练数据大小：{len(features_df)} 行")
-        logger.info(f"正样本比例：{labels_series.mean():.2%}")
+        # 确保特征和标签的索引匹配
+        logger.info("对齐特征和标签数据...")
+        common_index = features_df.index.intersection(labels_series.index)
+        features_df = features_df.loc[common_index]
+        labels_series = labels_series.loc[common_index]
 
-        # 6. 特征分析
+        logger.info(f"收集到的训练数据大小：{len(features_df)} 行")
+        logger.info(f"正样本比例：{(labels_series == 1).mean():.2%}")
+        logger.info(f"负样本比例：{(labels_series == -1).mean():.2%}")
+        logger.info(f"中性样本比例：{(labels_series == 0).mean():.2%}")
+
+        # 6. 数据质量检查
+        logger.info("检查数据质量...")
+        invalid_features = features_df.columns[~np.isfinite(features_df).all()].tolist()
+        if invalid_features:
+            logger.warning(f"以下特征包含无效值: {invalid_features}")
+            logger.info("正在移除包含无效值的行...")
+            valid_mask = np.isfinite(features_df).all(axis=1)
+            features_df = features_df[valid_mask]
+            labels_series = labels_series[valid_mask]
+            logger.info(f"清理后的数据大小：{len(features_df)} 行")
+
+        # 验证数据对齐
+        if len(features_df) != len(labels_series):
+            raise ValueError(f"特征和标签数量不匹配: 特征={len(features_df)}, 标签={len(labels_series)}")
+        if not (features_df.index == labels_series.index).all():
+            raise ValueError("特征和标签的索引不匹配")
+
+        # 7. 特征分析
         high_corr_features = collector.analyze_feature_correlation(features_df)
 
-        # 7. 保存特征和标签的统计信息
+        # 8. 保存特征和标签的统计信息
         feature_stats = features_df.describe()
         logger.info(f"\n特征统计信息:\n{feature_stats}")
         logger.info(f"标签分布:\n{labels_series.value_counts()}")
 
-        # 8. 数据分割
+        # 9. 数据分割
         X_train, X_test, y_train, y_test = train_test_split(
             features_df, labels_series,
             test_size=0.2,
@@ -106,16 +131,16 @@ def train_model(model_save_path: str, scaler_save_path: str):
             stratify=labels_series  # 确保训练集和测试集的标签分布一致
         )
 
-        # 9. 训练模型
+        # 10. 训练模型
         trainer = ExplosiveStockModelTrainer()
         trainer.train(X_train, y_train)
 
-        # 10. 模型评估
+        # 11. 模型评估
         evaluation_results = trainer.evaluate_models(X_test, y_test)
         logger.info("模型评估结果：")
         logger.info(evaluation_results)
 
-        # 11. 保存模型
+        # 12. 保存模型
         trainer.save_models(model_save_path)
 
     except Exception as e:
@@ -124,7 +149,12 @@ def train_model(model_save_path: str, scaler_save_path: str):
 
 
 if __name__ == "__main__":
+    pool_name = "sz50"
+    # 修改保存路径的格式
+    model_base_path = f"backend/ml/models/explosive_stock_model_{pool_name}"
+    
     train_model(
-        model_save_path="backend/ml/models/explosive_stock_model.joblib",
-        scaler_save_path="backend/ml/models/explosive_stock_scaler.joblib"
+        model_save_path=model_base_path,  # 不需要添加.joblib后缀
+        scaler_save_path=model_base_path,  # 使用相同的基础路径
+        stock_pool=pool_name
     )
