@@ -10,7 +10,6 @@ import os
 import sys
 from pathlib import Path
 
-from backend.utils import format_info
 
 root_dir = Path(__file__).parent.parent.absolute()
 sys.path.append(str(root_dir))
@@ -25,6 +24,7 @@ import dotenv
 
 from tqdm import tqdm
 from backend.data.data_manager import DataUpdateManager
+from backend.utils import format_info
 from backend.utils.logger import setup_logger
 
 dotenv.load_dotenv()

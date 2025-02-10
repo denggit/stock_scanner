@@ -377,7 +377,7 @@ class ExplosiveStockDataCollector:
         标签映射：
              0  (无法预测未来)
              1  (普通样本)
-             2  (目标样本)
+         `````````````````````````    2`````````````````````````  (目标样本)
         """
         labels = pd.Series(0, index=df.index)
         for i in range(len(df) - self.forward_window):

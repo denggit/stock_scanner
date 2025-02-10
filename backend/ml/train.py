@@ -94,9 +94,9 @@ def train_model(model_save_path: str, scaler_save_path: str, stock_pool: str = '
         labels_series = labels_series.loc[common_index]
 
         logger.info(f"收集到的训练数据大小：{len(features_df)} 行")
-        logger.info(f"正样本比例：{(labels_series == 1).mean():.2%}")
-        logger.info(f"负样本比例：{(labels_series == -1).mean():.2%}")
-        logger.info(f"中性样本比例：{(labels_series == 0).mean():.2%}")
+        logger.info(f"正样本比例：{(labels_series == 2).mean():.2%}")
+        logger.info(f"负样本比例：{(labels_series == 0).mean():.2%}")
+        logger.info(f"中性样本比例：{(labels_series == 1).mean():.2%}")
 
         # 6. 数据质量检查
         logger.info("检查数据质量...")
@@ -137,8 +137,22 @@ def train_model(model_save_path: str, scaler_save_path: str, stock_pool: str = '
 
         # 11. 模型评估
         evaluation_results = trainer.evaluate_models(X_test, y_test)
+        # 输出模型评估结果
         logger.info("模型评估结果：")
-        logger.info(evaluation_results)
+        for model_name, metrics in evaluation_results.items():
+            logger.info(f"模型: {model_name}")
+            for metric_name, metric_value in metrics.items():
+                if metric_name == 'confusion_matrix':
+                    logger.info(f"  {metric_name}:")
+                    logger.info("    预测值 ->      0        1        2")
+                    logger.info("    实际值  0: {:>6}   {:>6}   {:>6}".format(metric_value[0][0], metric_value[0][1], metric_value[0][2]))
+                    logger.info("    实际值  1: {:>6}   {:>6}   {:>6}".format(metric_value[1][0], metric_value[1][1], metric_value[1][2]))
+                    logger.info("    实际值  2: {:>6}   {:>6}   {:>6}".format(metric_value[2][0], metric_value[2][1], metric_value[2][2]))
+                elif isinstance(metric_value, (float, np.float64)):
+                    logger.info(f"  {metric_name}: {metric_value:.4f}")
+                else:
+                    logger.info(f"  {metric_name}: {metric_value}")
+            logger.info("-" * 50)
 
         # 12. 保存模型
         trainer.save_models(model_save_path)
@@ -149,7 +163,7 @@ def train_model(model_save_path: str, scaler_save_path: str, stock_pool: str = '
 
 
 if __name__ == "__main__":
-    pool_name = "sz50"
+    pool_name = "full"
     # 修改保存路径的格式
     model_base_path = f"backend/ml/models/explosive_stock_model_{pool_name}"
     

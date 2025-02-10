@@ -147,7 +147,21 @@ class ExplosiveStockModelTrainer:
             raise
 
     def evaluate_models(self, X_test: pd.DataFrame, y_test: pd.Series) -> dict:
-        """评估所有模型的性能"""
+        """评估所有模型的性能
+
+        - 准确率 (Accuracy)：模型预测的正确比例。但要注意，如果数据中大部分样本是某一类（比如不上涨的股票），模型可能会倾向于预测多数类，导致准确率虚高。
+        - 精确率 (Precision)：模型预测为“上涨”的股票中，实际真的上涨的比例。
+        - 召回率 (Recall)：实际“上涨”的股票中，模型预测正确的比例。召回率高，说明模型能捕捉到大部分上涨的股票。但高召回率可能意味着模型过于激进，把很多不上涨的股票也预测为上涨。
+        - F1分数 (F1)：精确率和召回率的平衡值，越高越好。
+        - AUC值 (AUC)：模型区分“上涨”和“不上涨”股票的能力，0.5是随机猜测，1是完美预测。
+
+        - 混淆矩阵 (confusion_matrix)：
+        预测值 ->          0    1    2
+        实际值 ->      0   X    X    X
+        实际值 ->      1   X    X    X
+        实际值 ->      2   X    X    X
+
+        """
         try:
             results = {}
             X_test_scaled = self.scaler.transform(X_test)
@@ -195,10 +209,10 @@ class ExplosiveStockModelTrainer:
                 # 输出混淆矩阵
                 cm = results[name]['confusion_matrix']
                 logging.info("\n混淆矩阵：")
-                logging.info("预测值 ->  -1    0    1")
-                logging.info(f"实际值 -1: {cm[0]}")
-                logging.info(f"实际值  0: {cm[1]}")
-                logging.info(f"实际值  1: {cm[2]}")
+                logging.info("预测值 ->      0        1        2")
+                logging.info("实际值  0: {:>6}   {:>6}   {:>6}".format(cm[0][0], cm[0][1], cm[0][2]))
+                logging.info("实际值  1: {:>6}   {:>6}   {:>6}".format(cm[1][0], cm[1][1], cm[1][2]))
+                logging.info("实际值  2: {:>6}   {:>6}   {:>6}".format(cm[2][0], cm[2][1], cm[2][2]))
 
             return results
 
