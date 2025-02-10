@@ -224,6 +224,7 @@ def main():
                 st.warning(f"权重和必须为1.0, 当前权重和为 {total_weight:.2f}")
 
             params = {
+                "stock_pool": stock_pool,
                 "bullish": bullish,
                 "ma_periods": ma_periods,
                 "lookback_period": lookback_period,
@@ -261,6 +262,7 @@ def main():
                                         help="在翻倍周期内大于该增长倍数")
 
             params = {
+                "stock_pool": stock_pool,
                 "start_date": start_date,
                 "end_date": end_date,
                 "double_period": double_period,
@@ -308,6 +310,7 @@ def main():
                                               help="选择市现率(PCF-NCF-TTM)的范围")
 
             params = {
+                "stock_pool": stock_pool,
                 "ma_periods": ma_periods,
                 "ma_period": ma_period,
                 "continuous_days": continuous_days,

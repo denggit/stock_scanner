@@ -15,6 +15,11 @@ from tqdm import tqdm
 import numpy as np
 from sklearn.model_selection import train_test_split
 from tabulate import tabulate
+from sklearn.feature_selection import SelectFromModel
+from xgboost import XGBClassifier
+from imblearn.over_sampling import SMOTE
+from imblearn.pipeline import Pipeline
+from imblearn.combine import SMOTEENN, SMOTETomek
 
 from backend.data.stock_data_fetcher import StockDataFetcher
 from backend.utils.logger import setup_logger
@@ -131,16 +136,44 @@ def train_model(model_save_path: str, scaler_save_path: str, stock_pool: str = '
             stratify=labels_series  # 确保训练集和测试集的标签分布一致
         )
 
-        # 10. 训练模型
+        # 10. 在数据预处理后添加特征选择
+        selector = SelectFromModel(
+            estimator=XGBClassifier(n_estimators=100, random_state=42),
+            prefit=False
+        )
+        
+        # 应用特征选择
+        X_train_selected = selector.fit_transform(X_train, y_train)
+        X_test_selected = selector.transform(X_test)
+        
+        # 在特征选择之后添加采样策略
+        logger.info("开始进行样本平衡处理...")
+        
+        # 使用 SMOTE 进行过采样，进一步降低采样比例
+        smote = SMOTE(
+            sampling_strategy=0.2,  # 保持0.2
+            random_state=42,
+            k_neighbors=7  # 增加邻居数量以获得更好的合成样本
+        )
+        
+        # 应用 SMOTE
+        X_train_balanced, y_train_balanced = smote.fit_resample(X_train_selected, y_train)
+        
+        # 输出平衡后的样本比例
+        logger.info(f"平衡后的训练集大小：{len(X_train_balanced)} 行")
+        logger.info(f"平衡后的正样本比例：{(y_train_balanced == 1).mean():.2%}")
+        logger.info(f"平衡后的负样本比例：{(y_train_balanced == 0).mean():.2%}")
+        
+        # 使用平衡后的数据训练模型
         trainer = ExplosiveStockModelTrainer()
-        trainer.train(X_train, y_train)
+        trainer.train(X_train_balanced, y_train_balanced)
 
-        # 11. 模型评估
-        evaluation_results = trainer.evaluate_models(X_test, y_test)
+        # 12. 模型评估
+        evaluation_results = trainer.evaluate_models(X_test_selected, y_test)
         # 输出模型评估结果
         log_evaluation_results(evaluation_results)
 
-        # 12. 保存模型
+        # 13. 保存模型
         trainer.save_models(model_save_path)
 
     except Exception as e:
@@ -168,7 +201,7 @@ def log_evaluation_results(evaluation_results):
     
     # 输出表格
     logger.info("模型评估指标对比表格：")
-    logger.info(tabulate(table_data, headers=['模型'] + metric_names, tablefmt='grid'))
+    logger.info("\n" + tabulate(table_data, headers=['模型'] + metric_names, tablefmt='grid'))
     
     # 单独输出每个模型的混淆矩阵
     for model_name, metrics in evaluation_results.items():
@@ -179,11 +212,11 @@ def log_evaluation_results(evaluation_results):
             ["会上涨"] + confusion_matrix[1]
         ]
         logger.info(f"\n模型 {model_name} 的混淆矩阵：")
-        logger.info(tabulate(data, headers=headers, tablefmt='grid'))
+        logger.info("\n" + tabulate(data, headers=headers, tablefmt='grid'))
 
 
 if __name__ == "__main__":
-    pool_name = "full"
+    pool_name = "sz50"
     # 修改保存路径的格式
     model_base_path = f"backend/ml/models/explosive_stock_model_{pool_name}"
 

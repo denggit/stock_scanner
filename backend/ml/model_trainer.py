@@ -23,29 +23,44 @@ class ExplosiveStockModelTrainer:
         self.models = {
             'gbdt': GradientBoostingClassifier(
                 random_state=42,
-                n_estimators=100,  # 可以根据需要调整
+                n_estimators=200,
+                learning_rate=0.01,
+                max_depth=6,         # 适度增加深度
+                subsample=0.9,
+                min_samples_split=15,
+                min_samples_leaf=8,
+                max_features='sqrt'
             ),
             'rf': RandomForestClassifier(
                 random_state=42,
-                n_jobs=n_jobs,  # 启用并行
-                n_estimators=100,
+                n_jobs=n_jobs,
+                n_estimators=400,
+                max_depth=10,        # 增加深度
+                min_samples_split=10,
+                min_samples_leaf=5,
+                max_features='sqrt',
+                bootstrap=True,
+                class_weight={0: 1, 1: 1.8}  # 微调权重
             ),
             'xgb': XGBClassifier(
                 random_state=42,
-                n_jobs=n_jobs,  # 启用并行
-                n_estimators=100,
-                tree_method='hist',  # 使用直方图算法
+                n_jobs=n_jobs,
+                n_estimators=200,
+                max_depth=6,         # 适度增加深度
+                learning_rate=0.01,
+                subsample=0.9,
+                colsample_bytree=0.9,
+                min_child_weight=4,  # 减小以增加灵活性
+                scale_pos_weight=1.8,  # 微调权重
+                tree_method='hist',
+                gamma=0.12          # 减小以增加灵活性
             ),
-            'lr': LogisticRegression(
-                random_state=42,
-                n_jobs=n_jobs,  # 启用并行
-            )
+            # 'lr': None  # 移除表现不佳的逻辑回归模型
         }
         self.weights = {
-            'gbdt': 0.3,
-            'rf': 0.4,
-            'xgb': 0.2,
-            'lr': 0.1
+            'gbdt': 0.35,  # GBDT的precision很高
+            'rf': 0.45,    # RF整体表现最好
+            'xgb': 0.20    # 降低XGB权重
         }
         self.scaler = StandardScaler()
         self.trained_models = {}
@@ -173,6 +188,8 @@ class ExplosiveStockModelTrainer:
         - 召回率 (Recall)：实际"上涨"的股票中，模型预测正确的比例。召回率高，说明模型能捕捉到大部分上涨的股票。但高召回率可能意味着模型过于激进，把很多不上涨的股票也预测为上涨。
         - F1分数 (F1)：精确率和召回率的平衡值，越高越好。
         - AUC值 (AUC)：模型区分"上涨"和"不上涨"股票的能力，0.5是随机猜测，1是完美预测。
+        
+        最完美的是每一项值都很高
 
         - 混淆矩阵 (confusion_matrix)：
         预测值 ->          0    1

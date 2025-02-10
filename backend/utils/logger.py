@@ -47,6 +47,7 @@ def setup_logger(name: str, log_dir: str = "logs", log_level=logging.INFO, set_r
 
     if set_root_logger:
         # 设置root logger
+        logger.addHandler(console_handler)
         logging.root.addHandler(file_handler)
         logging.root.setLevel(log_level)
     else:

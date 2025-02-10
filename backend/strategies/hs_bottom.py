@@ -41,7 +41,7 @@ class HSBottom(BaseStrategy):
         df['rsi'] = CalIndicators.rsi(df, period=14)
 
         # 计算前期压力位（使用前期高点）
-        df['resistance'] = CalIndicators.resistance(df, lookback_period=60)
+        df['resistance'] = CalIndicators.resistance(df, window=60)
 
         return df
 

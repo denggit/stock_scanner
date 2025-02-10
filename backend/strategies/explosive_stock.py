@@ -15,6 +15,10 @@ from backend.strategies.base import BaseStrategy
 from backend.utils.indicators import CalIndicators
 
 
+MODEL_BASE_PATH = "backend/ml/models/explosive_stock_model"
+# MODEL_BASE_PATH = "backend/ml/models/full_0210_noon/explosive_stock_model"
+
+
 class ExplosiveStockStrategy(BaseStrategy):
     """
     爆发式选股策略
@@ -61,7 +65,7 @@ class ExplosiveStockStrategy(BaseStrategy):
 
             stock_pool = self._params.get("stock_pool", "full")
             # 修改为正确的模型文件路径
-            base_path = "backend/ml/models/explosive_stock_model"
+            base_path = MODEL_BASE_PATH
             model_files = {}
             for model_name in self.ml_trainer.models.keys():
                 model_files[model_name] = f"{base_path}_{stock_pool}_{model_name}.joblib"
@@ -459,24 +463,29 @@ class ExplosiveStockStrategy(BaseStrategy):
             # 标准化特征
             features_scaled = self.ml_trainer.scaler.transform(features)
             
-            # 获取每个模型的预测概率并应用权重
-            predictions = []
-            total_weight = sum(self.ml_trainer.weights.values())  # 计算权重总和
-            
+            # 获取每个模型的预测概率
+            model_predictions = {}
             for name, model in self.ml_trainer.trained_models.items():
                 # 获取上涨类（类别1）的预测概率
                 pred = model.predict_proba(features_scaled)[0][1]
-                # 应用归一化后的权重
-                normalized_weight = self.ml_trainer.weights[name] / total_weight
-                weighted_pred = pred * normalized_weight
-                predictions.append(weighted_pred)
+                # pred = model.predict_proba(features_scaled)[0][2]
+                model_predictions[name] = pred
             
-            # 计算加权平均预测概率
-            final_prediction = sum(predictions)
+            # 使用权重计算加权平均
+            weighted_sum = 0
+            total_weight = sum(self.ml_trainer.weights.values())
             
-            # 由于使用了归一化权重，理论上 final_prediction 应该在 [0,1] 范围内
-            # 但为了数值稳定性，仍保留截断
-            return float(min(max(final_prediction, 0), 1))
+            for name, pred in model_predictions.items():
+                weight = self.ml_trainer.weights[name]
+                weighted_sum += pred * (weight / total_weight)
+            
+            # 对最终预测值进行校准
+            # 如果任一模型预测概率超过0.7，提升整体预测值
+            max_pred = max(model_predictions.values())
+            if max_pred > 0.7:
+                weighted_sum = (weighted_sum + max_pred) / 2
+            
+            return float(min(max(weighted_sum, 0), 1))
 
         except Exception as e:
             logging.exception(f"模型预测失败: {e}")
@@ -745,6 +754,12 @@ class ExplosiveStockStrategy(BaseStrategy):
             pd.Series: 包含所有分析结果的Series
         """
         try:
+            # 获取每个模型的预测概率
+            features_scaled = self.ml_trainer.scaler.transform(df)
+            model_predictions = {}
+            for name, model in self.ml_trainer.trained_models.items():
+                pred = model.predict_proba(features_scaled)[0][1]
+                model_predictions[name] = pred  # 转换为百分比
             return pd.Series({
                 'signal': round(final_score * 100, 2),
                 'trade_date': df['trade_date'].iloc[-1],
@@ -773,6 +788,11 @@ class ExplosiveStockStrategy(BaseStrategy):
                 # 机器学习预测
                 'ml_prediction': round(scores['ml'] * 100, 2),
                 'explosion_probability': round(self._get_explosion_probability(df) * 100, 2),
+
+                # 各模型预测概率
+                'gbdt_prob': model_predictions.get('gbdt', 0),
+                'rf_prob': model_predictions.get('rf', 0),
+                'xgb_prob': model_predictions.get('xgb', 0),
 
                 # 买入建议
                 'buy_signal': self._generate_buy_signal(final_score),
