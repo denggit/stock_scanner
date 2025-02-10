@@ -20,7 +20,7 @@ from backend.strategies.swing_trading import SwingTradingStrategy
 from backend.utils.api_response import convert_to_python_types
 from backend.utils.logger import setup_logger
 
-logger = setup_logger("strategy_service")
+logger = setup_logger("strategy_service", set_root_logger=True)
 
 
 class StrategyService:
@@ -35,6 +35,13 @@ class StrategyService:
             "头肩底形态策略": HSBottom,
             "爆发式选股策略": ExplosiveStockStrategy
         }
+        self.pool_trans = {
+            "全量股票": "full",
+            "非ST股票": "no_st",
+            "上证50": "sz50",
+            "沪深300": "hs300",
+            "中证500": "zz500"
+        }
 
     async def scan_stocks(self, strategy: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
         """使用策略扫描股票"""
@@ -44,9 +51,14 @@ class StrategyService:
             if strategy not in self.strategies:
                 raise ValueError(f"Strategy {strategy} not found")
 
+            # 转化stock_pool
+            stock_pool = params.get('stock_pool')
+            if stock_pool in self.pool_trans.keys():
+                stock_pool = self.pool_trans.get(stock_pool)
+                params["stock_pool"] = stock_pool
             # 获取股票列表
-            if params.get('stock_pool'):
-                stocks = self.data_fetcher.get_stock_list(pool_name=params.get('stock_pool'))
+            if stock_pool:
+                stocks = self.data_fetcher.get_stock_list(pool_name=stock_pool)
                 results = []
 
             # 获取足量数据
@@ -105,7 +117,7 @@ class StrategyService:
             results = convert_to_python_types(results)
             return results
         except Exception as e:
-            logger.error(f"Error scanning stocks: {e}", exc_info=True)
+            logger.exception(f"Error scanning stocks: {e}")
             raise Exception(f"Error scanning stocks: {e}")
 
     async def list_strategies(self) -> List[Dict[str, Any]]:

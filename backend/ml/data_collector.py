@@ -1,4 +1,5 @@
 import decimal
+import logging
 from pathlib import Path
 from typing import Tuple
 
@@ -6,9 +7,6 @@ import numpy as np
 import pandas as pd
 
 from backend.utils.indicators import CalIndicators
-from backend.utils.logger import setup_logger
-
-logger = setup_logger("train_model", set_root_logger=True)
 
 
 class ExplosiveStockDataCollector:
@@ -104,14 +102,14 @@ class ExplosiveStockDataCollector:
                         lambda x: float(x) if isinstance(x, decimal.Decimal) else x
                     )
                 except Exception as e:
-                    logger.warning(f"转换列 {column} 时出错: {e}")
+                    logging.warning(f"转换列 {column} 时出错: {e}")
             elif column in int_columns and df[column].dtype == object:
                 try:
                     df[column] = df[column].apply(
                         lambda x: int(x) if isinstance(x, decimal.Decimal) else x
                     )
                 except Exception as e:
-                    logger.warning(f"转换列 {column} 时出错: {e}")
+                    logging.warning(f"转换列 {column} 时出错: {e}")
 
         return df
 
@@ -130,7 +128,7 @@ class ExplosiveStockDataCollector:
             return features, labels
 
         except Exception as e:
-            logger.exception(f"收集训练数据时出错: {e}")
+            logging.exception(f"收集训练数据时出错: {e}")
             return pd.DataFrame(), pd.Series()
 
     def _generate_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -227,7 +225,7 @@ class ExplosiveStockDataCollector:
             return features
 
         except Exception as e:
-            logger.exception(f"生成特征时出错: {e}")
+            logging.exception(f"生成特征时出错: {e}")
             return pd.DataFrame()
 
     def _calculate_ma_trend(self, features: pd.DataFrame) -> pd.Series:
@@ -373,7 +371,6 @@ class ExplosiveStockDataCollector:
 
         return obv
 
-
     def _generate_labels(self, df: pd.DataFrame) -> pd.Series:
         """
         生成标签：标记未来20天内是否会出现30%以上涨幅的时间点
@@ -447,14 +444,14 @@ class ExplosiveStockDataCollector:
 
             # 输出结果
             if high_corr:
-                logger.info("\n高度相关的特征对：")
+                logging.info("\n高度相关的特征对：")
                 for pair in high_corr:
-                    logger.info(f"{pair['feature1']} - {pair['feature2']}: {pair['correlation']:.3f}")
+                    logging.info(f"{pair['feature1']} - {pair['feature2']}: {pair['correlation']:.3f}")
 
             return high_corr
 
         except Exception as e:
-            logger.exception(f"特征相关性分析失败: {e}")
+            logging.exception(f"特征相关性分析失败: {e}")
             return None
 
     def _find_bottoms(self, series: pd.Series) -> list:
@@ -495,7 +492,7 @@ class ExplosiveStockDataCollector:
             return is_flag
 
         except Exception as e:
-            logger.warning(f"旗形形态检测失败: {e}")
+            logging.warning(f"旗形形态检测失败: {e}")
             return False
 
     def _calculate_sideways_days(self, df: pd.DataFrame) -> pd.Series:
@@ -600,31 +597,31 @@ class ExplosiveStockDataCollector:
         # 初始化结果序列
         seasonal_pattern = pd.Series(0.0, index=df.index)
         dates = pd.to_datetime(df.index)
-        
+
         # 对每个时间点进行遍历
         for i in range(period, len(df)):
             current_date = dates[i]
             current_month = current_date.month
-            
+
             # 获取历史数据窗口
             historical_data = df.iloc[:i]
             historical_dates = dates[:i]
-            
+
             # 只查找同月的历史数据
             same_month_mask = historical_dates.month == current_month
             same_month_data = historical_data[same_month_mask]
-            
+
             if len(same_month_data) > 0:
                 # 计算同月历史平均收益率
                 avg_return = same_month_data['pct_chg'].mean()
                 # 计算同月历史波动率
                 vol = same_month_data['pct_chg'].std()
-                
+
                 if not pd.isna(avg_return) and not pd.isna(vol) and vol != 0:
                     # 计算季节性强度（使用收益率与波动率的比值）
                     seasonal_strength = avg_return / vol
                     seasonal_pattern.iloc[i] = seasonal_strength
-        
+
         return seasonal_pattern
 
     def _detect_price_cycle(self, df: pd.DataFrame, window: int = 120) -> pd.Series:
@@ -643,20 +640,20 @@ class ExplosiveStockDataCollector:
                 # 获取滑动窗口的价格数据并去除趋势
                 window_prices = price[i - window:i]
                 detrended = window_prices - np.mean(window_prices)
-                
+
                 # 执行傅里叶变换
                 fft_values = fft.fft(detrended)
                 frequencies = fft.fftfreq(len(detrended))
-                
+
                 # 只考虑正频率部分，并过滤掉高频噪声
                 positive_freq_idx = np.where((frequencies > 0) & (frequencies < 0.5))[0]
                 magnitudes = np.abs(fft_values)
-                
+
                 if len(positive_freq_idx) > 0:
                     # 找出最显著的周期（振幅最大的频率）
                     main_freq_idx = positive_freq_idx[np.argmax(magnitudes[positive_freq_idx])]
                     freq = frequencies[main_freq_idx]
-                    
+
                     # 将频率转换为周期（天数），并进行有效性检查
                     if freq > 0:
                         cycle_length = abs(1 / freq)
@@ -664,9 +661,9 @@ class ExplosiveStockDataCollector:
                         cycles.iloc[i] = np.clip(cycle_length, 5, 60)
                     else:
                         cycles.iloc[i] = 0
-                        
+
             return cycles
 
         except Exception as e:
-            logger.warning(f"周期检测失败: {e}")
+            logging.warning(f"周期检测失败: {e}")
             return pd.Series(0.0, index=df.index)

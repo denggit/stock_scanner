@@ -32,7 +32,6 @@ class ExplosiveStockStrategy(BaseStrategy):
     def __init__(self):
         super().__init__(name="爆发式选股策略", description="寻找20个交易日内可能暴涨30%的股票")
         self._init_params()
-        self._init_ml_model()
 
     def _init_params(self):
         """初始化策略参数"""
@@ -57,14 +56,29 @@ class ExplosiveStockStrategy(BaseStrategy):
         """初始化机器学习模型"""
         self.ml_trainer = None
         try:
-            model_path = "backend/ml/models/explosive_stock_model.joblib"
-            scaler_path = "backend/ml/models/explosive_stock_scaler.joblib"
-
+            # 初始化模型训练器
             self.ml_trainer = ExplosiveStockModelTrainer()
-            self.ml_trainer.load_model(model_path, scaler_path)
-            logging.info("成功加载机器学习模型")
+
+            stock_pool = self._params.get("stock_pool", "full")
+            # 修改为正确的模型文件路径
+            base_path = "backend/ml/models/explosive_stock_model"
+            model_files = {}
+            for model_name in self.ml_trainer.models.keys():
+                model_files[model_name] = f"{base_path}_{stock_pool}_{model_name}.joblib"
+            scaler_path = f'backend/ml/models/explosive_stock_model_{stock_pool}_scaler.joblib'
+
+            # 使用新的加载方法,传入具体的模型文件路径
+            self.ml_trainer.load_models(model_files, scaler_path)
+
+            logging.debug("成功加载机器学习模型")
+
+            # 验证模型加载状态
+            if not self._is_model_ready():
+                raise ValueError("模型加载不完整")
+                
         except Exception as e:
             logging.warning(f"加载机器学习模型失败: {e}")
+            self.ml_trainer = None
 
     def generate_signal(self, data: pd.DataFrame) -> pd.Series:
         """生成交易信号"""
@@ -465,6 +479,7 @@ class ExplosiveStockStrategy(BaseStrategy):
     def _predict_with_ml(self, df: pd.DataFrame) -> float:
         """使用机器学习模型预测暴涨概率"""
         try:
+            self._init_ml_model()
             if not self._is_model_ready():
                 logging.warning("机器学习模型未就绪，使用规则基预测")
                 return self._rule_based_prediction(df)
@@ -475,7 +490,7 @@ class ExplosiveStockStrategy(BaseStrategy):
                 return self._rule_based_prediction(df)
 
             prediction = self._make_prediction(features)
-            logging.info(f"机器学习模型预测概率: {prediction:.4f}")
+            logging.info(f"机器学习模型预测概率: {prediction:.4f} - 股票：{df.code.iloc[-1]}")
             return prediction
 
         except Exception as e:

@@ -49,22 +49,25 @@ class StockDataFetcher:
         获取股票列表
         :return: 股票列表
         """
-        if pool_name == "full" or "全量股票":
+        if pool_name in ("full", "全量股票"):
             return self.db.get_stock_list()
-        elif pool_name == "no_st" or "非ST股票":
+        elif pool_name in ("no_st", "非ST股票"):
             stock_list = self.db.get_stock_list()
             return stock_list[~stock_list['name'].str.contains("ST")]
         elif pool_name == "st":
             stock_list = self.db.get_stock_list()
             return stock_list[stock_list['name'].str.contains("ST")]
-        elif pool_name == "sz50" or "上证50":
+        elif pool_name in ("sz50", "上证50"):
             bs = BaostockSource()
-            return bs.get_sz50()
-        elif pool_name == "hs300" or "沪深300":
+            rs = bs.get_sz50().rename(columns={"code_name": "name"})
+            return rs
+        elif pool_name in ("hs300", "沪深300"):
             bs = BaostockSource()
-            return bs.get_hs300()
-        elif pool_name == "zz500" or "中证500":
+            rs = bs.get_hs300().rename(columns={"code_name": "name"})
+            return rs
+        elif pool_name in ("zz500", "中证500"):
             bs = BaostockSource()
-            return bs.get_zz500()
+            rs = bs.get_zz500().rename(columns={"code_name": "name"})
+            return rs
 
         return self.db.get_stock_list()
