@@ -426,22 +426,12 @@ class ExplosiveStockStrategy(BaseStrategy):
             logging.exception(f"分析波动性时发生错误: {e}")
             return 0.0
 
-    def _predict_with_ml(self, df: pd.DataFrame) -> float:
-        """使用机器学习模型预测暴涨概率"""
-        try:
-            if not self._is_model_ready():
-                return self._rule_based_prediction(df)
-
-            features = self._prepare_features(df)
-            return self._make_prediction(features)
-
-        except Exception as e:
-            logging.exception(f"使用机器学习模型预测暴涨概率时发生错误: {e}")
-            return self._rule_based_prediction(df)
-
     def _is_model_ready(self) -> bool:
         """检查模型是否准备就绪"""
-        return self.ml_trainer is not None and self.ml_trainer.model is not None
+        return (hasattr(self, 'ml_trainer') and 
+                self.ml_trainer is not None and 
+                hasattr(self.ml_trainer, 'trained_models') and 
+                len(self.ml_trainer.trained_models) > 0)
 
     def _prepare_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """准备预测特征"""
@@ -450,10 +440,47 @@ class ExplosiveStockStrategy(BaseStrategy):
         return features.iloc[-1:].copy()
 
     def _make_prediction(self, features: pd.DataFrame) -> float:
-        """使用模型进行预测"""
-        features_scaled = self.ml_trainer.scaler.transform(features)
-        prediction = self.ml_trainer.model.predict_proba(features_scaled)[0][1]
-        return float(prediction)
+        """使用集成模型进行预测"""
+        try:
+            # 标准化特征
+            features_scaled = self.ml_trainer.scaler.transform(features)
+            
+            # 获取每个模型的预测概率
+            predictions = []
+            for name, model in self.ml_trainer.trained_models.items():
+                # 获取正类（类别1）的预测概率
+                pred = model.predict_proba(features_scaled)[0][1]
+                # 应用模型权重
+                weighted_pred = pred * self.ml_trainer.weights[name]
+                predictions.append(weighted_pred)
+            
+            # 计算加权平均预测概率
+            final_prediction = sum(predictions)
+            return float(min(max(final_prediction, 0), 1))
+
+        except Exception as e:
+            logging.exception(f"模型预测失败: {e}")
+            return 0.0
+
+    def _predict_with_ml(self, df: pd.DataFrame) -> float:
+        """使用机器学习模型预测暴涨概率"""
+        try:
+            if not self._is_model_ready():
+                logging.warning("机器学习模型未就绪，使用规则基预测")
+                return self._rule_based_prediction(df)
+
+            features = self._prepare_features(df)
+            if features.empty:
+                logging.warning("特征生成失败，使用规则基预测")
+                return self._rule_based_prediction(df)
+
+            prediction = self._make_prediction(features)
+            logging.info(f"机器学习模型预测概率: {prediction:.4f}")
+            return prediction
+
+        except Exception as e:
+            logging.exception(f"使用机器学习模型预测暴涨概率时发生错误: {e}")
+            return self._rule_based_prediction(df)
 
     @staticmethod
     def _get_trend_strength(df: pd.DataFrame) -> str:
