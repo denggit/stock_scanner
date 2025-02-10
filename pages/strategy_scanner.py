@@ -60,7 +60,14 @@ def main():
             ["均线回踩策略", "突破策略", "波段交易策略", "扫描翻倍股", "长期上涨策略", "头肩底形态策略",
              "爆发式选股策略"]
         )
-        params = {}
+        # 股票池选择
+        stock_pool = st.selectbox(
+            "选择股票池",
+            ["全量股票", "非ST股票", "上证50", "沪深300", "中证500"],
+            index=1,  # 默认选择非ST股票
+            help="选择要回测的股票池范围"
+        )
+        params = {"stock_pool": stock_pool}
         if strategy == "均线回踩策略":
             st.subheader("均线回踩策略参数配置")
 

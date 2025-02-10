@@ -45,8 +45,9 @@ class StrategyService:
                 raise ValueError(f"Strategy {strategy} not found")
 
             # 获取股票列表
-            stocks = self.data_fetcher.get_stock_list()
-            results = []
+            if params.get('stock_pool'):
+                stocks = self.data_fetcher.get_stock_list(pool_name=params.get('stock_pool'))
+                results = []
 
             # 获取足量数据
             ma_period = params.get("ma_period", 20)  # 假设设置了均线 

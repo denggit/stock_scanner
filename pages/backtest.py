@@ -13,7 +13,7 @@ def backtest_page():
 
     with st.sidebar:
         st.header("回测设置")
-        
+
         # 策略选择
         strategy = st.selectbox(
             "选择策略",
@@ -24,7 +24,7 @@ def backtest_page():
         # 股票池选择
         stock_pool = st.selectbox(
             "选择股票池",
-            ["全量股票", "非ST股票", "上证50", "沪深300", "中证500", "创业板指"],
+            ["全量股票", "非ST股票", "上证50", "沪深300", "中证500"],
             index=1,  # 默认选择非ST股票
             help="选择要回测的股票池范围"
         )
@@ -41,7 +41,7 @@ def backtest_page():
                 value=100000.0,
                 step=10000.0,
                 help="设置回测的初始资金金额"
-        )
+            )
         with col2:
             end_date = st.date_input(
                 "结束日期",
@@ -53,7 +53,7 @@ def backtest_page():
                 max_value=100,
                 value=4,
                 help="同时持有的最大股票数量"
-        )
+            )
 
         # 资金分配策略
         allocation_strategy = st.selectbox(
