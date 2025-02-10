@@ -115,7 +115,7 @@ def train_model(model_save_path: str, scaler_save_path: str, stock_pool: str = '
         if not (features_df.index == labels_series.index).all():
             raise ValueError("特征和标签的索引不匹配")
 
-        # 7. 特征分析
+        # 7. 特征分析，很多高相似度的特征对感觉都有用，暂时不移除他们
         high_corr_features = collector.analyze_feature_correlation(features_df)
 
         # 8. 保存特征和标签的统计信息

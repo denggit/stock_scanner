@@ -252,7 +252,6 @@ class ExplosiveStockDataCollector:
         """计算成交量趋势"""
         volume = df['volume']
         vol_ma5 = volume.rolling(window=5).mean()
-        vol_ma20 = volume.rolling(window=20).mean()
 
         trend = pd.Series(0, index=df.index)
         trend[volume > vol_ma5 * 1.5] = 1  # 放量
@@ -379,7 +378,7 @@ class ExplosiveStockDataCollector:
              1  (会上涨30%)
         """
         labels = pd.Series(0, index=df.index)
-        
+
         for i in range(len(df) - self.forward_window):
             current_price = df['close'].iloc[i]
             future_window = df.iloc[i:i + self.forward_window]

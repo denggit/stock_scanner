@@ -10,17 +10,36 @@ from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, r
     f1_score, roc_auc_score
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
+from multiprocessing import cpu_count
 
 
 class ExplosiveStockModelTrainer:
     """爆发式股票预测模型训练器"""
 
     def __init__(self):
+        # 获取 CPU 核心数
+        n_jobs = cpu_count() - 2  # 留出2个核心给系统使用
+        
         self.models = {
-            'gbdt': GradientBoostingClassifier(random_state=42),
-            'rf': RandomForestClassifier(random_state=42),
-            'xgb': XGBClassifier(random_state=42),
-            'lr': LogisticRegression(random_state=42)
+            'gbdt': GradientBoostingClassifier(
+                random_state=42,
+                n_estimators=100,  # 可以根据需要调整
+            ),
+            'rf': RandomForestClassifier(
+                random_state=42,
+                n_jobs=n_jobs,  # 启用并行
+                n_estimators=100,
+            ),
+            'xgb': XGBClassifier(
+                random_state=42,
+                n_jobs=n_jobs,  # 启用并行
+                n_estimators=100,
+                tree_method='hist',  # 使用直方图算法
+            ),
+            'lr': LogisticRegression(
+                random_state=42,
+                n_jobs=n_jobs,  # 启用并行
+            )
         }
         self.weights = {
             'gbdt': 0.3,
@@ -150,10 +169,10 @@ class ExplosiveStockModelTrainer:
         """评估所有模型的性能
 
         - 准确率 (Accuracy)：模型预测的正确比例。但要注意，如果数据中大部分样本是某一类（比如不上涨的股票），模型可能会倾向于预测多数类，导致准确率虚高。
-        - 精确率 (Precision)：模型预测为“上涨”的股票中，实际真的上涨的比例。
-        - 召回率 (Recall)：实际“上涨”的股票中，模型预测正确的比例。召回率高，说明模型能捕捉到大部分上涨的股票。但高召回率可能意味着模型过于激进，把很多不上涨的股票也预测为上涨。
+        - 精确率 (Precision)：模型预测为"上涨"的股票中，实际真的上涨的比例。
+        - 召回率 (Recall)：实际"上涨"的股票中，模型预测正确的比例。召回率高，说明模型能捕捉到大部分上涨的股票。但高召回率可能意味着模型过于激进，把很多不上涨的股票也预测为上涨。
         - F1分数 (F1)：精确率和召回率的平衡值，越高越好。
-        - AUC值 (AUC)：模型区分“上涨”和“不上涨”股票的能力，0.5是随机猜测，1是完美预测。
+        - AUC值 (AUC)：模型区分"上涨"和"不上涨"股票的能力，0.5是随机猜测，1是完美预测。
 
         - 混淆矩阵 (confusion_matrix)：
         预测值 ->          0    1

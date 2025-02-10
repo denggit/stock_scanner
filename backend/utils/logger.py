@@ -45,13 +45,13 @@ def setup_logger(name: str, log_dir: str = "logs", log_level=logging.INFO, set_r
     file_handler.setFormatter(formatter)
     console_handler.setFormatter(formatter)
 
-    # 添加处理器
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
-
     if set_root_logger:
         # 设置root logger
         logging.root.addHandler(file_handler)
         logging.root.setLevel(log_level)
+    else:
+        # 添加处理器
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
 
     return logger
