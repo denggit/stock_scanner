@@ -373,13 +373,13 @@ class ExplosiveStockDataCollector:
 
     def _generate_labels(self, df: pd.DataFrame) -> pd.Series:
         """
-        生成标签：标记未来20天内是否会出现30%以上涨幅的时间点
+        生成二元标签：标记未来20天内是否会出现30%以上涨幅的时间点
         标签映射：
-             0  (无法预测未来)
-             1  (普通样本)
-         `````````````````````````    2`````````````````````````  (目标样本)
+             0  (不会上涨30%或无法预测)
+             1  (会上涨30%)
         """
         labels = pd.Series(0, index=df.index)
+        
         for i in range(len(df) - self.forward_window):
             current_price = df['close'].iloc[i]
             future_window = df.iloc[i:i + self.forward_window]
@@ -389,17 +389,15 @@ class ExplosiveStockDataCollector:
             price_increase = (future_max_price - current_price) / current_price
 
             # 计算未来成交量是否会放大
-            current_volume = df['volume'].iloc[i - 5:i].mean()  # 当前5日平均成交量
+            current_volume = df['volume'].iloc[i - 5:i].mean()
             future_max_volume = future_window['volume'].max()
             volume_increase = future_max_volume / current_volume if current_volume > 0 else 0
 
-            # 如果未来会出现涨幅超过阈值且成交量放大，则当前时间点标记为2（目标样本）
+            # 只要满足上涨条件就标记为1
             if (price_increase >= self.price_threshold and volume_increase >= self.volume_multiplier):
-                labels.iloc[i] = 2
-            else:
                 labels.iloc[i] = 1
 
-        # 对于最后forward_window天的数据标记为0（因为无法知道未来）
+        # 最后20天数据标记为0（因为无法预测）
         labels.iloc[-self.forward_window:] = 0
         return labels
 

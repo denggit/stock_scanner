@@ -95,9 +95,8 @@ def train_model(model_save_path: str, scaler_save_path: str, stock_pool: str = '
         labels_series = labels_series.loc[common_index]
 
         logger.info(f"收集到的训练数据大小：{len(features_df)} 行")
-        logger.info(f"正样本比例：{(labels_series == 2).mean():.2%}")
-        logger.info(f"负样本比例：{(labels_series == 0).mean():.2%}")
-        logger.info(f"中性样本比例：{(labels_series == 1).mean():.2%}")
+        logger.info(f"正样本比例：{(labels_series == 1).mean():.2%}")  # 会上涨30%的样本
+        logger.info(f"负样本比例：{(labels_series == 0).mean():.2%}")  # 不会上涨30%的样本
 
         # 6. 数据质量检查
         logger.info("检查数据质量...")
@@ -154,6 +153,7 @@ def log_evaluation_results(evaluation_results):
     logger.info("模型评估结果：")
     # 提取除 confusion_matrix 之外的指标名称
     metric_names = [name for name in next(iter(evaluation_results.values())) if name != 'confusion_matrix']
+    
     # 准备表格数据
     table_data = []
     for model_name, metrics in evaluation_results.items():
@@ -165,14 +165,19 @@ def log_evaluation_results(evaluation_results):
             else:
                 row.append(metric_value)
         table_data.append(row)
+    
     # 输出表格
     logger.info("模型评估指标对比表格：")
     logger.info(tabulate(table_data, headers=['模型'] + metric_names, tablefmt='grid'))
+    
     # 单独输出每个模型的混淆矩阵
     for model_name, metrics in evaluation_results.items():
         confusion_matrix = metrics['confusion_matrix']
-        headers = ["实际值\预测值", 0, 1, 2]
-        data = [[i] + row for i, row in enumerate(confusion_matrix)]
+        headers = ["实际值\预测值", "不会上涨", "会上涨"]
+        data = [
+            ["不会上涨"] + confusion_matrix[0],
+            ["会上涨"] + confusion_matrix[1]
+        ]
         logger.info(f"\n模型 {model_name} 的混淆矩阵：")
         logger.info(tabulate(data, headers=headers, tablefmt='grid'))
 

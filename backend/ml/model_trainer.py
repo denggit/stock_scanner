@@ -23,8 +23,8 @@ class ExplosiveStockModelTrainer:
             'lr': LogisticRegression(random_state=42)
         }
         self.weights = {
-            'gbdt': 0.4,
-            'rf': 0.3,
+            'gbdt': 0.3,
+            'rf': 0.4,
             'xgb': 0.2,
             'lr': 0.1
         }
@@ -156,10 +156,10 @@ class ExplosiveStockModelTrainer:
         - AUC值 (AUC)：模型区分“上涨”和“不上涨”股票的能力，0.5是随机猜测，1是完美预测。
 
         - 混淆矩阵 (confusion_matrix)：
-        预测值 ->          0    1    2
-        实际值 ->      0   X    X    X
-        实际值 ->      1   X    X    X
-        实际值 ->      2   X    X    X
+        预测值 ->          0    1
+        实际值 ->      0   X    X
+        实际值 ->      1   X    X
+
 
         """
         try:
@@ -171,31 +171,15 @@ class ExplosiveStockModelTrainer:
                 y_pred = model.predict(X_test_scaled)
                 y_pred_proba = model.predict_proba(X_test_scaled)
 
-                # 计算各种评估指标，使用 'weighted' 平均方式处理多分类问题
+                # 计算各种评估指标
                 results[name] = {
                     'accuracy': accuracy_score(y_test, y_pred),
-                    'precision': precision_score(y_test, y_pred, average='weighted'),
-                    'recall': recall_score(y_test, y_pred, average='weighted'),
-                    'f1': f1_score(y_test, y_pred, average='weighted'),
-                    'confusion_matrix': confusion_matrix(y_test, y_pred).tolist()
+                    'precision': precision_score(y_test, y_pred, average='binary'),
+                    'recall': recall_score(y_test, y_pred, average='binary'),
+                    'f1': f1_score(y_test, y_pred, average='binary'),
+                    'confusion_matrix': confusion_matrix(y_test, y_pred).tolist(),
+                    'auc': roc_auc_score(y_test, y_pred_proba[:, 1])
                 }
-
-                # 如果是多分类问题，使用 micro-averaging 计算 ROC AUC
-                try:
-                    # 对于多分类问题，我们计算每个类别的 one-vs-rest ROC AUC，然后取平均
-                    auc_scores = []
-                    for i in range(len(model.classes_)):
-                        if len(model.classes_) == 2:  # 二分类情况
-                            auc = roc_auc_score(y_test == model.classes_[1],
-                                                y_pred_proba[:, 1])
-                        else:  # 多分类情况
-                            auc = roc_auc_score(y_test == model.classes_[i],
-                                                y_pred_proba[:, i])
-                        auc_scores.append(auc)
-                    results[name]['auc'] = np.mean(auc_scores)
-                except Exception as e:
-                    logging.warning(f"计算 AUC 分数时出错: {e}")
-                    results[name]['auc'] = None
 
                 # 输出评估报告
                 logging.info(f"\n{name} 模型评估结果：")
@@ -209,10 +193,9 @@ class ExplosiveStockModelTrainer:
                 # 输出混淆矩阵
                 cm = results[name]['confusion_matrix']
                 logging.info("\n混淆矩阵：")
-                logging.info("预测值 ->      0        1        2")
-                logging.info("实际值  0: {:>6}   {:>6}   {:>6}".format(cm[0][0], cm[0][1], cm[0][2]))
-                logging.info("实际值  1: {:>6}   {:>6}   {:>6}".format(cm[1][0], cm[1][1], cm[1][2]))
-                logging.info("实际值  2: {:>6}   {:>6}   {:>6}".format(cm[2][0], cm[2][1], cm[2][2]))
+                logging.info("预测值 ->      0        1")
+                logging.info("实际值  0: {:>6}   {:>6}".format(cm[0][0], cm[0][1]))
+                logging.info("实际值  1: {:>6}   {:>6}".format(cm[1][0], cm[1][1]))
 
             return results
 

@@ -459,17 +459,23 @@ class ExplosiveStockStrategy(BaseStrategy):
             # 标准化特征
             features_scaled = self.ml_trainer.scaler.transform(features)
             
-            # 获取每个模型的预测概率
+            # 获取每个模型的预测概率并应用权重
             predictions = []
+            total_weight = sum(self.ml_trainer.weights.values())  # 计算权重总和
+            
             for name, model in self.ml_trainer.trained_models.items():
-                # 获取正类（类别1）的预测概率
+                # 获取上涨类（类别1）的预测概率
                 pred = model.predict_proba(features_scaled)[0][1]
-                # 应用模型权重
-                weighted_pred = pred * self.ml_trainer.weights[name]
+                # 应用归一化后的权重
+                normalized_weight = self.ml_trainer.weights[name] / total_weight
+                weighted_pred = pred * normalized_weight
                 predictions.append(weighted_pred)
             
             # 计算加权平均预测概率
             final_prediction = sum(predictions)
+            
+            # 由于使用了归一化权重，理论上 final_prediction 应该在 [0,1] 范围内
+            # 但为了数值稳定性，仍保留截断
             return float(min(max(final_prediction, 0), 1))
 
         except Exception as e:
