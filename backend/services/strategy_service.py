@@ -10,6 +10,7 @@ import datetime
 from typing import Any, Dict, List
 
 import pandas as pd
+from tqdm import tqdm
 
 from backend.data.stock_data_fetcher import StockDataFetcher
 from backend.strategies.breakout import BreakoutStrategy
@@ -90,7 +91,7 @@ class StrategyService:
             )
 
             # 对每只股票进行策略扫描
-            for stock in stocks.itertuples():
+            for stock in tqdm(stocks.itertuples(), total=len(stocks), desc=f"Scanning with {strategy}"):
                 if "st" in stock.name.lower():
                     # 跳过ST股票
                     continue

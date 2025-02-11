@@ -254,6 +254,8 @@ def main():
             col1, col2 = st.columns(2)
             with col1:
                 start_date = st.date_input("开始日期", value=default_start_date).strftime("%Y-%m-%d")
+                double_period = st.number_input("翻倍周期", min_value=1, value=0, max_value=250,
+                                                help="翻倍周期，在这个周期内翻倍的股票。如果该值为0，则不限定周期，回撤前时间长度不定")
                 max_drawdown = st.number_input("最大回撤", min_value=0.00, value=0.05, max_value=0.95,
                                                help="最大回撤值，翻倍前遇到该回撤值则取消")
             with col2:
@@ -263,6 +265,7 @@ def main():
 
             params = {
                 "stock_pool": stock_pool,
+                "double_period": double_period,
                 "start_date": start_date,
                 "end_date": end_date,
                 "max_drawdown": max_drawdown,

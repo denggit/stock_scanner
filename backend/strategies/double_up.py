@@ -20,6 +20,7 @@ class DoubleUpStrategy(BaseStrategy):
     def __init__(self):
         super().__init__(name="扫描翻倍股", description="扫描过去周期内曾经翻倍过的股票")
         self.params = {
+            "double_period": 20,  # 观察期（交易日）
             "max_drawdown": 0.05,  # 最大回撤
             "times": 2.00,  # 翻倍倍数
         }
@@ -38,6 +39,7 @@ class DoubleUpStrategy(BaseStrategy):
         # 2. 计算在观察期内的最大涨幅
         max_drawndown = self._params['max_drawdown']
         times = float(self._params['times'])
+        double_period = int(self._params['double_period'])
 
         # 3. 找出所有翻倍记录
         double_records = []
@@ -49,8 +51,13 @@ class DoubleUpStrategy(BaseStrategy):
             max_return_idx = start_idx
             found_peak = False
 
+            # 确定搜索范围
+            end_search_idx = len(df)
+            if double_period > 0:
+                end_search_idx = min(start_idx + double_period, len(df))
+
             # 从起始点向后查找，直到找到最大收益点
-            for end_idx in range(start_idx + 1, len(df)):
+            for end_idx in range(start_idx + 1, end_search_idx):
                 end_price = df['close'].iloc[end_idx]
                 return_rate = end_price / start_price
 
