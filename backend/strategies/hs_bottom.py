@@ -7,9 +7,9 @@
 @Description: 头肩底形态选股策略
 """
 
-import numpy as np
+from typing import Tuple
+
 import pandas as pd
-from typing import List, Tuple
 
 from backend.strategies.base import BaseStrategy
 from backend.utils.indicators import CalIndicators
@@ -30,66 +30,6 @@ class HSBottom(BaseStrategy):
             "shoulder_time_diff": 0.2,  # 左右肩时间差异容忍度（20%）
             "head_depth": 0.03,  # 头部相对双肩的最小深度（3%）
         }
-
-    def _calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        """计算技术指标"""
-        # 计算MACD
-        df['macd'], df['macd_signal'], df['macd_hist'] = CalIndicators.macd(df, fast_period=12, slow_period=26,
-                                                                            signal_period=9)
-
-        # 计算RSI
-        df['rsi'] = CalIndicators.rsi(df, period=14)
-
-        # 计算前期压力位（使用前期高点）
-        df['resistance'] = CalIndicators.resistance(df, window=60)
-
-        return df
-
-    def _validate_pattern(self, df: pd.DataFrame, left_shoulder: int,
-                          head: int, right_shoulder: int, neckline_points: Tuple[int, int]) -> bool:
-        """验证头肩底形态是否有效"""
-        # 检查点的顺序
-        if not (left_shoulder < head < right_shoulder):
-            return False
-
-        # 检查形态形成时间是否足够长
-        if right_shoulder - left_shoulder < self._params['min_pattern_days']:
-            return False
-
-        # 检查左右肩的高度相似性
-        left_shoulder_price = float(df['low'].iloc[left_shoulder])
-        right_shoulder_price = float(df['low'].iloc[right_shoulder])
-        head_price = float(df['low'].iloc[head])
-
-        # 检查头部是否显著低于双肩
-        left_head_diff = (left_shoulder_price - head_price) / left_shoulder_price
-        right_head_diff = (right_shoulder_price - head_price) / right_shoulder_price
-        if left_head_diff < self._params['head_depth'] or right_head_diff < self._params['head_depth']:
-            return False
-
-        # 检查头部跌幅是否在指定范围内
-        head_drop = (df['high'].iloc[left_shoulder:head].max() - head_price) / df['high'].iloc[
-                                                                               left_shoulder:head].max() * 100
-        if not (self._params['head_drop_range'][0] <= head_drop <= self._params['head_drop_range'][1]):
-            return False
-
-        # 检查左右肩时间对称性
-        left_shoulder_duration = head - left_shoulder
-        right_shoulder_duration = right_shoulder - head
-        time_diff_ratio = abs(right_shoulder_duration - left_shoulder_duration) / left_shoulder_duration
-        if time_diff_ratio > self._params['shoulder_time_diff']:
-            return False
-
-        # 检查成交量特征
-        left_shoulder_volume = df['volume'].iloc[left_shoulder - 2:left_shoulder + 3].mean()
-        head_volume = df['volume'].iloc[head - 2:head + 3].mean()
-        right_shoulder_volume = df['volume'].iloc[right_shoulder - 2:right_shoulder + 3].mean()
-
-        # 左肩放量，头部缩量，右肩放量
-        if not (left_shoulder_volume > head_volume and right_shoulder_volume > head_volume):
-            return False
-
-        return True
 
     def generate_signal(self, data: pd.DataFrame) -> pd.Series:
         """生成交易信号"""
@@ -228,11 +168,12 @@ class HSBottom(BaseStrategy):
                         if signals.loc[signals.index[-1], 'signal'] != 0:
                             # 计算信号强度
                             volume_ratio = float(df['volume'].iloc[breakthrough_idx] / avg_volume)
-                            breakthrough_pct = float((float(df['close'].iloc[breakthrough_idx]) - neckline_last_price) / neckline_last_price * 100)
-                            
+                            breakthrough_pct = float((float(
+                                df['close'].iloc[breakthrough_idx]) - neckline_last_price) / neckline_last_price * 100)
+
                             # 计算颈线斜率的百分比
                             neckline_slope_pct = abs(neckline_slope * 100)  # 转换为百分比
-                            
+
                             # 归一化处理
                             volume_score = min(volume_ratio / 3, 1.0)
                             breakthrough_score = min(breakthrough_pct / 5, 1.0)
@@ -260,3 +201,63 @@ class HSBottom(BaseStrategy):
                             break
 
         return signals.iloc[-1]
+
+    def _calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+        """计算技术指标"""
+        # 计算MACD
+        df['macd'], df['macd_signal'], df['macd_hist'] = CalIndicators.macd(df, fast_period=12, slow_period=26,
+                                                                            signal_period=9)
+
+        # 计算RSI
+        df['rsi'] = CalIndicators.rsi(df, period=14)
+
+        # 计算前期压力位（使用前期高点）
+        df['resistance'] = CalIndicators.resistance(df, window=60)
+
+        return df
+
+    def _validate_pattern(self, df: pd.DataFrame, left_shoulder: int,
+                          head: int, right_shoulder: int, neckline_points: Tuple[int, int]) -> bool:
+        """验证头肩底形态是否有效"""
+        # 检查点的顺序
+        if not (left_shoulder < head < right_shoulder):
+            return False
+
+        # 检查形态形成时间是否足够长
+        if right_shoulder - left_shoulder < self._params['min_pattern_days']:
+            return False
+
+        # 检查左右肩的高度相似性
+        left_shoulder_price = float(df['low'].iloc[left_shoulder])
+        right_shoulder_price = float(df['low'].iloc[right_shoulder])
+        head_price = float(df['low'].iloc[head])
+
+        # 检查头部是否显著低于双肩
+        left_head_diff = (left_shoulder_price - head_price) / left_shoulder_price
+        right_head_diff = (right_shoulder_price - head_price) / right_shoulder_price
+        if left_head_diff < self._params['head_depth'] or right_head_diff < self._params['head_depth']:
+            return False
+
+        # 检查头部跌幅是否在指定范围内
+        head_drop = (df['high'].iloc[left_shoulder:head].max() - head_price) / df['high'].iloc[
+                                                                               left_shoulder:head].max() * 100
+        if not (self._params['head_drop_range'][0] <= head_drop <= self._params['head_drop_range'][1]):
+            return False
+
+        # 检查左右肩时间对称性
+        left_shoulder_duration = head - left_shoulder
+        right_shoulder_duration = right_shoulder - head
+        time_diff_ratio = abs(right_shoulder_duration - left_shoulder_duration) / left_shoulder_duration
+        if time_diff_ratio > self._params['shoulder_time_diff']:
+            return False
+
+        # 检查成交量特征
+        left_shoulder_volume = df['volume'].iloc[left_shoulder - 2:left_shoulder + 3].mean()
+        head_volume = df['volume'].iloc[head - 2:head + 3].mean()
+        right_shoulder_volume = df['volume'].iloc[right_shoulder - 2:right_shoulder + 3].mean()
+
+        # 左肩放量，头部缩量，右肩放量
+        if not (left_shoulder_volume > head_volume and right_shoulder_volume > head_volume):
+            return False
+
+        return True

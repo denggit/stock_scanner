@@ -27,7 +27,7 @@ class DoubleUpStrategy(BaseStrategy):
     def generate_signal(self, data: pd.DataFrame) -> pd.DataFrame:
         """生成交易信号，返回所有不重叠的翻倍记录"""
         if not self.validate_data(data):
-            raise ValueError("数据格式不正确")
+            return pd.DataFrame([{'signal': 0}])
 
         # 1. 数据预处理
         df = data.copy()
