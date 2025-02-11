@@ -159,12 +159,25 @@ class DoubleUpStrategy(BaseStrategy):
             # 转换为DataFrame格式
             results = []
             for record in merged_records:
+                # 获取区间数据
+                start_idx = df.index[df['trade_date'] == record['start_date']].values[0]
+                end_idx = df.index[df['trade_date'] == record['end_date']].values[0]
+                period_data = df.iloc[start_idx:end_idx + 1]
+                
+                # 找到区间内最低价对应的日期
+                min_price_idx = period_data['close'].idxmin()
+                real_start_date = df['trade_date'].loc[min_price_idx]
+                real_start_price = df['close'].loc[min_price_idx]
+                
+                # 重新计算最大收益率
+                max_return = (record['end_price'] - real_start_price) / real_start_price
+                
                 results.append({
                     'signal': 1,
-                    'start_date': record['start_date'].strftime("%Y-%m-%d"),
+                    'start_date': real_start_date.strftime("%Y-%m-%d"),
                     'end_date': record['end_date'].strftime("%Y-%m-%d"),
-                    'max_return': record['max_return'],
-                    'start_price': record['start_price'],
+                    'max_return': max_return,
+                    'start_price': real_start_price,
                     'end_price': record['end_price'],
                     'max_drawdown': record['max_drawdown']
                 })
