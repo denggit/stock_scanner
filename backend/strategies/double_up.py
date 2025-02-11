@@ -21,7 +21,7 @@ class DoubleUpStrategy(BaseStrategy):
         super().__init__(name="扫描翻倍股", description="扫描过去周期内曾经翻倍过的股票")
         self.params = {
             "double_period": 20,  # 观察期（交易日）
-            "max_drawdown": 0.05,  # 最大回撤
+            "allowed_drawdown": 0.05,  # 最大回撤
             "target_return": 100.00,  # 目标收益率(%)
         }
 
@@ -37,7 +37,7 @@ class DoubleUpStrategy(BaseStrategy):
             df[col] = df[col].astype(float)
 
         # 2. 获取参数
-        max_drawndown = self._params['max_drawdown']
+        allowed_drawdown = self._params['allowed_drawdown']
         target_return = float(self._params['target_return']) / 100      # 参数单位为百分比(%)
         double_period = int(self._params['double_period'])
 
@@ -74,7 +74,7 @@ class DoubleUpStrategy(BaseStrategy):
                     current_drawdown = (max_price - current_price) / max_price
                     
                     # 如果出现超过最大回撤的情况
-                    if current_drawdown > max_drawndown:
+                    if current_drawdown > allowed_drawdown:
                         # 记录之前的有效区间（如果存在）
                         current_return = (max_price - start_price) / start_price
                         if current_return >= target_return:
@@ -113,8 +113,35 @@ class DoubleUpStrategy(BaseStrategy):
 
         # 4. 生成结果DataFrame
         if match_records:
+            # 按开始日期排序
+            match_records.sort(key=lambda x: df.index[df['trade_date'] == x['start_date']].values[0])
+            
+            # 合并相邻的记录
+            merged_records = []
+            current_record = match_records[0]
+            
+            for i in range(1, len(match_records)):
+                # 获取当前记录和下一条记录在原始数据中的索引
+                current_end_idx = df.index[df['trade_date'] == current_record['end_date']].values[0]
+                next_start_idx = df.index[df['trade_date'] == match_records[i]['start_date']].values[0]
+                
+                # 如果两条记录的索引相差1，则合并
+                if next_start_idx - current_end_idx == 1:
+                    # 更新结束日期和最大收益率
+                    current_record['end_date'] = match_records[i]['end_date']
+                    current_record['end_price'] = match_records[i]['end_price']
+                    current_record['max_return'] = (current_record['end_price'] - current_record['start_price']) / current_record['start_price']
+                else:
+                    # 如果不相邻，保存当前记录并开始新的记录
+                    merged_records.append(current_record)
+                    current_record = match_records[i]
+            
+            # 添加最后一条记录
+            merged_records.append(current_record)
+            
+            # 转换为DataFrame格式
             results = []
-            for record in match_records:
+            for record in merged_records:
                 results.append({
                     'signal': 1,
                     'start_date': record['start_date'].strftime("%Y-%m-%d"),

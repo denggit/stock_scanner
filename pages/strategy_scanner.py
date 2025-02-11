@@ -254,8 +254,9 @@ def main():
             col1, col2 = st.columns(2)
             with col1:
                 params["start_date"] = st.date_input("开始日期", value=default_start_date).strftime("%Y-%m-%d")
-                params["target_return"] = st.number_input("目标收益率(%)", min_value=0.0, value=100.0, max_value=3000.0, format="%.2f",
-                                                  help="在翻倍周期内获得大于该收益率")
+                params["target_return"] = st.number_input("目标收益率(%)", min_value=0.0, value=100.0, max_value=3000.0,
+                                                          format="%.2f",
+                                                          help="在翻倍周期内获得大于该收益率")
             with col2:
                 params["end_date"] = st.date_input("结束日期", value=default_end_date).strftime("%Y-%m-%d")
 
@@ -271,10 +272,11 @@ def main():
             with col2:
                 choose_drawdown = st.checkbox("最大回撤", value=False, help="最大回撤出现则停止")
                 if choose_drawdown:
-                    params["max_drawdown"] = st.number_input("最大回撤", min_value=0.00, value=0.05, max_value=0.95,
-                                                             format="%.2f", help="最大回撤值，翻倍前遇到该回撤值则取消")
+                    params["allowed_drawdown"] = st.number_input("最大回撤", min_value=0.00, value=0.05, max_value=0.95,
+                                                                 format="%.2f",
+                                                                 help="最大回撤值，翻倍前遇到该回撤值则取消")
                 else:
-                    params["max_drawdown"] = 0.95
+                    params["allowed_drawdown"] = 0.95
 
             # 检查是否至少选择了一个条件
             if not choose_period and not choose_drawdown:
