@@ -4,12 +4,12 @@
 @Author     : Zijun Deng
 @Date       : 2/3/2025 8:33 PM
 @File       : double_up.py
-@Description: 
+@Description:
 """
 import logging
 
-import numpy as np
 import pandas as pd
+import numpy as np
 
 from backend.strategies.base import BaseStrategy
 
@@ -22,104 +22,103 @@ class DoubleUpStrategy(BaseStrategy):
         self.params = {
             "double_period": 20,  # 观察期（交易日）
             "max_drawdown": 0.05,  # 最大回撤
-            "times": 2.00,  # 翻倍倍数
+            "target_return": 100.00,  # 目标收益率(%)
         }
 
     def generate_signal(self, data: pd.DataFrame) -> pd.DataFrame:
-        """生成交易信号，返回所有不重叠的翻倍记录"""
+        """生成交易信号"""
         if not self.validate_data(data):
             return pd.DataFrame([{'signal': 0}])
 
-        # 1. 数据预处理
+        # 1. 数据预处理 - 确保所有数值列都是float类型
         df = data.copy()
         numeric_columns = ['open', 'high', 'low', 'close', 'volume']
         for col in numeric_columns:
             df[col] = df[col].astype(float)
 
-        # 2. 计算在观察期内的最大涨幅
+        # 2. 获取参数
         max_drawndown = self._params['max_drawdown']
-        times = float(self._params['times'])
+        target_return = float(self._params['target_return']) / 100      # 参数单位为百分比(%)
         double_period = int(self._params['double_period'])
 
         # 3. 找出所有翻倍记录
-        double_records = []
-
-        start_idx = 0
-        while start_idx < len(df) - 1:
-            start_price = df['close'].iloc[start_idx]
-            max_return = 1.0
-            max_return_idx = start_idx
-            found_peak = False
-
-            # 确定搜索范围
-            end_search_idx = len(df)
-            if double_period > 0:
-                end_search_idx = min(start_idx + double_period, len(df))
-
-            # 从起始点向后查找，直到找到最大收益点
-            for end_idx in range(start_idx + 1, end_search_idx):
-                end_price = df['close'].iloc[end_idx]
-                return_rate = end_price / start_price
-
-                # 更新最大收益
-                if return_rate > max_return:
-                    max_return = return_rate
-                    max_return_idx = end_idx
-                # 如果收益开始下降，且已经达到翻倍要求，则记录该区间
-                elif return_rate < max_return * (1 - max_drawndown) and max_return >= times:  # 回撤容忍度
-                    found_peak = True
+        match_records = []
+        i = 0
+        while i < len(df) - 1:
+            # 找到价格开始上涨的点作为起始点
+            start_idx = i
+            while start_idx < len(df) - 1:
+                if df['close'].iloc[start_idx + 1] > df['close'].iloc[start_idx]:
                     break
-
-            # 如果找到了符合条件的翻倍记录
-            if max_return >= times:
-                start_date = df.index[start_idx]
-                end_date = df.index[max_return_idx]
-
-                # 检查是否与已有记录重叠
-                overlap = False
-                update_existing = False
-                for record in double_records:
-                    # 判断日期区间是否有交集
-                    if not (end_date < record['start_date'] or start_date > record['end_date']):
-                        # 如果新记录收益率更高，则更新原记录
-                        if max_return > record['max_return']:
-                            record.update({
-                                'start_date': start_date,
-                                'end_date': end_date,
-                                'max_return': max_return,
-                                'start_price': start_price,
-                                'end_price': df['close'].iloc[max_return_idx]
-                            })
-                            update_existing = True
-                        overlap = True
-                        break
-
-                # 如果没有重叠或者更新了现有记录，添加新记录
-                if not overlap:
-                    double_records.append({
-                        'start_date': start_date,
-                        'end_date': end_date,
-                        'max_return': max_return,
-                        'start_price': start_price,
-                        'end_price': df['close'].iloc[max_return_idx]
-                    })
-
-            # 更新起始索引
-            if found_peak:
-                # 如果找到了回撤点，从最高点后开始下一轮搜索
-                start_idx = max_return_idx + 1
-            else:
-                # 如果没有找到回撤点，继续往后搜索
                 start_idx += 1
+            
+            start_price = df['close'].iloc[start_idx]
+            start_date = df['trade_date'].iloc[start_idx]
+            max_price = start_price
+            max_idx = start_idx
+            max_date = start_date
+            found_valid_period = False
+            
+            # 在double_period区间内寻找符合条件的区域
+            for j in range(start_idx + 1, min(start_idx + double_period, len(df))):
+                current_price = df['close'].iloc[j]
+                
+                # 更新最高价和对应索引及日期
+                if current_price > max_price:
+                    max_price = current_price
+                    max_idx = j
+                    max_date = df['trade_date'].iloc[j]
+                
+                # 计算当前回撤
+                if max_price > 0:  # 防止除零错误
+                    current_drawdown = (max_price - current_price) / max_price
+                    
+                    # 如果出现超过最大回撤的情况
+                    if current_drawdown > max_drawndown:
+                        # 记录之前的有效区间（如果存在）
+                        current_return = (max_price - start_price) / start_price
+                        if current_return >= target_return:
+                            match_records.append({
+                                'start_date': start_date,
+                                'end_date': max_date,
+                                'max_return': current_return,
+                                'start_price': start_price,
+                                'end_price': max_price
+                            })
+                        # 从回撤点后一天开始新的扫描
+                        i = j
+                        found_valid_period = True
+                        break
+            
+            # 如果完整扫描了double_period且没有触发最大回撤
+            if not found_valid_period:
+                current_return = (max_price - start_price) / start_price
+                if current_return >= target_return:
+                    match_records.append({
+                        'start_date': start_date,
+                        'end_date': max_date,
+                        'max_return': current_return,
+                        'start_price': start_price,
+                        'end_price': max_price
+                    })
+                    i = max_idx + 1  # 从最高点后一天开始新的扫描
+                else:
+                    # 如果当前起始点不是区间内的最低点，找到最低点作为新的起始点
+                    min_idx = df['close'].iloc[start_idx:min(start_idx + double_period, len(df))].idxmin()
+                    if min_idx > start_idx:
+                        i = min_idx  # 使用最低点作为新的起始点
+                    else:
+                        # 如果当前点就是最低点，向后移动一天
+                        i += 1
 
         # 4. 生成结果DataFrame
-        if double_records:
+        if match_records:
             results = []
-            for record in double_records:
+            for record in match_records:
                 results.append({
                     'signal': 1,
-                    'start_date': data[data.index == record['start_date']].trade_date.iloc[0].strftime("%Y-%m-%d"),
-                    'end_date': data[data.index == record['end_date']].trade_date.iloc[0].strftime("%Y-%m-%d"),
+                    'start_date': record['start_date'].strftime("%Y-%m-%d"),
+                    'end_date': record['end_date'].strftime("%Y-%m-%d"),
                     'max_return': record['max_return'],
                     'start_price': record['start_price'],
                     'end_price': record['end_price']
@@ -141,7 +140,6 @@ class DoubleUpStrategy(BaseStrategy):
             if len(data) < 250:  # 至少需要250个交易日的数据
                 logging.warning(f"股票{data['code'].iloc[-1]}数据不足250天，跳过该股票")
                 return False
-
             # 检查必要的列是否存在
             required_columns = ['open', 'high', 'low', 'close', 'volume', 'trade_date']
             if not all(col in data.columns for col in required_columns):

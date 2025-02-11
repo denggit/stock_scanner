@@ -253,24 +253,33 @@ def main():
 
             col1, col2 = st.columns(2)
             with col1:
-                start_date = st.date_input("开始日期", value=default_start_date).strftime("%Y-%m-%d")
-                double_period = st.number_input("翻倍周期", min_value=0, value=0, max_value=250,
-                                                help="0：不限定周期，回撤前时间长度不定。大于0：该周期内完成翻倍")
-                max_drawdown = st.number_input("最大回撤", min_value=0.00, value=0.05, max_value=0.95,
-                                               help="最大回撤值，翻倍前遇到该回撤值则取消")
+                params["start_date"] = st.date_input("开始日期", value=default_start_date).strftime("%Y-%m-%d")
+                params["target_return"] = st.number_input("目标收益率(%)", min_value=0.0, value=100.0, max_value=3000.0, format="%.2f",
+                                                  help="在翻倍周期内获得大于该收益率")
             with col2:
-                end_date = st.date_input("结束日期", value=default_end_date).strftime("%Y-%m-%d")
-                times = st.number_input("增长倍数", min_value=1.0, value=2.0, max_value=30.0, format="%.1f",
-                                        help="在翻倍周期内大于该增长倍数")
+                params["end_date"] = st.date_input("结束日期", value=default_end_date).strftime("%Y-%m-%d")
 
-            params = {
-                "stock_pool": stock_pool,
-                "double_period": double_period,
-                "start_date": start_date,
-                "end_date": end_date,
-                "max_drawdown": max_drawdown,
-                "times": times
-            }
+            st.subheader("限制条件")
+            col1, col2 = st.columns(2)
+            with col1:
+                choose_period = st.checkbox("周期内", value=True, help="周期内完成翻倍")  # 默认选中
+                if choose_period:
+                    params["double_period"] = st.number_input("翻倍周期", min_value=0, value=20, max_value=500,
+                                                              help="该周期内完成翻倍")
+                else:
+                    params["double_period"] = 500
+            with col2:
+                choose_drawdown = st.checkbox("最大回撤", value=False, help="最大回撤出现则停止")
+                if choose_drawdown:
+                    params["max_drawdown"] = st.number_input("最大回撤", min_value=0.00, value=0.05, max_value=0.95,
+                                                             format="%.2f", help="最大回撤值，翻倍前遇到该回撤值则取消")
+                else:
+                    params["max_drawdown"] = 0.95
+
+            # 检查是否至少选择了一个条件
+            if not choose_period and not choose_drawdown:
+                st.error("请至少选择'周期内'或'最大回撤'其中一个条件")
+                st.stop()  # 停止执行后续代码
 
         elif strategy == "长期上涨策略":
             st.subheader("长期上涨策略参数配置")
