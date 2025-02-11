@@ -132,26 +132,8 @@ class DoubleUpStrategy(BaseStrategy):
                     current_record['end_price'] = match_records[i]['end_price']
                     current_record['max_return'] = (current_record['end_price'] - current_record['start_price']) / current_record['start_price']
                 else:
-                    # 计算区间最大回撤
-                    start_idx = df.index[df['trade_date'] == current_record['start_date']].values[0]
-                    end_idx = df.index[df['trade_date'] == current_record['end_date']].values[0]
-                    period_data = df.iloc[start_idx:end_idx + 1]
-                    
-                    rolling_max = period_data['close'].expanding().max()
-                    drawdowns = (rolling_max - period_data['close']) / rolling_max
-                    current_record['max_drawdown'] = drawdowns.max().round(4) 
-                    
-                    # 如果不相邻，保存当前记录并开始新的记录
                     merged_records.append(current_record)
                     current_record = match_records[i]
-            
-            # 计算最后一条记录的最大回撤
-            start_idx = df.index[df['trade_date'] == current_record['start_date']].values[0]
-            end_idx = df.index[df['trade_date'] == current_record['end_date']].values[0]
-            period_data = df.iloc[start_idx:end_idx + 1]
-            rolling_max = period_data['close'].expanding().max()
-            drawdowns = (rolling_max - period_data['close']) / rolling_max
-            current_record['max_drawdown'] = drawdowns.max().round(4)
             
             # 添加最后一条记录
             merged_records.append(current_record)
@@ -169,6 +151,12 @@ class DoubleUpStrategy(BaseStrategy):
                 real_start_date = df['trade_date'].loc[min_price_idx]
                 real_start_price = df['close'].loc[min_price_idx]
                 
+                # 从最低点开始计算最大回撤
+                period_data = df.iloc[min_price_idx:end_idx + 1]
+                rolling_max = period_data['close'].expanding().max()
+                drawdowns = (rolling_max - period_data['close']) / rolling_max
+                max_drawdown = drawdowns.max().round(4)
+                
                 # 重新计算最大收益率
                 max_return = (record['end_price'] - real_start_price) / real_start_price
                 
@@ -179,7 +167,7 @@ class DoubleUpStrategy(BaseStrategy):
                     'max_return': max_return,
                     'start_price': real_start_price,
                     'end_price': record['end_price'],
-                    'max_drawdown': record['max_drawdown']
+                    'max_drawdown': max_drawdown
                 })
             return pd.DataFrame(results)
         else:
