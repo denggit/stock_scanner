@@ -71,7 +71,7 @@ class DoubleUpStrategy(BaseStrategy):
                 
                 # 计算当前回撤
                 if max_price > 0:  # 防止除零错误
-                    current_drawdown = (max_price - current_price) / max_price
+                    current_drawdown = abs(max_price - current_price) / max_price
                     
                     # 如果出现超过最大回撤的情况
                     if current_drawdown > allowed_drawdown:
@@ -132,9 +132,26 @@ class DoubleUpStrategy(BaseStrategy):
                     current_record['end_price'] = match_records[i]['end_price']
                     current_record['max_return'] = (current_record['end_price'] - current_record['start_price']) / current_record['start_price']
                 else:
+                    # 计算区间最大回撤
+                    start_idx = df.index[df['trade_date'] == current_record['start_date']].values[0]
+                    end_idx = df.index[df['trade_date'] == current_record['end_date']].values[0]
+                    period_data = df.iloc[start_idx:end_idx + 1]
+                    
+                    rolling_max = period_data['close'].expanding().max()
+                    drawdowns = (rolling_max - period_data['close']) / rolling_max
+                    current_record['max_drawdown'] = drawdowns.max().round(4) 
+                    
                     # 如果不相邻，保存当前记录并开始新的记录
                     merged_records.append(current_record)
                     current_record = match_records[i]
+            
+            # 计算最后一条记录的最大回撤
+            start_idx = df.index[df['trade_date'] == current_record['start_date']].values[0]
+            end_idx = df.index[df['trade_date'] == current_record['end_date']].values[0]
+            period_data = df.iloc[start_idx:end_idx + 1]
+            rolling_max = period_data['close'].expanding().max()
+            drawdowns = (rolling_max - period_data['close']) / rolling_max
+            current_record['max_drawdown'] = drawdowns.max().round(4)
             
             # 添加最后一条记录
             merged_records.append(current_record)
@@ -148,7 +165,8 @@ class DoubleUpStrategy(BaseStrategy):
                     'end_date': record['end_date'].strftime("%Y-%m-%d"),
                     'max_return': record['max_return'],
                     'start_price': record['start_price'],
-                    'end_price': record['end_price']
+                    'end_price': record['end_price'],
+                    'max_drawdown': record['max_drawdown']
                 })
             return pd.DataFrame(results)
         else:
@@ -158,7 +176,8 @@ class DoubleUpStrategy(BaseStrategy):
                 'end_date': None,
                 'max_return': np.nan,
                 'start_price': np.nan,
-                'end_price': np.nan
+                'end_price': np.nan,
+                'max_drawdown': np.nan
             }])
 
     def validate_data(self, data: pd.DataFrame) -> bool:
