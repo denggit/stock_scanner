@@ -113,6 +113,9 @@ class BaostockSource(DataSource):
                    'tradestatus', 'pctChg', 'peTTM', 'pbMRQ', 'psTTM', 'pcfNcfTTM', 'isST']
         df = pd.DataFrame(data_list, columns=columns)
 
+        # 删除非交易状态的数据（tradestatus=0）
+        df = df[df['tradestatus'] != '0'].copy()
+
         # 重命名列以匹配数据库字段
         column_mapping = {
             'date': 'trade_date',
