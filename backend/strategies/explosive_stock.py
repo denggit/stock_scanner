@@ -194,7 +194,7 @@ class ExplosiveStockStrategy(BaseStrategy):
 
             # 股价不在合理范围
             if df['close'].iloc[-1] < 2 or df['close'].iloc[-1] > 200:
-                logging.info("股价不在合理范围，被过滤")
+                logging.info(f"股价不在合理范围，被过滤: {df['code'].iloc[-1]}")
                 return True
 
             return False
@@ -754,12 +754,6 @@ class ExplosiveStockStrategy(BaseStrategy):
             pd.Series: 包含所有分析结果的Series
         """
         try:
-            # 获取每个模型的预测概率
-            features_scaled = self.ml_trainer.scaler.transform(df)
-            model_predictions = {}
-            for name, model in self.ml_trainer.trained_models.items():
-                pred = model.predict_proba(features_scaled)[0][1]
-                model_predictions[name] = pred  # 转换为百分比
             return pd.Series({
                 'signal': round(final_score * 100, 2),
                 'trade_date': df['trade_date'].iloc[-1],
@@ -788,11 +782,6 @@ class ExplosiveStockStrategy(BaseStrategy):
                 # 机器学习预测
                 'ml_prediction': round(scores['ml'] * 100, 2),
                 'explosion_probability': round(self._get_explosion_probability(df) * 100, 2),
-
-                # 各模型预测概率
-                'gbdt_prob': model_predictions.get('gbdt', 0),
-                'rf_prob': model_predictions.get('rf', 0),
-                'xgb_prob': model_predictions.get('xgb', 0),
 
                 # 买入建议
                 'buy_signal': self._generate_buy_signal(final_score),

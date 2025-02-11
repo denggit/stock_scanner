@@ -165,3 +165,122 @@ class BaostockSource(DataSource):
             self.connect()
 
         return bs.query_zz500_stocks().get_data()
+
+    def get_profit_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+        """获取上市公司利润表数据
+        
+        返回值：
+        code	证券代码	
+        pubDate	公司发布财报的日期	
+        statDate	财报统计的季度的最后一天, 比如2017-03-31, 2017-06-30	
+        roeAvg	净资产收益率(平均)(%)	归属母公司股东净利润/[(期初归属母公司股东的权益+期末归属母公司股东的权益)/2]*100%
+        npMargin	销售净利率(%)	净利润/营业收入*100%
+        gpMargin	销售毛利率(%)	毛利/营业收入*100%=(营业收入-营业成本)/营业收入*100%
+        netProfit	净利润(元)	
+        epsTTM	每股收益	归属母公司股东的净利润TTM/最新总股本
+        MBRevenue	主营营业收入(元)	
+        totalShare	总股本	
+        liqaShare	流通股本
+
+        """
+        if not self._connected:
+            self.connect()
+        if quarter:
+            return bs.query_profit_data(code=code, year=year, quarter=quarter).get_data()
+        else:
+            quarter_1 = bs.query_profit_data(code=code, year=year, quarter=1).get_data()
+            quarter_2 = bs.query_profit_data(code=code, year=year, quarter=2).get_data()
+            quarter_3 = bs.query_profit_data(code=code, year=year, quarter=3).get_data()
+            quarter_4 = bs.query_profit_data(code=code, year=year, quarter=4).get_data()
+            return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
+
+    def get_balance_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+        """获取上市公司资产负债表数据"""
+        if not self._connected:
+            self.connect()
+
+        if quarter:
+            return bs.query_balance_data(code=code, year=year, quarter=quarter).get_data()
+        else:
+            quarter_1 = bs.query_balance_data(code=code, year=year, quarter=1).get_data()
+            quarter_2 = bs.query_balance_data(code=code, year=year, quarter=2).get_data()
+            quarter_3 = bs.query_balance_data(code=code, year=year, quarter=3).get_data()
+            quarter_4 = bs.query_balance_data(code=code, year=year, quarter=4).get_data()
+            return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
+
+    def get_cashflow_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+        """获取上市公司现金流量表数据"""
+        if not self._connected:
+            self.connect()
+
+        if quarter:
+            return bs.query_cash_flow_data(code=code, year=year, quarter=quarter).get_data()
+        else:
+            quarter_1 = bs.query_cash_flow_data(code=code, year=year, quarter=1).get_data()
+            quarter_2 = bs.query_cash_flow_data(code=code, year=year, quarter=2).get_data()
+            quarter_3 = bs.query_cash_flow_data(code=code, year=year, quarter=3).get_data()
+            quarter_4 = bs.query_cash_flow_data(code=code, year=year, quarter=4).get_data()
+            return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
+
+    def get_stock_dividend_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+        """获取上市公司股息分红数据"""
+        if not self._connected:
+            self.connect()
+
+        if quarter:
+            return bs.query_dividend_data(code=code, year=year, quarter=quarter).get_data()
+        else:
+            quarter_1 = bs.query_dividend_data(code=code, year=year, quarter=1).get_data()
+            quarter_2 = bs.query_dividend_data(code=code, year=year, quarter=2).get_data()
+            quarter_3 = bs.query_dividend_data(code=code, year=year, quarter=3).get_data()
+            quarter_4 = bs.query_dividend_data(code=code, year=year, quarter=4).get_data()
+            return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
+
+    def get_query_dupont_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+        """获取上市公司杜邦分析数据"""
+        if not self._connected:
+            self.connect()
+
+        if quarter:
+            return bs.query_dupont_data(code=code, year=year, quarter=quarter).get_data()
+        else:
+            quarter_1 = bs.query_dupont_data(code=code, year=year, quarter=1).get_data()
+            quarter_2 = bs.query_dupont_data(code=code, year=year, quarter=2).get_data()
+            quarter_3 = bs.query_dupont_data(code=code, year=year, quarter=3).get_data()
+            quarter_4 = bs.query_dupont_data(code=code, year=year, quarter=4).get_data()
+            return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
+
+    def get_growth_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+        """获取上市公司成长能力数据"""
+        if not self._connected:
+            self.connect()
+
+        if quarter:
+            return bs.query_growth_data(code=code, year=year, quarter=quarter).get_data()
+        else:
+            quarter_1 = bs.query_growth_data(code=code, year=year, quarter=1).get_data()
+            quarter_2 = bs.query_growth_data(code=code, year=year, quarter=2).get_data()
+            quarter_3 = bs.query_growth_data(code=code, year=year, quarter=3).get_data()
+            quarter_4 = bs.query_growth_data(code=code, year=year, quarter=4).get_data()
+            return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
+
+    def get_operation_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+        """获取上市公司营运能力数据"""
+        if not self._connected:
+            self.connect()
+
+        if quarter:
+            return bs.query_operation_data(code=code, year=year, quarter=quarter).get_data()
+        else:
+            quarter_1 = bs.query_operation_data(code=code, year=year, quarter=1).get_data()
+            quarter_2 = bs.query_operation_data(code=code, year=year, quarter=2).get_data()
+            quarter_3 = bs.query_operation_data(code=code, year=year, quarter=3).get_data()
+            quarter_4 = bs.query_operation_data(code=code, year=year, quarter=4).get_data()
+            return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
+
+    def get_trading_calendar(self, start_date: str = None, end_date: str = None) -> pd.DataFrame:
+        """获取交易日历数据"""
+        if not self._connected:
+            self.connect()
+
+        return bs.query_trade_dates(start_date=start_date, end_date=end_date).get_data()
