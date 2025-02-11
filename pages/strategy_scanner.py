@@ -254,8 +254,8 @@ def main():
             col1, col2 = st.columns(2)
             with col1:
                 start_date = st.date_input("开始日期", value=default_start_date).strftime("%Y-%m-%d")
-                double_period = st.number_input("翻倍周期", min_value=1, value=20, max_value=250,
-                                                help="翻倍周期，交易日")
+                max_drawdown = st.number_input("最大回撤", min_value=0.00, value=0.05, max_value=0.95,
+                                               help="最大回撤值，翻倍前遇到该回撤值则取消")
             with col2:
                 end_date = st.date_input("结束日期", value=default_end_date).strftime("%Y-%m-%d")
                 times = st.number_input("增长倍数", min_value=1.0, value=2.0, max_value=30.0, format="%.1f",
@@ -265,7 +265,7 @@ def main():
                 "stock_pool": stock_pool,
                 "start_date": start_date,
                 "end_date": end_date,
-                "double_period": double_period,
+                "max_drawdown": max_drawdown,
                 "times": times
             }
 
@@ -447,14 +447,14 @@ def main():
 
         elif strategy == "爆发式选股策略":
             st.subheader("爆发式选股策略参数配置")
-            
+
             # 添加持仓信息
             st.subheader("持仓信息")
-            
+
             # 初始化持仓列表
             if 'holdings' not in st.session_state:
                 st.session_state.holdings = []
-            
+
             # 使用 expander 来收起持仓信息输入区域
             with st.expander("添加持仓股票", expanded=False):
                 col1, col2, col3 = st.columns(3)
@@ -486,12 +486,12 @@ def main():
                 holdings_df = pd.DataFrame(st.session_state.holdings)
                 holdings_df.columns = ['股票代码', '持仓成本']
                 st.dataframe(holdings_df)
-                
+
                 # 添加清除持仓按钮
                 if st.button("清除所有持仓"):
                     st.session_state.holdings = []
                     st.success("已清除所有持仓信息")
-            
+
             # 将持仓信息添加到参数中
             params['holdings'] = st.session_state.holdings
 

@@ -6,6 +6,7 @@
 @File       : double_up.py
 @Description: 
 """
+import logging
 
 import numpy as np
 import pandas as pd
@@ -19,88 +20,128 @@ class DoubleUpStrategy(BaseStrategy):
     def __init__(self):
         super().__init__(name="扫描翻倍股", description="扫描过去周期内曾经翻倍过的股票")
         self.params = {
-            "double_period": 20,  # 观察期（交易日）
+            "max_drawdown": 0.05,  # 最大回撤
             "times": 2.00,  # 翻倍倍数
         }
 
-    def generate_signal(self, data: pd.DataFrame) -> pd.Series:
-        """生成交易信号"""
+    def generate_signal(self, data: pd.DataFrame) -> pd.DataFrame:
+        """生成交易信号，返回所有不重叠的翻倍记录"""
         if not self.validate_data(data):
             raise ValueError("数据格式不正确")
 
-        # 1. 数据预处理 - 确保所有数值列都是float类型
+        # 1. 数据预处理
         df = data.copy()
         numeric_columns = ['open', 'high', 'low', 'close', 'volume']
         for col in numeric_columns:
             df[col] = df[col].astype(float)
 
         # 2. 计算在观察期内的最大涨幅
-        period = self._params['double_period']
+        max_drawndown = self._params['max_drawdown']
         times = float(self._params['times'])
 
-        max_returns = []
-        start_dates = []
-        end_dates = []
+        # 3. 找出所有翻倍记录
+        double_records = []
 
-        # 对每个时间点，向前看period个交易日，找出最大涨幅
-        for i in range(len(df)):
-            if i < period:
-                max_returns.append(np.nan)
-                start_dates.append(None)
-                end_dates.append(None)
-                continue
+        start_idx = 0
+        while start_idx < len(df) - 1:
+            start_price = df['close'].iloc[start_idx]
+            max_return = 1.0
+            max_return_idx = start_idx
+            found_peak = False
 
-            window = df.iloc[i - period:i + 1]
-            current_price = window['close'].iloc[-1]
+            # 从起始点向后查找，直到找到最大收益点
+            for end_idx in range(start_idx + 1, len(df)):
+                end_price = df['close'].iloc[end_idx]
+                return_rate = end_price / start_price
 
-            # 计算窗口内所有可能的收益率
-            returns = []
-            for j in range(len(window) - 1):
-                start_price = window['close'].iloc[j]
-                return_rate = current_price / start_price
-                returns.append((return_rate, window.index[j], window.index[-1]))
+                # 更新最大收益
+                if return_rate > max_return:
+                    max_return = return_rate
+                    max_return_idx = end_idx
+                # 如果收益开始下降，且已经达到翻倍要求，则记录该区间
+                elif return_rate < max_return * (1 - max_drawndown) and max_return >= times:  # 回撤容忍度
+                    found_peak = True
+                    break
 
-            # 找出最大收益率及其对应的起始和结束时间
-            if returns:
-                max_return, start_date, end_date = max(returns, key=lambda x: x[0])
-                max_returns.append(max_return)
-                start_dates.append(start_date)
-                end_dates.append(end_date)
+            # 如果找到了符合条件的翻倍记录
+            if max_return >= times:
+                start_date = df.index[start_idx]
+                end_date = df.index[max_return_idx]
+
+                # 检查是否与已有记录重叠
+                overlap = False
+                update_existing = False
+                for record in double_records:
+                    # 判断日期区间是否有交集
+                    if not (end_date < record['start_date'] or start_date > record['end_date']):
+                        # 如果新记录收益率更高，则更新原记录
+                        if max_return > record['max_return']:
+                            record.update({
+                                'start_date': start_date,
+                                'end_date': end_date,
+                                'max_return': max_return,
+                                'start_price': start_price,
+                                'end_price': df['close'].iloc[max_return_idx]
+                            })
+                            update_existing = True
+                        overlap = True
+                        break
+
+                # 如果没有重叠或者更新了现有记录，添加新记录
+                if not overlap:
+                    double_records.append({
+                        'start_date': start_date,
+                        'end_date': end_date,
+                        'max_return': max_return,
+                        'start_price': start_price,
+                        'end_price': df['close'].iloc[max_return_idx]
+                    })
+
+            # 更新起始索引
+            if found_peak:
+                # 如果找到了回撤点，从最高点后开始下一轮搜索
+                start_idx = max_return_idx + 1
             else:
-                max_returns.append(np.nan)
-                start_dates.append(None)
-                end_dates.append(None)
+                # 如果没有找到回撤点，继续往后搜索
+                start_idx += 1
 
-        # 3. 生成信号
-        signals = pd.DataFrame(index=df.index)
-        signals['max_return'] = max_returns
-        signals['start_date'] = start_dates
-        signals['end_date'] = end_dates
-
-        # 找出满足翻倍条件的点
-        double_condition = signals['max_return'] >= times
-
-        # 如果有满足条件的点，找出最大涨幅点
-        if double_condition.any():
-            max_return_index = signals.loc[double_condition, 'max_return'].idxmax()
-            result = pd.Series({
-                'signal': 1,
-                'start_date': data[data.index == signals.loc[max_return_index, 'start_date']].trade_date.iloc[
-                    0].strftime("%Y-%m-%d"),
-                'end_date': data[data.index == signals.loc[max_return_index, 'end_date']].trade_date.iloc[0].strftime(
-                    "%Y-%m-%d"),
-                'max_return': signals.loc[max_return_index, 'max_return'],
-                'start_price': df.loc[signals.loc[max_return_index, 'start_date'], 'close'],
-                'end_price': df.loc[signals.loc[max_return_index, 'end_date'], 'close']
-            })
+        # 4. 生成结果DataFrame
+        if double_records:
+            results = []
+            for record in double_records:
+                results.append({
+                    'signal': 1,
+                    'start_date': data[data.index == record['start_date']].trade_date.iloc[0].strftime("%Y-%m-%d"),
+                    'end_date': data[data.index == record['end_date']].trade_date.iloc[0].strftime("%Y-%m-%d"),
+                    'max_return': record['max_return'],
+                    'start_price': record['start_price'],
+                    'end_price': record['end_price']
+                })
+            return pd.DataFrame(results)
         else:
-            result = pd.Series({
+            return pd.DataFrame([{
                 'signal': 0,
                 'start_date': None,
                 'end_date': None,
                 'max_return': np.nan,
                 'start_price': np.nan,
                 'end_price': np.nan
-            })
+            }])
 
-        return result
+    def validate_data(self, data: pd.DataFrame) -> bool:
+        """验证数据是否符合策略要求"""
+        try:
+            if len(data) < 250:  # 至少需要250个交易日的数据
+                logging.warning(f"股票{data['code'].iloc[-1]}数据不足250天，跳过该股票")
+                return False
+
+            # 检查必要的列是否存在
+            required_columns = ['open', 'high', 'low', 'close', 'volume', 'trade_date']
+            if not all(col in data.columns for col in required_columns):
+                logging.warning(f"股票{data['code'].iloc[-1]}缺少必要的列，跳过该股票")
+                return False
+
+            return True
+        except Exception as e:
+            logging.exception(f"验证数据时发生错误: {e}")
+            return False

@@ -14,8 +14,9 @@ from backend.ml.model_trainer import ExplosiveStockModelTrainer
 from backend.strategies.base import BaseStrategy
 from backend.utils.indicators import CalIndicators
 
-
 MODEL_BASE_PATH = "backend/ml/models/explosive_stock_model"
+
+
 # MODEL_BASE_PATH = "backend/ml/models/full_0210_noon/explosive_stock_model"
 
 
@@ -55,34 +56,6 @@ class ExplosiveStockStrategy(BaseStrategy):
             "volatility_weight": 0.15,  # 波动性分析权重
             "holdings": [],  # 持仓股票代码
         }
-
-    def _init_ml_model(self):
-        """初始化机器学习模型"""
-        self.ml_trainer = None
-        try:
-            # 初始化模型训练器
-            self.ml_trainer = ExplosiveStockModelTrainer()
-
-            stock_pool = self._params.get("stock_pool", "full")
-            # 修改为正确的模型文件路径
-            base_path = MODEL_BASE_PATH
-            model_files = {}
-            for model_name in self.ml_trainer.models.keys():
-                model_files[model_name] = f"{base_path}_{stock_pool}_{model_name}.joblib"
-            scaler_path = f'backend/ml/models/explosive_stock_model_{stock_pool}_scaler.joblib'
-
-            # 使用新的加载方法,传入具体的模型文件路径
-            self.ml_trainer.load_models(model_files, scaler_path)
-
-            logging.debug("成功加载机器学习模型")
-
-            # 验证模型加载状态
-            if not self._is_model_ready():
-                raise ValueError("模型加载不完整")
-                
-        except Exception as e:
-            logging.warning(f"加载机器学习模型失败: {e}")
-            self.ml_trainer = None
 
     def generate_signal(self, data: pd.DataFrame) -> pd.Series:
         """生成交易信号"""
@@ -446,9 +419,9 @@ class ExplosiveStockStrategy(BaseStrategy):
 
     def _is_model_ready(self) -> bool:
         """检查模型是否准备就绪"""
-        return (hasattr(self, 'ml_trainer') and 
-                self.ml_trainer is not None and 
-                hasattr(self.ml_trainer, 'trained_models') and 
+        return (hasattr(self, 'ml_trainer') and
+                self.ml_trainer is not None and
+                hasattr(self.ml_trainer, 'trained_models') and
                 len(self.ml_trainer.trained_models) > 0)
 
     def _prepare_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -462,7 +435,7 @@ class ExplosiveStockStrategy(BaseStrategy):
         try:
             # 标准化特征
             features_scaled = self.ml_trainer.scaler.transform(features)
-            
+
             # 获取每个模型的预测概率
             model_predictions = {}
             for name, model in self.ml_trainer.trained_models.items():
@@ -470,21 +443,21 @@ class ExplosiveStockStrategy(BaseStrategy):
                 pred = model.predict_proba(features_scaled)[0][1]
                 # pred = model.predict_proba(features_scaled)[0][2]
                 model_predictions[name] = pred
-            
+
             # 使用权重计算加权平均
             weighted_sum = 0
             total_weight = sum(self.ml_trainer.weights.values())
-            
+
             for name, pred in model_predictions.items():
                 weight = self.ml_trainer.weights[name]
                 weighted_sum += pred * (weight / total_weight)
-            
+
             # 对最终预测值进行校准
             # 如果任一模型预测概率超过0.7，提升整体预测值
             max_pred = max(model_predictions.values())
             if max_pred > 0.7:
                 weighted_sum = (weighted_sum + max_pred) / 2
-            
+
             return float(min(max(weighted_sum, 0), 1))
 
         except Exception as e:
@@ -823,3 +796,31 @@ class ExplosiveStockStrategy(BaseStrategy):
             return f"信号强度良好({signal['signal']:.1f})，可继续持有"
         else:
             return f"信号一般({signal['signal']:.1f})，需密切关注"
+
+    def _init_ml_model(self):
+        """初始化机器学习模型"""
+        self.ml_trainer = None
+        try:
+            # 初始化模型训练器
+            self.ml_trainer = ExplosiveStockModelTrainer()
+
+            stock_pool = self._params.get("stock_pool", "full")
+            # 修改为正确的模型文件路径
+            base_path = MODEL_BASE_PATH
+            model_files = {}
+            for model_name in self.ml_trainer.models.keys():
+                model_files[model_name] = f"{base_path}_{stock_pool}_{model_name}.joblib"
+            scaler_path = f'backend/ml/models/explosive_stock_model_{stock_pool}_scaler.joblib'
+
+            # 使用新的加载方法,传入具体的模型文件路径
+            self.ml_trainer.load_models(model_files, scaler_path)
+
+            logging.debug("成功加载机器学习模型")
+
+            # 验证模型加载状态
+            if not self._is_model_ready():
+                raise ValueError("模型加载不完整")
+
+        except Exception as e:
+            logging.warning(f"加载机器学习模型失败: {e}")
+            self.ml_trainer = None

@@ -9,6 +9,8 @@
 import datetime
 from typing import Any, Dict, List
 
+import pandas as pd
+
 from backend.data.stock_data_fetcher import StockDataFetcher
 from backend.strategies.breakout import BreakoutStrategy
 from backend.strategies.double_up import DoubleUpStrategy
@@ -59,7 +61,9 @@ class StrategyService:
             # 获取股票列表
             if stock_pool:
                 stocks = self.data_fetcher.get_stock_list(pool_name=stock_pool)
-                results = []
+            else:
+                stocks = self.data_fetcher.get_stock_list()
+            results = []
 
             # 获取足量数据
             ma_period = params.get("ma_period", 20)  # 假设设置了均线 
@@ -76,7 +80,7 @@ class StrategyService:
             take_period += (years + 1) * 365 if years > 0 else 0
             take_period += (months + 1) * 31 if months > 0 else 0
             take_period += days * 2 if days > 0 else 0
-            take_period += 30       # 预留一个月
+            take_period += 30  # 预留一个月
 
             end_date = params.get("end_date", datetime.date.today().strftime("%Y-%m-%d"))
             start_date = params.get(
@@ -98,20 +102,17 @@ class StrategyService:
                 strategy_instance.set_parameters(params)
                 # 生成信号
                 signals = strategy_instance.generate_signal(stock_data)
-
-                if not signals.empty:
-                    # 信号为0，跳过
-                    if "signal" in signals and signals.signal == 0:
-                        continue
-
-                    result = {
-                        'code': stock.code,
-                        'name': stock.name,
-                    }
-                    for column, value in signals.items():
-                        result[column] = value
-
-                    results.append(result)
+                if isinstance(signals, pd.DataFrame):
+                    for i in range(len(signals)):
+                        result = self.__extract_result(signals.iloc[i], stock)
+                        if result:
+                            results.append(result)
+                elif isinstance(signals, pd.Series):
+                    result = self.__extract_result(signals, stock)
+                    if result:
+                        results.append(result)
+                else:
+                    raise ValueError(f"策略扫描出来的结果形态不支持：{type(signals)} - 股票: {stock.code}")
 
             logger.info(f"Found {len(results)} stocks with strategy: {strategy}")
             results = convert_to_python_types(results)
@@ -128,3 +129,20 @@ class StrategyService:
         except Exception as e:
             logger.error(f"Error listing strategies: {e}", exc_info=True)
             raise Exception(f"Error listing strategies: {e}")
+
+    @staticmethod
+    def __extract_result(signals, stock):
+        """导出策略扫描返回的结果"""
+        if not signals.empty:
+            # 信号为0，跳过
+            if "signal" in signals and signals.signal == 0:
+                return
+
+            result = {
+                'code': stock.code,
+                'name': stock.name,
+            }
+            for column, value in signals.items():
+                result[column] = value
+
+            return result
