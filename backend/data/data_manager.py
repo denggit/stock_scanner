@@ -12,6 +12,8 @@ import time
 from typing import Optional
 
 import pandas as pd
+from tqdm import tqdm
+import numpy as np
 
 from backend.data.database import DatabaseManager
 from backend.data_source.baostock_source import BaostockSource
@@ -133,7 +135,41 @@ class DataUpdateManager:
             code: 股票代码
             year: 年份
             quarter: 季度（可选）
+
         """
+        def format_financial_df(df: pd.DataFrame, numeric_columns: list) -> pd.DataFrame:
+            """格式化财务数据DataFrame"""
+            if df.empty:
+                return df
+            
+            # 创建一个新的 DataFrame 来存储转换后的数据
+            result_df = df.copy()
+            
+            # 转换日期列
+            date_columns = [col for col in result_df.columns if 'Date' in col]
+            for col in date_columns:
+                # 将 NaT 转换为 None
+                result_df[col] = pd.to_datetime(result_df[col], errors='coerce')
+                result_df[col] = result_df[col].apply(lambda x: x.date() if pd.notna(x) else None)
+            
+            # 只处理指定的数值列
+            for col in numeric_columns:
+                if col in result_df.columns:
+                    # 将列转换为数值类型，无效值变为 NaN
+                    result_df[col] = pd.to_numeric(result_df[col], errors='coerce')
+                    
+                    # 将无效的数值转换为 None
+                    result_df[col] = result_df[col].apply(
+                        lambda x: float(x) if pd.notna(x) and not np.isinf(x) else None
+                    )
+            
+            # 最后的安全检查：确保数值列没有任何 NaN 或 inf 值
+            for col in numeric_columns:
+                if col in result_df.columns:
+                    result_df[col] = result_df[col].replace([np.inf, -np.inf, np.nan], None)
+            
+            return result_df
+        
         # 获取各类财务数据
         profit_data = self._retry_operation(
             self.data_source.get_profit_data,
@@ -141,6 +177,10 @@ class DataUpdateManager:
             year=year,
             quarter=quarter
         )
+        profit_data = format_financial_df(profit_data, [
+            'roeAvg', 'npMargin', 'gpMargin', 'netProfit', 
+            'epsTTM', 'MBRevenue', 'totalShare', 'liqaShare'
+        ])
         
         balance_data = self._retry_operation(
             self.data_source.get_balance_data,
@@ -148,6 +188,10 @@ class DataUpdateManager:
             year=year,
             quarter=quarter
         )
+        balance_data = format_financial_df(balance_data, [
+            'currentRatio', 'quickRatio', 'cashRatio',
+            'YOYLiability', 'liabilityToAsset', 'assetToEquity'
+        ])
         
         cashflow_data = self._retry_operation(
             self.data_source.get_cashflow_data,
@@ -155,6 +199,10 @@ class DataUpdateManager:
             year=year,
             quarter=quarter
         )
+        cashflow_data = format_financial_df(cashflow_data, [
+            'CAToAsset', 'NCAToAsset', 'tangibleAssetToAsset',
+            'ebitToInterest', 'CFOToOR', 'CFOToNP', 'CFOToGr'
+        ])
         
         growth_data = self._retry_operation(
             self.data_source.get_growth_data,
@@ -162,6 +210,10 @@ class DataUpdateManager:
             year=year,
             quarter=quarter
         )
+        growth_data = format_financial_df(growth_data, [
+            'YOYEquity', 'YOYAsset', 'YOYNI',
+            'YOYEPSBasic', 'YOYPNI'
+        ])
         
         operation_data = self._retry_operation(
             self.data_source.get_operation_data,
@@ -169,6 +221,10 @@ class DataUpdateManager:
             year=year,
             quarter=quarter
         )
+        operation_data = format_financial_df(operation_data, [
+            'NRTurnRatio', 'NRTurnDays', 'INVTurnRatio',
+            'INVTurnDays', 'CATurnRatio', 'AssetTurnRatio'
+        ])
         
         dupont_data = self._retry_operation(
             self.data_source.get_dupont_data,
@@ -176,12 +232,21 @@ class DataUpdateManager:
             year=year,
             quarter=quarter
         )
+        dupont_data = format_financial_df(dupont_data, [
+            'dupontROE', 'dupontAssetStoEquity', 'dupontAssetTurn',
+            'dupontPnitoni', 'dupontNitogr', 'dupontTaxBurden',
+            'dupontIntburden', 'dupontEbittogr'
+        ])
 
         dividend_data = self._retry_operation(
             self.data_source.get_dividend_data,
             code=code,
             year=year
         )
+        dividend_data = format_financial_df(dividend_data, [
+            'dividCashPsBeforeTax', 'dividCashPsAfterTax',
+            'dividStocksPs', 'dividCashStock', 'dividReserveToStockPs'
+        ])
         
         # 保存到数据库
         if not profit_data.empty:
@@ -199,37 +264,58 @@ class DataUpdateManager:
         if not dividend_data.empty:
             self.db.save_dividend_data(dividend_data)
 
-    def update_all_financial_data(self, start_year: int, end_year: int = None, progress_callback=None):
+    def update_all_financial_data(self, start_year: int, end_year: int = None):
         """更新所有股票的财务数据
         
         Args:
             start_year: 开始年份
             end_year: 结束年份（默认为当前年份）
-            progress_callback: 进度回调函数
+            progress_callback: 进度回调函数，接收参数：
+                - current: 当前进度
+                - total: 总数
+                - stock_code: 当前处理的股票代码
+                - year: 当前处理的年份
         """
         if end_year is None:
             end_year = dt.datetime.now().year
         
         stock_list = self.get_stock_list()
         total_stocks = len(stock_list)
+        years_count = end_year - start_year + 1
+        total_updates = total_stocks * years_count
+        current_count = 0
         updated_count = 0
         failed_count = 0
         failed_codes = []
+        
+        # 添加进度条
+        pbar = tqdm(total=total_updates, desc="更新财务数据")
         
         for code in stock_list['code']:
             try:
                 for year in range(start_year, end_year + 1):
                     self.update_financial_data(code, year)
+                    current_count += 1
+                    pbar.update(1)  # 更新进度条
                 updated_count += 1
-                if progress_callback:
-                    progress_callback()
             except Exception as e:
                 failed_count += 1
                 failed_codes.append(code)
                 logging.exception(f"更新股票 {code} 财务数据失败: {e}")
+                # 即使失败也要更新进度
+                remaining_steps = years_count - (current_count % years_count)
+                current_count += remaining_steps
+                pbar.update(remaining_steps)  # 更新进度条
                 if progress_callback:
-                    progress_callback()
+                    progress_callback(
+                        current=current_count,
+                        total=total_updates,
+                        stock_code=code,
+                        year=None
+                    )
                 continue
+        
+        pbar.close()  # 关闭进度条
         
         return {
             "total": total_stocks,

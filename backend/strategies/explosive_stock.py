@@ -14,8 +14,8 @@ from backend.ml.model_trainer import ExplosiveStockModelTrainer
 from backend.strategies.base import BaseStrategy
 from backend.utils.indicators import CalIndicators
 
-MODEL_BASE_PATH = "backend/ml/models/explosive_stock_model"
-# MODEL_BASE_PATH = "backend/ml/models/full_0210_noon/explosive_stock_model"
+# MODEL_BASE_PATH = "backend/ml/models/explosive_stock_model"
+MODEL_BASE_PATH = "模型没训练好先不用"
 
 
 class ExplosiveStockStrategy(BaseStrategy):
