@@ -67,6 +67,114 @@ class DatabaseManager:
             INDEX idx_status(status),
             INDEX idx_type(type))
         """)
+        # 创建财务报表相关表
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_profit(
+            code VARCHAR(10),
+            pubDate DATE,
+            statDate DATE,
+            roeAvg DECIMAL(10,4),
+            npMargin DECIMAL(10,4),
+            gpMargin DECIMAL(10,4),
+            netProfit DECIMAL(20,4),
+            epsTTM DECIMAL(10,4),
+            MBRevenue DECIMAL(20,4),
+            totalShare DECIMAL(20,4),
+            liqaShare DECIMAL(20,4),
+            PRIMARY KEY (code, statDate)
+        )""")
+        
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_balance(
+            code VARCHAR(10),
+            pubDate DATE,
+            statDate DATE,
+            currentRatio DECIMAL(10,4),
+            quickRatio DECIMAL(10,4),
+            cashRatio DECIMAL(10,4),
+            YOYLiability DECIMAL(10,4),
+            liabilityToAsset DECIMAL(10,4),
+            assetToEquity DECIMAL(10,4),
+            PRIMARY KEY (code, statDate)
+        )""")
+        
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_cashflow(
+            code VARCHAR(10),
+            pubDate DATE,
+            statDate DATE,
+            CAToAsset DECIMAL(10,4),
+            NCAToAsset DECIMAL(10,4),
+            tangibleAssetToAsset DECIMAL(10,4),
+            ebitToInterest DECIMAL(10,4),
+            CFOToOR DECIMAL(10,4),
+            CFOToNP DECIMAL(10,4),
+            CFOToGr DECIMAL(10,4),
+            PRIMARY KEY (code, statDate)
+        )""")
+        
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_growth(
+            code VARCHAR(10),
+            pubDate DATE,
+            statDate DATE,
+            YOYEquity DECIMAL(10,4),
+            YOYAsset DECIMAL(10,4),
+            YOYNI DECIMAL(10,4),
+            YOYEPSBasic DECIMAL(10,4),
+            YOYPNI DECIMAL(10,4),
+            PRIMARY KEY (code, statDate)
+        )""")
+        
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_operation(
+            code VARCHAR(10),
+            pubDate DATE,
+            statDate DATE,
+            NRTurnRatio DECIMAL(10,4),
+            NRTurnDays DECIMAL(10,4),
+            INVTurnRatio DECIMAL(10,4),
+            INVTurnDays DECIMAL(10,4),
+            CATurnRatio DECIMAL(10,4),
+            AssetTurnRatio DECIMAL(10,4),
+            PRIMARY KEY (code, statDate)
+        )""")
+        
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_dupont(
+            code VARCHAR(10),
+            pubDate DATE,
+            statDate DATE,
+            dupontROE DECIMAL(10,4),
+            dupontAssetStoEquity DECIMAL(10,4),
+            dupontAssetTurn DECIMAL(10,4),
+            dupontPnitoni DECIMAL(10,4),
+            dupontNitogr DECIMAL(10,4),
+            dupontTaxBurden DECIMAL(10,4),
+            dupontIntburden DECIMAL(10,4),
+            dupontEbittogr DECIMAL(10,4),
+            PRIMARY KEY (code, statDate)
+        )""")
+        
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_dividend(
+            code VARCHAR(10),
+            dividPreNoticeDate DATE,
+            dividAgmPumDate DATE,
+            dividPlanAnnounceDate DATE,
+            dividPlanDate DATE,
+            dividRegistDate DATE,
+            dividOperateDate DATE,
+            dividPayDate DATE,
+            dividStockMarketDate DATE,
+            dividCashPsBeforeTax DECIMAL(10,4),
+            dividCashPsAfterTax DECIMAL(10,4),
+            dividStocksPs DECIMAL(10,4),
+            dividCashStock DECIMAL(10,4),
+            dividReserveToStockPs DECIMAL(10,4),
+            PRIMARY KEY (code, dividOperateDate)
+        )""")
+        
         self.conn.commit()
         cursor.close()
 
@@ -300,3 +408,70 @@ class DatabaseManager:
         if update_time is None:
             return True
         return datetime.now() - update_time > timedelta(hours=self.config.DATA_UPDATE_INTERVAL)
+
+    def _save_financial_data(self, df: pd.DataFrame, table_name: str, columns: list):
+        """通用的财务数据保存方法"""
+        if df.empty:
+            return
+        
+        cursor = self.conn.cursor()
+        placeholders = ','.join(['%s'] * len(columns))
+        columns_str = ','.join(columns)
+        update_str = ','.join([f"{col}=VALUES({col})" for col in columns if col not in ['code', 'statDate']])
+        
+        sql = f"""
+        INSERT INTO {table_name} ({columns_str})
+        VALUES ({placeholders})
+        ON DUPLICATE KEY UPDATE {update_str}
+        """
+        
+        values = [tuple(row) for row in df[columns].values]
+        cursor.executemany(sql, values)
+        self.conn.commit()
+        cursor.close()
+
+    def save_profit_data(self, df: pd.DataFrame):
+        """保存利润表数据"""
+        columns = ['code', 'pubDate', 'statDate', 'roeAvg', 'npMargin', 'gpMargin',
+                  'netProfit', 'epsTTM', 'MBRevenue', 'totalShare', 'liqaShare']
+        self._save_financial_data(df, 'stock_profit', columns)
+
+    def save_balance_data(self, df: pd.DataFrame):
+        """保存资产负债表数据"""
+        columns = ['code', 'pubDate', 'statDate', 'currentRatio', 'quickRatio',
+                  'cashRatio', 'YOYLiability', 'liabilityToAsset', 'assetToEquity']
+        self._save_financial_data(df, 'stock_balance', columns)
+
+    def save_cashflow_data(self, df: pd.DataFrame):
+        """保存现金流量表数据"""
+        columns = ['code', 'pubDate', 'statDate', 'CAToAsset', 'NCAToAsset',
+                  'tangibleAssetToAsset', 'ebitToInterest', 'CFOToOR', 
+                  'CFOToNP', 'CFOToGr']
+        self._save_financial_data(df, 'stock_cashflow', columns)
+
+    def save_growth_data(self, df: pd.DataFrame):
+        """保存成长能力数据"""
+        columns = ['code', 'pubDate', 'statDate', 'YOYEquity', 'YOYAsset',
+                  'YOYNI', 'YOYEPSBasic', 'YOYPNI']
+        self._save_financial_data(df, 'stock_growth', columns)
+
+    def save_operation_data(self, df: pd.DataFrame):
+        """保存营运能力数据"""
+        columns = ['code', 'pubDate', 'statDate', 'NRTurnRatio', 'NRTurnDays',
+                  'INVTurnRatio', 'INVTurnDays', 'CATurnRatio', 'AssetTurnRatio']
+        self._save_financial_data(df, 'stock_operation', columns)
+
+    def save_dupont_data(self, df: pd.DataFrame):
+        """保存杜邦分析数据"""
+        columns = ['code', 'pubDate', 'statDate', 'dupontROE', 'dupontAssetStoEquity',
+                  'dupontAssetTurn', 'dupontPnitoni', 'dupontNitogr', 'dupontTaxBurden',
+                  'dupontIntburden', 'dupontEbittogr']
+        self._save_financial_data(df, 'stock_dupont', columns)
+
+    def save_dividend_data(self, df: pd.DataFrame):
+        """保存分红数据"""
+        columns = ['code', 'dividPreNoticeDate', 'dividAgmPumDate', 'dividPlanAnnounceDate',
+                  'dividPlanDate', 'dividRegistDate', 'dividOperateDate', 'dividPayDate',
+                  'dividStockMarketDate', 'dividCashPsBeforeTax', 'dividCashPsAfterTax',
+                  'dividStocksPs', 'dividCashStock', 'dividReserveToStockPs']
+        self._save_financial_data(df, 'stock_dividend', columns)

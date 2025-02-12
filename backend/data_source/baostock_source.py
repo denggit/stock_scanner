@@ -198,7 +198,20 @@ class BaostockSource(DataSource):
             return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
 
     def get_balance_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
-        """获取上市公司资产负债表数据"""
+        """获取上市公司资产负债表数据
+        
+        RETURN：
+        code	证券代码	
+        pubDate	公司发布财报的日期	
+        statDate	财报统计的季度的最后一天, 比如2017-03-31, 2017-06-30	
+        currentRatio	流动比率	流动资产/流动负债
+        quickRatio	速动比率	(流动资产-存货净额)/流动负债
+        cashRatio	现金比率	(货币资金+交易性金融资产)/流动负债
+        YOYLiability	总负债同比增长率	(本期总负债-上年同期总负债)/上年同期中负债的绝对值*100%
+        liabilityToAsset	资产负债率	负债总额/资产总额
+        assetToEquity	权益乘数	资产总额/股东权益总额=1/(1-资产负债率)
+        
+        """
         if not self._connected:
             self.connect()
 
@@ -212,7 +225,21 @@ class BaostockSource(DataSource):
             return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
 
     def get_cashflow_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
-        """获取上市公司现金流量表数据"""
+        """获取上市公司现金流量表数据
+        
+        RETURN：
+        code	证券代码	
+        pubDate	公司发布财报的日期	
+        statDate	财报统计的季度的最后一天, 比如2017-03-31, 2017-06-30	
+        CAToAsset	流动资产除以总资产	
+        NCAToAsset	非流动资产除以总资产	
+        tangibleAssetToAsset	有形资产除以总资产	
+        ebitToInterest	已获利息倍数	息税前利润/利息费用
+        CFOToOR	经营活动产生的现金流量净额除以营业收入	
+        CFOToNP	经营性现金净流量除以净利润	
+        CFOToGr	经营性现金净流量除以营业总收入	
+        
+        """
         if not self._connected:
             self.connect()
 
@@ -225,22 +252,23 @@ class BaostockSource(DataSource):
             quarter_4 = bs.query_cash_flow_data(code=code, year=year, quarter=4).get_data()
             return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
 
-    def get_stock_dividend_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
-        """获取上市公司股息分红数据"""
-        if not self._connected:
-            self.connect()
-
-        if quarter:
-            return bs.query_dividend_data(code=code, year=year, quarter=quarter).get_data()
-        else:
-            quarter_1 = bs.query_dividend_data(code=code, year=year, quarter=1).get_data()
-            quarter_2 = bs.query_dividend_data(code=code, year=year, quarter=2).get_data()
-            quarter_3 = bs.query_dividend_data(code=code, year=year, quarter=3).get_data()
-            quarter_4 = bs.query_dividend_data(code=code, year=year, quarter=4).get_data()
-            return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
-
-    def get_query_dupont_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
-        """获取上市公司杜邦分析数据"""
+    def get_dupont_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+        """获取上市公司杜邦分析数据
+        
+        RETURN：
+        code	证券代码	
+        pubDate	公司发布财报的日期	
+        statDate	财报统计的季度的最后一天, 比如2017-03-31, 2017-06-30	
+        dupontROE	净资产收益率	归属母公司股东净利润/[(期初归属母公司股东的权益+期末归属母公司股东的权益)/2]*100%
+        dupontAssetStoEquity	权益乘数，反映企业财务杠杆效应强弱和财务风险	平均总资产/平均归属于母公司的股东权益
+        dupontAssetTurn	总资产周转率，反映企业资产管理效率的指标	营业总收入/[(期初资产总额+期末资产总额)/2]
+        dupontPnitoni	归属母公司股东的净利润/净利润，反映母公司控股子公司百分比。如果企业追加投资，扩大持股比例，则本指标会增加。	
+        dupontNitogr	净利润/营业总收入，反映企业销售获利率	
+        dupontTaxBurden	净利润/利润总额，反映企业税负水平，该比值高则税负较低。净利润/利润总额=1-所得税/利润总额	
+        dupontIntburden	利润总额/息税前利润，反映企业利息负担，该比值高则税负较低。利润总额/息税前利润=1-利息费用/息税前利润
+        dupontEbittogr	息税前利润/营业总收入，反映企业经营利润率，是企业经营获得的可供全体投资人（股东和债权人）分配的盈利占企业全部营收收入的百分比	
+        
+        """
         if not self._connected:
             self.connect()
 
@@ -254,7 +282,19 @@ class BaostockSource(DataSource):
             return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
 
     def get_growth_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
-        """获取上市公司成长能力数据"""
+        """获取上市公司成长能力数据
+        
+        RETURN：
+        code	证券代码	
+        pubDate	公司发布财报的日期	
+        statDate	财报统计的季度的最后一天, 比如2017-03-31, 2017-06-30	
+        YOYEquity	净资产同比增长率	(本期净资产-上年同期净资产)/上年同期净资产的绝对值*100%
+        YOYAsset	总资产同比增长率	(本期总资产-上年同期总资产)/上年同期总资产的绝对值*100%
+        YOYNI	净利润同比增长率	(本期净利润-上年同期净利润)/上年同期净利润的绝对值*100%
+        YOYEPSBasic	基本每股收益同比增长率	(本期基本每股收益-上年同期基本每股收益)/上年同期基本每股收益的绝对值*100%
+        YOYPNI	归属母公司股东净利润同比增长率	(本期归属母公司股东净利润-上年同期归属母公司股东净利润)/上年同期归属母公司股东净利润的绝对值*100%
+        
+        """
         if not self._connected:
             self.connect()
 
@@ -268,7 +308,20 @@ class BaostockSource(DataSource):
             return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
 
     def get_operation_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
-        """获取上市公司营运能力数据"""
+        """获取上市公司营运能力数据
+        
+        RETURN：
+        code	证券代码	
+        pubDate	公司发布财报的日期	
+        statDate	财报统计的季度的最后一天, 比如2017-03-31, 2017-06-30	
+        NRTurnRatio	应收账款周转率(次)	营业收入/[(期初应收票据及应收账款净额+期末应收票据及应收账款净额)/2]
+        NRTurnDays	应收账款周转天数(天)	季报天数/应收账款周转率(一季报：90天，中报：180天，三季报：270天，年报：360天)
+        INVTurnRatio	存货周转率(次)	营业成本/[(期初存货净额+期末存货净额)/2]
+        INVTurnDays	存货周转天数(天)	季报天数/存货周转率(一季报：90天，中报：180天，三季报：270天，年报：360天)
+        CATurnRatio	流动资产周转率(次)	营业总收入/[(期初流动资产+期末流动资产)/2]
+        AssetTurnRatio	总资产周转率	营业总收入/[(期初资产总额+期末资产总额)/2]
+        
+        """
         if not self._connected:
             self.connect()
 
@@ -280,6 +333,36 @@ class BaostockSource(DataSource):
             quarter_3 = bs.query_operation_data(code=code, year=year, quarter=3).get_data()
             quarter_4 = bs.query_operation_data(code=code, year=year, quarter=4).get_data()
             return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
+
+    def get_dividend_data(self, code: str, year: int, year_type: str = "report") -> pd.DataFrame:
+        """获取上市公司股息分红数据
+
+        @param code: 证券代码，不可为空
+        @param year: 年份，为空时默认当前年份
+        @param year_type: 年份类别，默认为"report":预案公告年份，可选项"operate":除权除息年份
+
+
+        RETURN：
+        code	证券代码
+        dividPreNoticeDate	预批露公告日
+        dividAgmPumDate	股东大会公告日期
+        dividPlanAnnounceDate	预案公告日
+        dividPlanDate	分红实施公告日
+        dividRegistDate	股权登记告日
+        dividOperateDate	除权除息日期
+        dividPayDate	派息日
+        dividStockMarketDate	红股上市交易日
+        dividCashPsBeforeTax	每股股利税前	派息比例分子(税前)/派息比例分母
+        dividCashPsAfterTax	每股股利税后	派息比例分子(税后)/派息比例分母
+        dividStocksPs	每股红股
+        dividCashStock	分红送转	每股派息数(税前)+每股送股数+每股转增股本数
+        dividReserveToStockPs	每股转增资本
+
+        """
+        if not self._connected:
+            self.connect()
+
+        return bs.query_dividend_data(code=code, year=year, yearType=year_type).get_data()
 
     def get_trading_calendar(self, start_date: str = None, end_date: str = None) -> pd.DataFrame:
         """获取交易日历数据"""

@@ -125,3 +125,115 @@ class DataUpdateManager:
             return
 
         self.db.update_stock_daily(code, df)
+
+    def update_financial_data(self, code: str, year: int, quarter: int = None):
+        """更新单个股票的财务数据
+        
+        Args:
+            code: 股票代码
+            year: 年份
+            quarter: 季度（可选）
+        """
+        # 获取各类财务数据
+        profit_data = self._retry_operation(
+            self.data_source.get_profit_data,
+            code=code,
+            year=year,
+            quarter=quarter
+        )
+        
+        balance_data = self._retry_operation(
+            self.data_source.get_balance_data,
+            code=code,
+            year=year,
+            quarter=quarter
+        )
+        
+        cashflow_data = self._retry_operation(
+            self.data_source.get_cashflow_data,
+            code=code,
+            year=year,
+            quarter=quarter
+        )
+        
+        growth_data = self._retry_operation(
+            self.data_source.get_growth_data,
+            code=code,
+            year=year,
+            quarter=quarter
+        )
+        
+        operation_data = self._retry_operation(
+            self.data_source.get_operation_data,
+            code=code,
+            year=year,
+            quarter=quarter
+        )
+        
+        dupont_data = self._retry_operation(
+            self.data_source.get_dupont_data,
+            code=code,
+            year=year,
+            quarter=quarter
+        )
+
+        dividend_data = self._retry_operation(
+            self.data_source.get_dividend_data,
+            code=code,
+            year=year
+        )
+        
+        # 保存到数据库
+        if not profit_data.empty:
+            self.db.save_profit_data(profit_data)
+        if not balance_data.empty:
+            self.db.save_balance_data(balance_data)
+        if not cashflow_data.empty:
+            self.db.save_cashflow_data(cashflow_data)
+        if not growth_data.empty:
+            self.db.save_growth_data(growth_data)
+        if not operation_data.empty:
+            self.db.save_operation_data(operation_data)
+        if not dupont_data.empty:
+            self.db.save_dupont_data(dupont_data)
+        if not dividend_data.empty:
+            self.db.save_dividend_data(dividend_data)
+
+    def update_all_financial_data(self, start_year: int, end_year: int = None, progress_callback=None):
+        """更新所有股票的财务数据
+        
+        Args:
+            start_year: 开始年份
+            end_year: 结束年份（默认为当前年份）
+            progress_callback: 进度回调函数
+        """
+        if end_year is None:
+            end_year = dt.datetime.now().year
+        
+        stock_list = self.get_stock_list()
+        total_stocks = len(stock_list)
+        updated_count = 0
+        failed_count = 0
+        failed_codes = []
+        
+        for code in stock_list['code']:
+            try:
+                for year in range(start_year, end_year + 1):
+                    self.update_financial_data(code, year)
+                updated_count += 1
+                if progress_callback:
+                    progress_callback()
+            except Exception as e:
+                failed_count += 1
+                failed_codes.append(code)
+                logging.exception(f"更新股票 {code} 财务数据失败: {e}")
+                if progress_callback:
+                    progress_callback()
+                continue
+        
+        return {
+            "total": total_stocks,
+            "updated": updated_count,
+            "failed": failed_count,
+            "failed_codes": failed_codes
+        }
