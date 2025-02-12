@@ -12,6 +12,7 @@ python-dateutil>=2.8.2
 
 # Data Source
 baostock>=0.8.8
+akshare
 
 # Task Scheduling
 schedule>=1.1.0

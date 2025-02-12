@@ -33,7 +33,7 @@ class StockService:
         """获取股票数据，考虑均线计算需要的额外数据"""
         try:
             logger.info(f"Fetching {period} data for {code} from {start_date} to {end_date}")
-            formatted_code = format_info.stock_code(code)
+            formatted_code = format_info.stock_code_dot(code)
 
             # 如果有均线周期，计算需要提前获取的天数
             extra_days = 0

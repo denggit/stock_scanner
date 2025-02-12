@@ -21,13 +21,5 @@ class DataSource(ABC):
         pass
 
     @abstractmethod
-    def get_stock_list(self) -> pd.DataFrame:
-        pass
-
-    @abstractmethod
-    def get_stock_data(self, code: str, start_date: str, end_date: str, period: str = 'daily') -> pd.DataFrame:
-        pass
-
-    @abstractmethod
     def is_connected(self) -> bool:
         pass

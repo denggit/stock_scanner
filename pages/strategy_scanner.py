@@ -91,7 +91,7 @@ def main():
                     "最小回踩次数",
                     min_value=0,
                     max_value=10,
-                    value=2,
+                    value=0,
                     help='回溯其内最少需要的回踩次数'
                 )
             with col2:
@@ -478,7 +478,7 @@ def main():
                         placeholder="例如: 000001",
                         help="输入持仓股票代码"
                     )
-                    stock_code = format_info.stock_code(stock_code)
+                    stock_code = format_info.stock_code_dot(stock_code)
                 with col2:
                     cost_price = st.number_input(
                         "持仓成本",
