@@ -3,7 +3,7 @@
 """
 @Author     : Zijun Deng
 @Date       : 2/2/2025 12:16 PM
-@File       : update_database.py
+@File       : update_stock_data.py
 @Description: 
 """
 import os

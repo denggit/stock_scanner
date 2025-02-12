@@ -270,11 +270,6 @@ class DataUpdateManager:
         Args:
             start_year: 开始年份
             end_year: 结束年份（默认为当前年份）
-            progress_callback: 进度回调函数，接收参数：
-                - current: 当前进度
-                - total: 总数
-                - stock_code: 当前处理的股票代码
-                - year: 当前处理的年份
         """
         if end_year is None:
             end_year = dt.datetime.now().year

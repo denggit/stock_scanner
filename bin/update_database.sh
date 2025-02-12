@@ -1,1 +1,1 @@
-/Users/zijund/Code/stock_scanner/venv/bin/python /Users/zijund/Code/stock_scanner/bin/update_database.py
+/Users/zijund/Code/stock_scanner/venv/bin/python /Users/zijund/Code/stock_scanner/bin/update_stock_data.py
