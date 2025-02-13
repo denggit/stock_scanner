@@ -26,6 +26,7 @@ class StockDataFetcher:
             period: str = 'daily',
             start_date: Optional[str] = (datetime.date.today() - datetime.timedelta(days=365)).strftime("%Y-%m-%d"),
             end_date: Optional[str] = datetime.date.today().strftime("%Y-%m-%d"),
+            adjust: str = '3'
     ) -> pd.DataFrame:
         """
         获取股票数据
@@ -33,9 +34,10 @@ class StockDataFetcher:
         :param period: 数据周期，可选值：daily, weekly, monthly
         :param start_date: 开始日期，格式为YYYY-MM-DD
         :param end_date: YYYY-MM-DD
+        :param adjust: 复权类型，1:后复权，2:前复权，3:不复权
         """
         if period.lower().startswith('d'):
-            df = self.db.get_stock_daily(code=code, start_date=start_date, end_date=end_date)
+            df = self.db.get_stock_daily(code=code, start_date=start_date, end_date=end_date, adjust=adjust)
         # elif period.lower().startswith('w'):
         #     df = self.db.get_stock_weekly(code=code, start_date=start_date, end_date=end_date)
         # elif period.lower().startswith('m'):

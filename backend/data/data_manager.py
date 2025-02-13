@@ -11,9 +11,9 @@ import logging
 import time
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
-import numpy as np
 
 from backend.data.database import DatabaseManager
 from backend.data_source.baostock_source import BaostockSource
@@ -69,7 +69,10 @@ class DataUpdateManager:
 
         for code in stock_list['code']:
             try:
-                self.update_stock_data(code, force_full_update, lastest_dates.get(code))
+                # 更新不复权数据
+                self.update_stock_data(code, force_full_update, lastest_dates.get(code), adjust='3')
+                # 更新后复权数据
+                self.update_stock_data(code, force_full_update, lastest_dates.get(code), adjust='1')
                 updated_count += 1
                 if progress_callback:
                     progress_callback()
@@ -92,7 +95,8 @@ class DataUpdateManager:
             "failed_codes": failed_codes
         }
 
-    def update_stock_data(self, code: str, force_full_update: bool = False, latest_date: Optional[str] = None):
+    def update_stock_data(self, code: str, force_full_update: bool = False, latest_date: Optional[str] = None,
+                          adjust: str = '3'):
         """更新单个股票数据"""
         today_6pm = dt.datetime.combine(dt.datetime.today(), dt.time(18, 0))
         if force_full_update or latest_date is None:
@@ -100,7 +104,7 @@ class DataUpdateManager:
             start_date = (dt.datetime.now() - dt.timedelta(days=5 * 365)).strftime('%Y-%m-%d')
         elif dt.datetime.strptime(latest_date, '%Y-%m-%d %H:%M:%S') > today_6pm:
             # 如果是今天下午六点后更新的，无需更新
-            logging.warning(f"股票 {code} 今天已经更新，无需重复更新")
+            logging.warning(f"股票 {code}_{adjust} 今天已经更新，无需重复更新")
             return
         else:
             # 如果最新更新日期为交易日，则选择当天为start_date，否则向前选择一个交易日
@@ -117,16 +121,17 @@ class DataUpdateManager:
 
         # 如果开始日期晚于结束日期，则不更新
         if start_date > end_date:
-            logging.warning(f"股票 {code} 的开始日期晚于结束日期，不更新")
+            logging.warning(f"股票 {code}_{adjust} 的开始日期晚于结束日期，不更新")
             return
 
-        df = self._retry_operation(self.data_source.get_stock_data, code=code, start_date=start_date, end_date=end_date)
+        df = self._retry_operation(self.data_source.get_stock_data, code=code, start_date=start_date, end_date=end_date,
+                                   adjust=adjust)
 
         if df.empty:
-            logging.warning(f"股票 {code} 没有更新数据")
+            logging.warning(f"股票 {code}_{adjust} 没有更新数据")
             return
 
-        self.db.update_stock_daily(code, df)
+        self.db.update_stock_daily(code, df, adjust)
 
     def update_financial_data(self, code: str, year: int, quarter: int = None):
         """更新单个股票的财务数据
@@ -137,39 +142,40 @@ class DataUpdateManager:
             quarter: 季度（可选）
 
         """
+
         def format_financial_df(df: pd.DataFrame, numeric_columns: list) -> pd.DataFrame:
             """格式化财务数据DataFrame"""
             if df.empty:
                 return df
-            
+
             # 创建一个新的 DataFrame 来存储转换后的数据
             result_df = df.copy()
-            
+
             # 转换日期列
             date_columns = [col for col in result_df.columns if 'Date' in col]
             for col in date_columns:
                 # 将 NaT 转换为 None
                 result_df[col] = pd.to_datetime(result_df[col], errors='coerce')
                 result_df[col] = result_df[col].apply(lambda x: x.date() if pd.notna(x) else None)
-            
+
             # 只处理指定的数值列
             for col in numeric_columns:
                 if col in result_df.columns:
                     # 将列转换为数值类型，无效值变为 NaN
                     result_df[col] = pd.to_numeric(result_df[col], errors='coerce')
-                    
+
                     # 将无效的数值转换为 None
                     result_df[col] = result_df[col].apply(
                         lambda x: float(x) if pd.notna(x) and not np.isinf(x) else None
                     )
-            
+
             # 最后的安全检查：确保数值列没有任何 NaN 或 inf 值
             for col in numeric_columns:
                 if col in result_df.columns:
                     result_df[col] = result_df[col].replace([np.inf, -np.inf, np.nan], None)
-            
+
             return result_df
-        
+
         # 获取各类财务数据
         profit_data = self._retry_operation(
             self.data_source.get_profit_data,
@@ -178,10 +184,10 @@ class DataUpdateManager:
             quarter=quarter
         )
         profit_data = format_financial_df(profit_data, [
-            'roeAvg', 'npMargin', 'gpMargin', 'netProfit', 
+            'roeAvg', 'npMargin', 'gpMargin', 'netProfit',
             'epsTTM', 'MBRevenue', 'totalShare', 'liqaShare'
         ])
-        
+
         balance_data = self._retry_operation(
             self.data_source.get_balance_data,
             code=code,
@@ -192,7 +198,7 @@ class DataUpdateManager:
             'currentRatio', 'quickRatio', 'cashRatio',
             'YOYLiability', 'liabilityToAsset', 'assetToEquity'
         ])
-        
+
         cashflow_data = self._retry_operation(
             self.data_source.get_cashflow_data,
             code=code,
@@ -203,7 +209,7 @@ class DataUpdateManager:
             'CAToAsset', 'NCAToAsset', 'tangibleAssetToAsset',
             'ebitToInterest', 'CFOToOR', 'CFOToNP', 'CFOToGr'
         ])
-        
+
         growth_data = self._retry_operation(
             self.data_source.get_growth_data,
             code=code,
@@ -214,7 +220,7 @@ class DataUpdateManager:
             'YOYEquity', 'YOYAsset', 'YOYNI',
             'YOYEPSBasic', 'YOYPNI'
         ])
-        
+
         operation_data = self._retry_operation(
             self.data_source.get_operation_data,
             code=code,
@@ -225,7 +231,7 @@ class DataUpdateManager:
             'NRTurnRatio', 'NRTurnDays', 'INVTurnRatio',
             'INVTurnDays', 'CATurnRatio', 'AssetTurnRatio'
         ])
-        
+
         dupont_data = self._retry_operation(
             self.data_source.get_dupont_data,
             code=code,
@@ -247,7 +253,7 @@ class DataUpdateManager:
             'dividCashPsBeforeTax', 'dividCashPsAfterTax',
             'dividStocksPs', 'dividCashStock', 'dividReserveToStockPs'
         ])
-        
+
         # 保存到数据库
         if not profit_data.empty:
             self.db.save_profit_data(profit_data)
@@ -273,7 +279,7 @@ class DataUpdateManager:
         """
         if end_year is None:
             end_year = dt.datetime.now().year
-        
+
         stock_list = self.get_stock_list()
         total_stocks = len(stock_list)
         years_count = end_year - start_year + 1
@@ -282,10 +288,10 @@ class DataUpdateManager:
         updated_count = 0
         failed_count = 0
         failed_codes = []
-        
+
         # 添加进度条
         pbar = tqdm(total=total_updates, desc="更新财务数据")
-        
+
         for code in stock_list['code']:
             try:
                 for year in range(start_year, end_year + 1):
@@ -309,9 +315,9 @@ class DataUpdateManager:
                         year=None
                     )
                 continue
-        
+
         pbar.close()  # 关闭进度条
-        
+
         return {
             "total": total_stocks,
             "updated": updated_count,

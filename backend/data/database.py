@@ -8,8 +8,7 @@
 """
 import logging
 import time
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime
 
 import pandas as pd
 import pymysql as mysql
@@ -64,6 +63,7 @@ class DatabaseManager:
             type CHAR(1),
             status CHAR(1),
             update_time TIMESTAMP,
+            update_time_back TIMESTAMP,  # 新增后复权数据更新时间
             INDEX idx_status(status),
             INDEX idx_type(type))
         """)
@@ -83,7 +83,7 @@ class DatabaseManager:
             liqaShare DECIMAL(20,4),
             PRIMARY KEY (code, statDate)
         )""")
-        
+
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS stock_balance(
             code VARCHAR(10),
@@ -97,7 +97,7 @@ class DatabaseManager:
             assetToEquity DECIMAL(10,4),
             PRIMARY KEY (code, statDate)
         )""")
-        
+
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS stock_cashflow(
             code VARCHAR(10),
@@ -112,7 +112,7 @@ class DatabaseManager:
             CFOToGr DECIMAL(10,4),
             PRIMARY KEY (code, statDate)
         )""")
-        
+
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS stock_growth(
             code VARCHAR(10),
@@ -125,7 +125,7 @@ class DatabaseManager:
             YOYPNI DECIMAL(10,4),
             PRIMARY KEY (code, statDate)
         )""")
-        
+
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS stock_operation(
             code VARCHAR(10),
@@ -139,7 +139,7 @@ class DatabaseManager:
             AssetTurnRatio DECIMAL(10,4),
             PRIMARY KEY (code, statDate)
         )""")
-        
+
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS stock_dupont(
             code VARCHAR(10),
@@ -155,7 +155,7 @@ class DatabaseManager:
             dupontEbittogr DECIMAL(10,4),
             PRIMARY KEY (code, statDate)
         )""")
-        
+
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS stock_dividend(
             code VARCHAR(10),
@@ -174,7 +174,7 @@ class DatabaseManager:
             dividReserveToStockPs DECIMAL(10,4),
             PRIMARY KEY (code, dividOperateDate)
         )""")
-        
+
         self.conn.commit()
         cursor.close()
 
@@ -190,49 +190,63 @@ class DatabaseManager:
         cursor.close()
         return cursor.fetchone()[0] > 0
 
-    def _ensure_daily_table(self, year: int):
-        """确保年份表存在"""
-        table_name = f"stock_daily_{year}"
-        create_table_sql = f"""
-        CREATE TABLE IF NOT EXISTS {table_name}(
-            code VARCHAR(10),
-            trade_date DATE,
-            open DECIMAL(10, 2),
-            high DECIMAL(10, 2),
-            low DECIMAL(10, 2),
-            close DECIMAL(10, 2),
-            preclose DECIMAL(10, 2),
-            volume BIGINT,
-            amount DECIMAL(16, 2),
-            turn DECIMAL(10, 2),
-            tradestatus TINYINT(1),
-            pct_chg DECIMAL(10, 2),
-            pe_ttm DECIMAL(20, 4),
-            pb_mrq DECIMAL(20, 4),
-            ps_ttm DECIMAL(20, 4),
-            pcf_ncf_ttm DECIMAL(20, 4),
-            is_st TINYINT(1),
-            PRIMARY KEY (code, trade_date)
-        ) PARTITION BY RANGE (MONTH(trade_date)) (
-            PARTITION p1 VALUES LESS THAN (4),
-            PARTITION p2 VALUES LESS THAN (7),
-            PARTITION p3 VALUES LESS THAN (10),
-            PARTITION p4 VALUES LESS THAN (13)
-        )
+    def _ensure_daily_table(self, year: int, adjust: str = '3'):
+        """确保特定年份的日线数据表存在
+        
+        Args:
+            year: 年份
+            adjust: 复权类型，1:后复权，2:前复权，3:不复权
+        """
+        table_suffix = f"back_{year}" if adjust == '1' else str(year)
+        table_name = f"stock_daily_{table_suffix}"
+
+        if not self._table_exists(table_name):
+            cursor = self.conn.cursor()
+            cursor.execute(f"""
+            CREATE TABLE IF NOT EXISTS {table_name}(
+                code VARCHAR(10),
+                trade_date DATE,
+                open DECIMAL(10, 2),
+                high DECIMAL(10, 2),
+                low DECIMAL(10, 2),
+                close DECIMAL(10, 2),
+                preclose DECIMAL(10, 2),
+                volume BIGINT,
+                amount DECIMAL(16, 2),
+                turn DECIMAL(10, 2),
+                tradestatus TINYINT(1),
+                pct_chg DECIMAL(10, 2),
+                pe_ttm DECIMAL(20, 4),
+                pb_mrq DECIMAL(20, 4),
+                ps_ttm DECIMAL(20, 4),
+                pcf_ncf_ttm DECIMAL(20, 4),
+                is_st TINYINT(1),
+                PRIMARY KEY (code, trade_date)
+            ) PARTITION BY RANGE (MONTH(trade_date)) (
+                PARTITION p1 VALUES LESS THAN (4),
+                PARTITION p2 VALUES LESS THAN (7),
+                PARTITION p3 VALUES LESS THAN (10),
+                PARTITION p4 VALUES LESS THAN (13)
+            )
+            """)
+            self.conn.commit()
+            cursor.close()
+
+    def save_stock_update_time(self, df: pd.DataFrame, adjust: str = '3'):
+        """保存股票更新时间
+        
+        Args:
+            df: 包含code和update_time的DataFrame
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
         """
         cursor = self.conn.cursor()
-        cursor.execute(create_table_sql)
-        self.conn.commit()
-        cursor.close()
+        time_field = 'update_time_back' if adjust == '1' else 'update_time'
 
-    def save_stock_update_time(self, stock_df: pd.DataFrame):
-        """保存股票更新时间"""
-        cursor = self.conn.cursor()
-        for _, row in stock_df.iterrows():
-            cursor.execute("""
-            INSERT INTO stock_list (code, update_time)
+        for _, row in df.iterrows():
+            cursor.execute(f"""
+            INSERT INTO stock_list (code, {time_field})
             VALUES (%s, %s)
-            ON DUPLICATE KEY UPDATE update_time = VALUES(update_time)
+            ON DUPLICATE KEY UPDATE {time_field} = VALUES({time_field})
             """, (row['code'], row['update_time']))
         self.conn.commit()
         cursor.close()
@@ -254,8 +268,14 @@ class DatabaseManager:
         self.conn.commit()
         cursor.close()
 
-    def update_stock_daily(self, code: str, stock_df: pd.DataFrame):
-        """更新股票日线数据"""
+    def update_stock_daily(self, code: str, stock_df: pd.DataFrame, adjust: str = '3'):
+        """更新股票日线数据
+        
+        Args:
+            code: 股票代码
+            stock_df: 股票数据
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
+        """
         if stock_df.empty:
             return
 
@@ -294,10 +314,16 @@ class DatabaseManager:
         total_records = 0
         # 按年份分组处理数据
         stock_df['year'] = pd.to_datetime(stock_df['trade_date']).dt.year
+
         for year, group in stock_df.groupby('year'):
             try:
-                self._ensure_daily_table(year)
-                table_name = f"stock_daily_{year}"
+                # 根据adjust参数决定使用哪个表
+                if adjust == '1':
+                    self._ensure_daily_table(year, adjust='1')
+                    table_name = f"stock_daily_back_{year}"
+                else:
+                    self._ensure_daily_table(year, adjust='3')
+                    table_name = f"stock_daily_{year}"
 
                 # 准备SQL语句
                 columns = ','.join(required_columns)
@@ -326,21 +352,22 @@ class DatabaseManager:
         logging.info(f"Total records updated for {code}: {total_records}")
 
         # 更新股票列表中的更新时间
-        self.save_stock_update_time(pd.DataFrame({'code': [code], 'update_time': [datetime.now()]}))
+        self.save_stock_update_time(pd.DataFrame({'code': [code], 'update_time': [datetime.now()]}), adjust)
 
-    def get_stock_update_time(self, stock_code: str) -> Optional[datetime]:
-        """获取股票更新时间"""
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT update_time FROM stock_list WHERE code = %s", (stock_code,))
-        result = cursor.fetchone()
-        cursor.close()
-        return result[0] if result else None
-
-    def get_all_update_time(self) -> dict:
-        """获取所有股票更新时间"""
+    def get_all_update_time(self, adjust: str = '3') -> dict:
+        """获取所有股票更新时间
+        
+        Args:
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
+            
+        Returns:
+            股票代码到更新时间的映射字典
+        """
         try:
             cursor = self.conn.cursor()
-            cursor.execute("SELECT code, update_time FROM stock_list")
+            time_field = 'update_time_back' if adjust == '1' else 'update_time'
+
+            cursor.execute(f"SELECT code, {time_field} FROM stock_list")
             data = cursor.fetchall()
             cursor.close()
             result = {}
@@ -372,7 +399,7 @@ class DatabaseManager:
             logging.error(f"Failed to get stock list: {e}")
             return pd.DataFrame()
 
-    def get_stock_daily(self, code: str, start_date: str, end_date: str) -> pd.DataFrame:
+    def get_stock_daily(self, code: str, start_date: str, end_date: str, adjust: str = '3') -> pd.DataFrame:
         """获取股票日线数据"""
         start_year = pd.to_datetime(start_date).year
         end_year = pd.to_datetime(end_date).year
@@ -380,7 +407,12 @@ class DatabaseManager:
         # 获取所有年份的数据
         all_data = []
         for year in range(start_year, end_year + 1):
-            table_name = f"stock_daily_{year}"
+            if adjust == '1':
+                table_name = f"stock_daily_back_{year}"
+            elif adjust == '2':
+                table_name = f"stock_daily_forward_{year}"
+            else:
+                table_name = f"stock_daily_{year}"
 
             # 确保年份表存在
             if not self._table_exists(table_name):
@@ -402,29 +434,22 @@ class DatabaseManager:
         else:
             return pd.DataFrame()
 
-    def need_update(self, stock_code: str) -> bool:
-        """判断是否需要更新"""
-        update_time = self.get_stock_update_time(stock_code)
-        if update_time is None:
-            return True
-        return datetime.now() - update_time > timedelta(hours=self.config.DATA_UPDATE_INTERVAL)
-
     def _save_financial_data(self, df: pd.DataFrame, table_name: str, columns: list):
         """通用的财务数据保存方法"""
         if df.empty:
             return
-        
+
         cursor = self.conn.cursor()
         placeholders = ','.join(['%s'] * len(columns))
         columns_str = ','.join(columns)
         update_str = ','.join([f"{col}=VALUES({col})" for col in columns if col not in ['code', 'statDate']])
-        
+
         sql = f"""
         INSERT INTO {table_name} ({columns_str})
         VALUES ({placeholders})
         ON DUPLICATE KEY UPDATE {update_str}
         """
-        
+
         values = [tuple(row) for row in df[columns].values]
         cursor.executemany(sql, values)
         self.conn.commit()
@@ -433,45 +458,45 @@ class DatabaseManager:
     def save_profit_data(self, df: pd.DataFrame):
         """保存利润表数据"""
         columns = ['code', 'pubDate', 'statDate', 'roeAvg', 'npMargin', 'gpMargin',
-                  'netProfit', 'epsTTM', 'MBRevenue', 'totalShare', 'liqaShare']
+                   'netProfit', 'epsTTM', 'MBRevenue', 'totalShare', 'liqaShare']
         self._save_financial_data(df, 'stock_profit', columns)
 
     def save_balance_data(self, df: pd.DataFrame):
         """保存资产负债表数据"""
         columns = ['code', 'pubDate', 'statDate', 'currentRatio', 'quickRatio',
-                  'cashRatio', 'YOYLiability', 'liabilityToAsset', 'assetToEquity']
+                   'cashRatio', 'YOYLiability', 'liabilityToAsset', 'assetToEquity']
         self._save_financial_data(df, 'stock_balance', columns)
 
     def save_cashflow_data(self, df: pd.DataFrame):
         """保存现金流量表数据"""
         columns = ['code', 'pubDate', 'statDate', 'CAToAsset', 'NCAToAsset',
-                  'tangibleAssetToAsset', 'ebitToInterest', 'CFOToOR', 
-                  'CFOToNP', 'CFOToGr']
+                   'tangibleAssetToAsset', 'ebitToInterest', 'CFOToOR',
+                   'CFOToNP', 'CFOToGr']
         self._save_financial_data(df, 'stock_cashflow', columns)
 
     def save_growth_data(self, df: pd.DataFrame):
         """保存成长能力数据"""
         columns = ['code', 'pubDate', 'statDate', 'YOYEquity', 'YOYAsset',
-                  'YOYNI', 'YOYEPSBasic', 'YOYPNI']
+                   'YOYNI', 'YOYEPSBasic', 'YOYPNI']
         self._save_financial_data(df, 'stock_growth', columns)
 
     def save_operation_data(self, df: pd.DataFrame):
         """保存营运能力数据"""
         columns = ['code', 'pubDate', 'statDate', 'NRTurnRatio', 'NRTurnDays',
-                  'INVTurnRatio', 'INVTurnDays', 'CATurnRatio', 'AssetTurnRatio']
+                   'INVTurnRatio', 'INVTurnDays', 'CATurnRatio', 'AssetTurnRatio']
         self._save_financial_data(df, 'stock_operation', columns)
 
     def save_dupont_data(self, df: pd.DataFrame):
         """保存杜邦分析数据"""
         columns = ['code', 'pubDate', 'statDate', 'dupontROE', 'dupontAssetStoEquity',
-                  'dupontAssetTurn', 'dupontPnitoni', 'dupontNitogr', 'dupontTaxBurden',
-                  'dupontIntburden', 'dupontEbittogr']
+                   'dupontAssetTurn', 'dupontPnitoni', 'dupontNitogr', 'dupontTaxBurden',
+                   'dupontIntburden', 'dupontEbittogr']
         self._save_financial_data(df, 'stock_dupont', columns)
 
     def save_dividend_data(self, df: pd.DataFrame):
         """保存分红数据"""
         columns = ['code', 'dividPreNoticeDate', 'dividAgmPumDate', 'dividPlanAnnounceDate',
-                  'dividPlanDate', 'dividRegistDate', 'dividOperateDate', 'dividPayDate',
-                  'dividStockMarketDate', 'dividCashPsBeforeTax', 'dividCashPsAfterTax',
-                  'dividStocksPs', 'dividCashStock', 'dividReserveToStockPs']
+                   'dividPlanDate', 'dividRegistDate', 'dividOperateDate', 'dividPayDate',
+                   'dividStockMarketDate', 'dividCashPsBeforeTax', 'dividCashPsAfterTax',
+                   'dividStocksPs', 'dividCashStock', 'dividReserveToStockPs']
         self._save_financial_data(df, 'stock_dividend', columns)
