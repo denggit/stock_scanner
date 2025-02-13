@@ -18,9 +18,10 @@
     X, y = fe.prepare_features(price_data, financial_data)
 """
 
+from typing import Tuple
+
 import numpy as np
 import pandas as pd
-from typing import List, Tuple, Dict
 import talib
 
 
@@ -35,7 +36,7 @@ class FeatureEngineering:
     
     所有方法都经过优化，以处理金融时间序列数据的特殊性质。
     """
-    
+
     @staticmethod
     def calculate_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
         """计算技术分析指标
@@ -67,43 +68,43 @@ class FeatureEngineering:
         # 确保数据类型为float
         for col in ['open', 'high', 'low', 'close', 'volume']:
             df[col] = pd.to_numeric(df[col], errors='coerce')
-            
+
         # 移动平均线
         df['ma5'] = talib.MA(df['close'], timeperiod=5)
         df['ma10'] = talib.MA(df['close'], timeperiod=10)
         df['ma20'] = talib.MA(df['close'], timeperiod=20)
         df['ma60'] = talib.MA(df['close'], timeperiod=60)
-        
+
         # 计算均线差值
         df['ma5_10_diff'] = df['ma5'] - df['ma10']
         df['ma10_20_diff'] = df['ma10'] - df['ma20']
         df['ma20_60_diff'] = df['ma20'] - df['ma60']
-        
+
         # RSI指标
         df['rsi_6'] = talib.RSI(df['close'], timeperiod=6)
         df['rsi_12'] = talib.RSI(df['close'], timeperiod=12)
         df['rsi_24'] = talib.RSI(df['close'], timeperiod=24)
-        
+
         # MACD指标
         df['macd'], df['macd_signal'], df['macd_hist'] = talib.MACD(
             df['close'], fastperiod=12, slowperiod=26, signalperiod=9
         )
-        
+
         # 布林带
         df['bb_upper'], df['bb_middle'], df['bb_lower'] = talib.BBANDS(
             df['close'], timeperiod=20, nbdevup=2, nbdevdn=2, matype=0
         )
-        
+
         # 成交量指标
         df['volume_ma5'] = talib.MA(df['volume'], timeperiod=5)
         df['volume_ma20'] = talib.MA(df['volume'], timeperiod=20)
         df['volume_ratio'] = df['volume'] / df['volume_ma5']
-        
+
         # 波动率指标
         df['atr'] = talib.ATR(df['high'], df['low'], df['close'], timeperiod=14)
-        
+
         return df
-    
+
     @staticmethod
     def calculate_price_momentum(df: pd.DataFrame) -> pd.DataFrame:
         """计算价格动量特征
@@ -131,16 +132,16 @@ class FeatureEngineering:
         # 计算不同时间周期的收益率
         for period in [5, 10, 20, 60]:
             df[f'return_{period}d'] = df['close'].pct_change(period)
-            
+
         # 计算不同时间周期的波动率
         for period in [5, 10, 20, 60]:
             df[f'volatility_{period}d'] = df['close'].pct_change().rolling(period).std()
-            
+
         # 计算高低价格比率
         df['high_low_ratio'] = df['high'] / df['low']
-        
+
         return df
-    
+
     @staticmethod
     def calculate_financial_indicators(financial_data: pd.DataFrame) -> pd.DataFrame:
         """计算财务指标特征
@@ -167,30 +168,30 @@ class FeatureEngineering:
             ValueError: 输入数据缺少关键财务指标
         """
         features = pd.DataFrame()
-        
+
         # 盈利能力指标
         features['roe'] = financial_data['roe']
         features['roa'] = financial_data['roa']
         features['net_profit_margin'] = financial_data['net_profit_margin']
-        
+
         # 估值指标
         features['pe_ratio'] = financial_data['pe_ratio']
         features['pb_ratio'] = financial_data['pb_ratio']
         features['ps_ratio'] = financial_data['ps_ratio']
-        
+
         # 成长性指标
         features['revenue_growth'] = financial_data['revenue_growth']
         features['profit_growth'] = financial_data['profit_growth']
-        
+
         # 运营效率指标
         features['asset_turnover'] = financial_data['asset_turnover']
         features['inventory_turnover'] = financial_data['inventory_turnover']
-        
+
         return features
-    
+
     @staticmethod
-    def create_label(df: pd.DataFrame, forward_days: int = 20, 
-                    return_threshold: float = 0.3) -> pd.DataFrame:
+    def create_label(df: pd.DataFrame, forward_days: int = 20,
+                     return_threshold: float = 0.3) -> pd.DataFrame:
         """创建预测标签
         
         基于未来收益率创建二分类标签：
@@ -217,20 +218,20 @@ class FeatureEngineering:
             if i >= len(df) - forward_days:
                 future_returns.append(np.nan)
             else:
-                future_prices = df['close'].iloc[i+1:i+forward_days+1]
+                future_prices = df['close'].iloc[i + 1:i + forward_days + 1]
                 max_return = (future_prices.max() - df['close'].iloc[i]) / df['close'].iloc[i]
                 future_returns.append(max_return)
-        
+
         df['future_return'] = future_returns
         df['label'] = (df['future_return'] > return_threshold).astype(int)
-        
+
         return df
-    
+
     @staticmethod
-    def prepare_features(price_data: pd.DataFrame, 
-                        financial_data: pd.DataFrame,
-                        forward_days: int = 20,
-                        return_threshold: float = 0.3) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def prepare_features(price_data: pd.DataFrame,
+                         financial_data: pd.DataFrame,
+                         forward_days: int = 20,
+                         return_threshold: float = 0.3) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """准备完整的特征集和标签
         
         整合所有特征工程步骤，构建完整的训练数据：
@@ -256,20 +257,20 @@ class FeatureEngineering:
         """
         # 计算技术指标
         df = FeatureEngineering.calculate_technical_indicators(price_data.copy())
-        
+
         # 计算价格动量特征
         df = FeatureEngineering.calculate_price_momentum(df)
-        
+
         # 合并财务指标
         financial_features = FeatureEngineering.calculate_financial_indicators(financial_data)
         df = pd.merge(df, financial_features, left_index=True, right_index=True, how='left')
-        
+
         # 创建标签
         df = FeatureEngineering.create_label(df, forward_days, return_threshold)
-        
+
         # 分离特征和标签
         feature_columns = [col for col in df.columns if col not in ['label', 'future_return']]
         X = df[feature_columns]
         y = df['label']
-        
-        return X, y 
+
+        return X, y

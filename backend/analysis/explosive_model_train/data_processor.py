@@ -24,12 +24,13 @@
     X_processed, y_processed = processor.process_data(X, y, is_training=True)
 """
 
+from typing import Tuple, Optional
+
 import numpy as np
 import pandas as pd
-from typing import Tuple, Optional
-from sklearn.preprocessing import StandardScaler, RobustScaler
-from sklearn.impute import SimpleImputer
 from imblearn.over_sampling import SMOTE
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler, RobustScaler
 
 
 class DataProcessor:
@@ -56,7 +57,7 @@ class DataProcessor:
         """
         self.feature_scaler = None
         self.imputer = None
-    
+
     def handle_missing_values(self, df: pd.DataFrame, strategy: str = 'median') -> pd.DataFrame:
         """处理数据集中的缺失值
         
@@ -114,13 +115,13 @@ class DataProcessor:
         for column in df.select_dtypes(include=[np.number]).columns:
             mean = df[column].mean()
             std = df[column].std()
-            
+
             # 将超过n_sigmas个标准差的值视为异常值，替换为上下限
             lower_bound = mean - n_sigmas * std
             upper_bound = mean + n_sigmas * std
-            
+
             df_clean[column] = df_clean[column].clip(lower_bound, upper_bound)
-            
+
         return df_clean
 
     def scale_features(self, df: pd.DataFrame, scaler_type: str = 'standard') -> pd.DataFrame:
@@ -147,7 +148,7 @@ class DataProcessor:
                 self.feature_scaler = RobustScaler()
             else:
                 raise ValueError(f"Unsupported scaler type: {scaler_type}")
-            
+
             scaled_data = pd.DataFrame(
                 self.feature_scaler.fit_transform(df),
                 columns=df.columns,
@@ -159,11 +160,11 @@ class DataProcessor:
                 columns=df.columns,
                 index=df.index
             )
-        
+
         return scaled_data
 
-    def handle_class_imbalance(self, X: pd.DataFrame, y: pd.Series, 
-                              sampling_strategy: float = 0.5) -> Tuple[pd.DataFrame, pd.Series]:
+    def handle_class_imbalance(self, X: pd.DataFrame, y: pd.Series,
+                               sampling_strategy: float = 0.5) -> Tuple[pd.DataFrame, pd.Series]:
         """处理类别不平衡问题
         
         使用SMOTE算法进行过采样，生成合成的少数类样本：
@@ -187,11 +188,11 @@ class DataProcessor:
         """
         smote = SMOTE(sampling_strategy=sampling_strategy, random_state=42)
         X_resampled, y_resampled = smote.fit_resample(X, y)
-        
+
         return pd.DataFrame(X_resampled, columns=X.columns), pd.Series(y_resampled)
 
-    def process_data(self, X: pd.DataFrame, y: Optional[pd.Series] = None, 
-                    is_training: bool = True) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
+    def process_data(self, X: pd.DataFrame, y: Optional[pd.Series] = None,
+                     is_training: bool = True) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
         """执行完整的数据预处理流程
         
         按顺序执行以下步骤：
@@ -216,18 +217,18 @@ class DataProcessor:
         """
         # 1. 处理缺失值
         X_processed = self.handle_missing_values(X)
-        
+
         # 2. 处理异常值
         X_processed = self.handle_outliers(X_processed)
-        
+
         # 3. 特征缩放
         X_processed = self.scale_features(X_processed)
-        
+
         # 4. 如果是训练数据且提供了标签，处理类别不平衡
         if is_training and y is not None:
             X_processed, y_processed = self.handle_class_imbalance(X_processed, y)
             return X_processed, y_processed
-        
+
         return X_processed, y
 
     def get_feature_names(self) -> list:
@@ -257,4 +258,4 @@ class DataProcessor:
         import joblib
         preprocessor = joblib.load(path)
         self.feature_scaler = preprocessor['scaler']
-        self.imputer = preprocessor['imputer'] 
+        self.imputer = preprocessor['imputer']

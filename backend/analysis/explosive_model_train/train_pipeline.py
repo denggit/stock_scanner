@@ -35,8 +35,8 @@ from typing import Dict, Any, Optional
 import pandas as pd
 import yaml
 
-from .feature_engineering import FeatureEngineering
 from .data_processor import DataProcessor
+from .feature_engineering import FeatureEngineering
 from .model_trainer import ModelTrainer
 
 
@@ -77,7 +77,7 @@ class ExplosiveStockPredictor:
         self.model_trainer = ModelTrainer(
             model_type=self.config.get('model_type', 'xgboost')
         )
-        
+
         # 设置日志
         self._setup_logging()
 
@@ -129,10 +129,10 @@ class ExplosiveStockPredictor:
             ]
         )
 
-    def prepare_training_data(self, 
-                            price_data: pd.DataFrame,
-                            financial_data: pd.DataFrame,
-                            explosion_data: pd.DataFrame) -> tuple:
+    def prepare_training_data(self,
+                              price_data: pd.DataFrame,
+                              financial_data: pd.DataFrame,
+                              explosion_data: pd.DataFrame) -> tuple:
         """准备模型训练数据
         
         该方法执行完整的数据准备流程，包括：
@@ -164,7 +164,7 @@ class ExplosiveStockPredictor:
             ValueError: 输入数据格式错误或缺少必要字段
         """
         logging.info("Preparing training data...")
-        
+
         # 构建特征
         X, y = self.feature_engineering.prepare_features(
             price_data=price_data,
@@ -172,14 +172,14 @@ class ExplosiveStockPredictor:
             forward_days=self.config.get('forward_days', 20),
             return_threshold=self.config.get('return_threshold', 0.3)
         )
-        
+
         # 数据预处理
         X_processed, y_processed = self.data_processor.process_data(X, y, is_training=True)
-        
+
         logging.info(f"Prepared {len(X_processed)} samples with {X_processed.shape[1]} features")
         logging.info(f"Positive samples: {sum(y_processed == 1)}, "
-                    f"Negative samples: {sum(y_processed == 0)}")
-        
+                     f"Negative samples: {sum(y_processed == 0)}")
+
         return X_processed, y_processed
 
     def train_model(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
@@ -213,29 +213,29 @@ class ExplosiveStockPredictor:
             RuntimeError: 模型训练过程出错
         """
         logging.info("Starting model training...")
-        
+
         # 训练模型
         train_metrics, val_metrics = self.model_trainer.train(
             X, y, validation_size=self.config.get('validation_size', 0.2)
         )
-        
+
         # 交叉验证
         cv_metrics = self.model_trainer.cross_validate(
             X, y, cv=self.config.get('cv_folds', 5)
         )
-        
+
         # 获取特征重要性
         feature_importance = self.model_trainer.get_feature_importance()
-        
+
         results = {
             'train_metrics': train_metrics,
             'val_metrics': val_metrics,
             'cv_metrics': cv_metrics,
             'feature_importance': feature_importance
         }
-        
+
         self._log_training_results(results)
-        
+
         return results
 
     def _log_training_results(self, results: Dict[str, Any]):
@@ -289,17 +289,17 @@ class ExplosiveStockPredictor:
         """
         if not os.path.exists(model_dir):
             os.makedirs(model_dir)
-            
+
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        
+
         # 保存模型
         model_path = os.path.join(model_dir, f'model_{timestamp}.joblib')
         self.model_trainer.save_model(model_path)
-        
+
         # 保存预处理器
         preprocessor_path = os.path.join(model_dir, f'preprocessor_{timestamp}.joblib')
         self.data_processor.save_preprocessor(preprocessor_path)
-        
+
         logging.info(f"Model saved to {model_path}")
         logging.info(f"Preprocessor saved to {preprocessor_path}")
 
@@ -328,10 +328,10 @@ class ExplosiveStockPredictor:
         """
         # 数据预处理
         X_processed, _ = self.data_processor.process_data(X, is_training=False)
-        
+
         # 预测
         predictions, probabilities = self.model_trainer.predict(X_processed)
-        
+
         return predictions, probabilities
 
 
@@ -357,22 +357,22 @@ def main():
     """
     # 加载配置
     predictor = ExplosiveStockPredictor('config/model_config.yaml')
-    
+
     # 加载数据
     # 这里需要实现数据加载逻辑
     price_data = pd.DataFrame()  # 替换为实际的数据加载
     financial_data = pd.DataFrame()  # 替换为实际的数据加载
     explosion_data = pd.DataFrame()  # 替换为实际的数据加载
-    
+
     # 准备数据
     X, y = predictor.prepare_training_data(price_data, financial_data, explosion_data)
-    
+
     # 训练模型
     results = predictor.train_model(X, y)
-    
+
     # 保存模型
     predictor.save_model('models')
 
 
 if __name__ == '__main__':
-    main() 
+    main()

@@ -25,17 +25,16 @@
     predictions = trainer.predict(X_new)
 """
 
-import logging
 from typing import Dict, Any, Tuple, List
 
+import lightgbm as lgb
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.metrics import (accuracy_score, precision_score, recall_score, 
-                           f1_score, roc_auc_score, confusion_matrix)
 import xgboost as xgb
-import lightgbm as lgb
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (accuracy_score, precision_score, recall_score,
+                             f1_score, roc_auc_score, confusion_matrix)
+from sklearn.model_selection import train_test_split, cross_val_score
 
 
 class ModelTrainer:
@@ -68,7 +67,7 @@ class ModelTrainer:
         self.model_type = model_type
         self.model = None
         self.best_params = None
-        
+
         # 默认模型参数
         self.default_params = {
             'xgboost': {
@@ -130,7 +129,7 @@ class ModelTrainer:
         else:
             raise ValueError(f"Unsupported model type: {self.model_type}")
 
-    def train(self, X: pd.DataFrame, y: pd.Series, 
+    def train(self, X: pd.DataFrame, y: pd.Series,
               validation_size: float = 0.2) -> Tuple[Dict[str, float], Dict[str, float]]:
         """训练模型
         
@@ -215,8 +214,8 @@ class ModelTrainer:
 
         return metrics
 
-    def cross_validate(self, X: pd.DataFrame, y: pd.Series, 
-                      cv: int = 5) -> Dict[str, List[float]]:
+    def cross_validate(self, X: pd.DataFrame, y: pd.Series,
+                       cv: int = 5) -> Dict[str, List[float]]:
         """执行交叉验证
         
         使用K折交叉验证评估模型性能：
@@ -233,7 +232,7 @@ class ModelTrainer:
             Dict[str, List[float]]: 各指标的交叉验证结果
         """
         model = self._create_model()
-        
+
         # 计算不同指标的交叉验证分数
         metrics = {}
         for metric in ['accuracy', 'precision', 'recall', 'f1']:
@@ -319,4 +318,4 @@ class ModelTrainer:
             path: 模型路径
         """
         import joblib
-        self.model = joblib.load(path) 
+        self.model = joblib.load(path)
