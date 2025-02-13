@@ -140,15 +140,45 @@ class ExplosiveStockDataCollector:
                 df[col] = df[col].astype(float)
 
             features = pd.DataFrame(index=df.index)
-
-            # 1. 基础价格特征
+            
+            # 1. 价格趋势特征
+            features['price_trend_5'] = df['close'].pct_change(5)
+            features['price_trend_10'] = df['close'].pct_change(10)
+            features['price_trend_20'] = df['close'].pct_change(20)
+            
+            # 2. 成交量特征
+            features['volume_ratio_5'] = df['volume'] / df['volume'].rolling(5).mean()
+            features['volume_ratio_10'] = df['volume'] / df['volume'].rolling(10).mean()
+            features['volume_trend_5'] = df['volume'].pct_change(5)
+            
+            # 3. 波动率特征
+            features['volatility_5'] = df['close'].pct_change().rolling(5).std()
+            features['volatility_10'] = df['close'].pct_change().rolling(10).std()
+            
+            # 4. 价格位置特征
+            features['price_position_20'] = (df['close'] - df['close'].rolling(20).min()) / \
+                                          (df['close'].rolling(20).max() - df['close'].rolling(20).min())
+            features['price_position_60'] = (df['close'] - df['close'].rolling(60).min()) / \
+                                          (df['close'].rolling(60).max() - df['close'].rolling(60).min())
+            
+            # 5. 动量指标
+            features['rsi'] = CalIndicators.rsi(df, 14)
+            features['macd'], _, _ = CalIndicators.macd(df)
+            
+            # 6. 趋势强度
+            features['trend_strength'] = self._calculate_trend_strength(df)
+            
+            # 7. 支撑/阻力突破
+            features['breakout_20'] = (df['close'] > df['close'].rolling(20).max().shift(1)).astype(int)
+            features['breakdown_20'] = (df['close'] < df['close'].rolling(20).min().shift(1)).astype(int)
+            
+            # 8. 其他特征
             ma_periods = self.feature_params['ma_periods']
             if isinstance(ma_periods, list):
                 for period in ma_periods:
                     features[f'price_ma{period}'] = CalIndicators.ema(df, period, 'close')
 
-            features['volatility'] = self._calculate_volatility(df,
-                                                                window=self.feature_params['volatility_window'])
+            features['volatility'] = self._calculate_volatility(df, window=self.feature_params['volatility_window'])
 
             features['ma_trend'] = self._calculate_ma_trend(features)
 
@@ -583,11 +613,11 @@ class ExplosiveStockDataCollector:
 
     def _calculate_seasonal_pattern(self, df: pd.DataFrame, period: int = 20) -> pd.Series:
         """计算季节性模式
-        
+
         Args:
             df: 包含价格数据的DataFrame
             period: 用于计算历史季节性的回溯期（默认20个交易日）
-            
+
         Returns:
             pd.Series: 包含季节性强度的序列
         """

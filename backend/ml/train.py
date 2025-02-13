@@ -18,8 +18,7 @@ from tabulate import tabulate
 from sklearn.feature_selection import SelectFromModel
 from xgboost import XGBClassifier
 from imblearn.over_sampling import SMOTE
-from imblearn.pipeline import Pipeline
-from imblearn.combine import SMOTEENN, SMOTETomek
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 
 from backend.data.stock_data_fetcher import StockDataFetcher
 from backend.utils.logger import setup_logger
@@ -141,31 +140,31 @@ def train_model(model_save_path: str, scaler_save_path: str, stock_pool: str = '
             estimator=XGBClassifier(n_estimators=100, random_state=42),
             prefit=False
         )
-        
+
         # 应用特征选择
         X_train_selected = selector.fit_transform(X_train, y_train)
         X_test_selected = selector.transform(X_test)
-        
+
         # 在特征选择之后添加采样策略
         logger.info("开始进行样本平衡处理...")
-        
+
         # 使用 SMOTE 进行过采样，进一步降低采样比例
         smote = SMOTE(
-            sampling_strategy=0.2,  # 保持0.2
+            sampling_strategy=0.4,  # 从0.2提高到0.4，增加正样本比例
             random_state=42,
-            k_neighbors=7  # 增加邻居数量以获得更好的合成样本
+            k_neighbors=5  # 减少邻居数量，避免过度平滑
         )
-        
+
         # 应用 SMOTE
         X_train_balanced, y_train_balanced = smote.fit_resample(X_train_selected, y_train)
-        
+
         # 输出平衡后的样本比例
         logger.info(f"平衡后的训练集大小：{len(X_train_balanced)} 行")
         logger.info(f"平衡后的正样本比例：{(y_train_balanced == 1).mean():.2%}")
         logger.info(f"平衡后的负样本比例：{(y_train_balanced == 0).mean():.2%}")
-        
+
         # 使用平衡后的数据训练模型
-        trainer = ExplosiveStockModelTrainer()
+        trainer = get_adjusted_trainer()
         trainer.train(X_train_balanced, y_train_balanced)
 
         # 12. 模型评估
@@ -186,7 +185,7 @@ def log_evaluation_results(evaluation_results):
     logger.info("模型评估结果：")
     # 提取除 confusion_matrix 之外的指标名称
     metric_names = [name for name in next(iter(evaluation_results.values())) if name != 'confusion_matrix']
-    
+
     # 准备表格数据
     table_data = []
     for model_name, metrics in evaluation_results.items():
@@ -198,11 +197,11 @@ def log_evaluation_results(evaluation_results):
             else:
                 row.append(metric_value)
         table_data.append(row)
-    
+
     # 输出表格
     logger.info("模型评估指标对比表格：")
     logger.info("\n" + tabulate(table_data, headers=['模型'] + metric_names, tablefmt='grid'))
-    
+
     # 单独输出每个模型的混淆矩阵
     for model_name, metrics in evaluation_results.items():
         confusion_matrix = metrics['confusion_matrix']
@@ -215,8 +214,51 @@ def log_evaluation_results(evaluation_results):
         logger.info("\n" + tabulate(data, headers=headers, tablefmt='grid'))
 
 
+def get_adjusted_trainer():
+    trainer = ExplosiveStockModelTrainer()
+
+    # 调整模型参数
+    trainer.models['gbdt'] = GradientBoostingClassifier(
+        random_state=42,
+        n_estimators=300,
+        learning_rate=0.05,
+        max_depth=4,
+        subsample=0.8,
+        min_samples_split=20,
+        min_samples_leaf=10,
+        max_features='sqrt',
+        class_weight={0: 1, 1: 2}  # 增加正样本权重
+    )
+
+    trainer.models['rf'] = RandomForestClassifier(
+        random_state=42,
+        n_jobs=-1,
+        n_estimators=500,
+        max_depth=8,
+        min_samples_split=15,
+        min_samples_leaf=8,
+        max_features='sqrt',
+        class_weight={0: 1, 1: 3}  # 进一步增加正样本权重
+    )
+
+    trainer.models['xgb'] = XGBClassifier(
+        random_state=42,
+        n_jobs=-1,
+        n_estimators=300,
+        max_depth=5,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        min_child_weight=3,
+        scale_pos_weight=3,  # 增加正样本权重
+        gamma=0.1
+    )
+
+    return trainer
+
+
 if __name__ == "__main__":
-    pool_name = "sz50"
+    pool_name = "full"
     # 修改保存路径的格式
     model_base_path = f"backend/ml/models/explosive_stock_model_{pool_name}"
 
