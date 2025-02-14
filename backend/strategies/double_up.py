@@ -32,9 +32,6 @@ class DoubleUpStrategy(BaseStrategy):
 
         # 1. 数据预处理 - 确保所有数值列都是float类型
         df = data.copy()
-        numeric_columns = ['open', 'high', 'low', 'close', 'volume']
-        for col in numeric_columns:
-            df[col] = df[col].astype(float)
 
         # 2. 获取参数
         allowed_drawdown = self._params['allowed_drawdown']

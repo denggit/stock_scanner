@@ -39,10 +39,6 @@ class LongTermUpTrendStrategy(BaseStrategy):
         # 1. 数据预处理 - 确保所有数值列都是float类型
         df = data.copy()
 
-        numeric_columns = ['open', 'high', 'low', 'close', 'volume']
-        for column in numeric_columns:
-            df[column] = df[column].astype(float)
-
         # 生成条件
         signals = pd.DataFrame(index=df.index)
 

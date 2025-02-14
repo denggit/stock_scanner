@@ -141,9 +141,6 @@ class ExplosiveStockStrategy(BaseStrategy):
     def _preprocess_data(data: pd.DataFrame) -> pd.DataFrame:
         """数据预处理"""
         df = data.copy()
-        numeric_columns = ['open', 'high', 'low', 'close', 'volume']
-        for column in numeric_columns:
-            df[column] = df[column].astype(float)
         return df
 
     @staticmethod

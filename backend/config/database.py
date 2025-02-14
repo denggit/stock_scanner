@@ -14,7 +14,7 @@ from pydantic_settings import BaseSettings
 class Config(BaseSettings):
     MYSQL_HOST: str = os.getenv('MYSQL_HOST', 'localhost')
     MYSQL_PORT: int = int(os.getenv('MYSQL_PORT', 3306))
-    MYSQL_USER: str = os.getenv('MYSQL_USER', 'user')
+    MYSQL_USER: str = os.getenv('MYSQL_USER', 'root')
     MYSQL_PASSWORD: str = os.getenv('MYSQL_PASSWORD', 'password')
     MYSQL_DATABASE: str = os.getenv('MYSQL_DB', 'stock_db')
 

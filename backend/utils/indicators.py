@@ -144,6 +144,8 @@ class CalIndicators:
         Returns:
             K, D, J值序列
         """
+        df = df.copy()
+        df.close = df.close.astype(float)
         # 计算RSV
         low_list = df['low'].rolling(window=window, min_periods=1).min()
         high_list = df['high'].rolling(window=window, min_periods=1).max()

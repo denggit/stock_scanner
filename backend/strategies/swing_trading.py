@@ -63,9 +63,6 @@ class SwingTradingStrategy(BaseStrategy):
 
         # 1. 数据预处理 - 确保所有数值列都是float类型
         df = data.copy()
-        numeric_columns = ['open', 'high', 'low', 'close', 'volume']
-        for col in numeric_columns:
-            df[col] = df[col].astype(float)
 
         # 2. 趋势识别
         df['ma_short'] = CalIndicators.ema(df, self._params['short_ma_period'], 'close')

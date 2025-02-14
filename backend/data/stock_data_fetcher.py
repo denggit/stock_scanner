@@ -44,6 +44,13 @@ class StockDataFetcher:
         #     df = self.db.get_stock_monthly(code=code, start_date=start_date, end_date=end_date)
         else:
             raise ValueError(f"Invalid period: {period}")
+
+        # 把数字型数据改为float
+        numeric_columns = ['open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn', 'pct_chg', 'pe_ttm',
+                           'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm']
+        for column in numeric_columns:
+            df[column] = df[column].astype(float)
+
         return df
 
     def get_stock_list(self, pool_name: str = "full") -> pd.DataFrame:

@@ -25,6 +25,7 @@ class DataUpdateManager:
         self.db = DatabaseManager()
         self.data_source = data_source or BaostockSource()
         self._init_connection()
+        self.trading_calendar = self.data_source.get_trading_calendar(start_date="2025-01-01")
 
     def _init_connection(self):
         if not self.data_source.connect():
@@ -65,14 +66,15 @@ class DataUpdateManager:
         logging.info(f"开始更新 {total_stocks} 只股票的数据...")
 
         # 一次性获取所有股票的最新日期
-        lastest_dates = {} if force_full_update else self._retry_operation(self.db.get_all_update_time)
+        latest_dates = {} if force_full_update else self._retry_operation(self.db.get_all_update_time, adjust='3')
+        latest_dates_back = {} if force_full_update else self._retry_operation(self.db.get_all_update_time, adjust='1')
 
         for code in stock_list['code']:
             try:
                 # 更新不复权数据
-                self.update_stock_data(code, force_full_update, lastest_dates.get(code), adjust='3')
+                self.update_stock_data(code, force_full_update, latest_dates.get(code), adjust='3')
                 # 更新后复权数据
-                self.update_stock_data(code, force_full_update, lastest_dates.get(code), adjust='1')
+                self.update_stock_data(code, force_full_update, latest_dates_back.get(code), adjust='1')
                 updated_count += 1
                 if progress_callback:
                     progress_callback()
@@ -98,23 +100,27 @@ class DataUpdateManager:
     def update_stock_data(self, code: str, force_full_update: bool = False, latest_date: Optional[str] = None,
                           adjust: str = '3'):
         """更新单个股票数据"""
+        if isinstance(latest_date, str):
+            latest_date = dt.datetime.strptime(latest_date, '%Y-%m-%d %H:%M:%S')
         today_6pm = dt.datetime.combine(dt.datetime.today(), dt.time(18, 0))
         if force_full_update or latest_date is None:
             # 如果强制全量更新或者是新股票（没有历史数据），则从5年前开始更新
             start_date = (dt.datetime.now() - dt.timedelta(days=5 * 365)).strftime('%Y-%m-%d')
-        elif dt.datetime.strptime(latest_date, '%Y-%m-%d %H:%M:%S') > today_6pm:
+        elif latest_date > today_6pm:
             # 如果是今天下午六点后更新的，无需更新
             logging.warning(f"股票 {code}_{adjust} 今天已经更新，无需重复更新")
             return
         else:
-            # 如果最新更新日期为交易日，则选择当天为start_date，否则向前选择一个交易日
-            pre_15_days = (dt.datetime.strptime(latest_date, '%Y-%m-%d %H:%M:%S') - dt.timedelta(days=15)).strftime(
-                '%Y-%m-%d')
-            trading_calendar = self.data_source.get_trading_calendar(start_date=pre_15_days, end_date=latest_date)
+            # 如果最新更新日期为交易日，则选择前一个交易日为start_date，否则选择前两个交易日为start_date，避免出现跨0点运行代码导致的数据缺失
+            days = (dt.datetime.today() - latest_date).days + 1
             start_date = "2025-01-01"
-            for i in range(1, len(trading_calendar) + 1):
-                if trading_calendar.is_trading_day.iloc[-i] == "1":
-                    start_date = trading_calendar.calendar_date.iloc[-i]
+            mark = 0
+            for i in range(days, len(self.trading_calendar) + 1):
+                if self.trading_calendar.is_trading_day.iloc[-i] == "1":
+                    if mark == 0:
+                        mark = 1
+                        continue
+                    start_date = self.trading_calendar.calendar_date.iloc[-i]
                     break
 
         end_date = dt.datetime.now().strftime('%Y-%m-%d')

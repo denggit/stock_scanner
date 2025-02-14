@@ -349,7 +349,7 @@ class DatabaseManager:
                 logging.error(f"问题数据实例：{group.head().to_dict('records')}")
                 raise
 
-        logging.info(f"Total records updated for {code}: {total_records}")
+        logging.info(f"Total records updated for {code}_{adjust}: {total_records}")
 
         # 更新股票列表中的更新时间
         self.save_stock_update_time(pd.DataFrame({'code': [code], 'update_time': [datetime.now()]}), adjust)
