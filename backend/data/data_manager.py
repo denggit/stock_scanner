@@ -309,13 +309,6 @@ class DataUpdateManager:
                 remaining_steps = years_count - (current_count % years_count)
                 current_count += remaining_steps
                 pbar.update(remaining_steps)  # 更新进度条
-                if progress_callback:
-                    progress_callback(
-                        current=current_count,
-                        total=total_updates,
-                        stock_code=code,
-                        year=None
-                    )
                 continue
 
         pbar.close()  # 关闭进度条
