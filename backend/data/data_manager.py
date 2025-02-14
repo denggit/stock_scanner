@@ -8,14 +8,14 @@
 """
 import datetime as dt
 import logging
+import queue
+import threading
 import time
 from typing import Optional, Dict
 
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-import queue
-import threading
 
 from backend.data.database import DatabaseManager
 from backend.data_source.baostock_source import BaostockSource
@@ -108,7 +108,8 @@ class DataUpdateManager:
                         update_stats["failed"] += 1
                         update_stats["failed_codes"].append(code)
                     # 即使获取数据失败也需要回复进度
-                    progress_callback()
+                    if progress_callback:
+                        progress_callback()
                     logging.exception(f"获取股票 {code} 数据失败: {e}")
                     if not self.data_source.is_connected():
                         self._init_connection()
@@ -147,6 +148,7 @@ class DataUpdateManager:
                         progress_callback()
                     self.data_queue.task_done()
             except queue.Empty:
+                logging.info("队列为空，等待数据...")
                 continue
 
     def __fetch_stock_data(self, code: str, force_full_update: bool = False, latest_date: Optional[str] = None,
@@ -196,117 +198,14 @@ class DataUpdateManager:
             quarter: 季度（可选）
 
         """
-
-        def format_financial_df(df: pd.DataFrame, numeric_columns: list) -> pd.DataFrame:
-            """格式化财务数据DataFrame"""
-            if df.empty:
-                return df
-
-            # 创建一个新的 DataFrame 来存储转换后的数据
-            result_df = df.copy()
-
-            # 转换日期列
-            date_columns = [col for col in result_df.columns if 'Date' in col]
-            for col in date_columns:
-                # 将 NaT 转换为 None
-                result_df[col] = pd.to_datetime(result_df[col], errors='coerce')
-                result_df[col] = result_df[col].apply(lambda x: x.date() if pd.notna(x) else None)
-
-            # 只处理指定的数值列
-            for col in numeric_columns:
-                if col in result_df.columns:
-                    # 将列转换为数值类型，无效值变为 NaN
-                    result_df[col] = pd.to_numeric(result_df[col], errors='coerce')
-
-                    # 将无效的数值转换为 None
-                    result_df[col] = result_df[col].apply(
-                        lambda x: float(x) if pd.notna(x) and not np.isinf(x) else None
-                    )
-
-            # 最后的安全检查：确保数值列没有任何 NaN 或 inf 值
-            for col in numeric_columns:
-                if col in result_df.columns:
-                    result_df[col] = result_df[col].replace([np.inf, -np.inf, np.nan], None)
-
-            return result_df
-
         # 获取各类财务数据
-        profit_data = self._retry_operation(
-            self.data_source.get_profit_data,
-            code=code,
-            year=year,
-            quarter=quarter
-        )
-        profit_data = format_financial_df(profit_data, [
-            'roeAvg', 'npMargin', 'gpMargin', 'netProfit',
-            'epsTTM', 'MBRevenue', 'totalShare', 'liqaShare'
-        ])
-
-        balance_data = self._retry_operation(
-            self.data_source.get_balance_data,
-            code=code,
-            year=year,
-            quarter=quarter
-        )
-        balance_data = format_financial_df(balance_data, [
-            'currentRatio', 'quickRatio', 'cashRatio',
-            'YOYLiability', 'liabilityToAsset', 'assetToEquity'
-        ])
-
-        cashflow_data = self._retry_operation(
-            self.data_source.get_cashflow_data,
-            code=code,
-            year=year,
-            quarter=quarter
-        )
-        cashflow_data = format_financial_df(cashflow_data, [
-            'CAToAsset', 'NCAToAsset', 'tangibleAssetToAsset',
-            'ebitToInterest', 'CFOToOR', 'CFOToNP', 'CFOToGr'
-        ])
-
-        growth_data = self._retry_operation(
-            self.data_source.get_growth_data,
-            code=code,
-            year=year,
-            quarter=quarter
-        )
-        growth_data = format_financial_df(growth_data, [
-            'YOYEquity', 'YOYAsset', 'YOYNI',
-            'YOYEPSBasic', 'YOYPNI'
-        ])
-
-        operation_data = self._retry_operation(
-            self.data_source.get_operation_data,
-            code=code,
-            year=year,
-            quarter=quarter
-        )
-        operation_data = format_financial_df(operation_data, [
-            'NRTurnRatio', 'NRTurnDays', 'INVTurnRatio',
-            'INVTurnDays', 'CATurnRatio', 'AssetTurnRatio'
-        ])
-
-        dupont_data = self._retry_operation(
-            self.data_source.get_dupont_data,
-            code=code,
-            year=year,
-            quarter=quarter
-        )
-        dupont_data = format_financial_df(dupont_data, [
-            'dupontROE', 'dupontAssetStoEquity', 'dupontAssetTurn',
-            'dupontPnitoni', 'dupontNitogr', 'dupontTaxBurden',
-            'dupontIntburden', 'dupontEbittogr'
-        ])
-
-        dividend_data = self._retry_operation(
-            self.data_source.get_dividend_data,
-            code=code,
-            year=year
-        )
-        dividend_data = format_financial_df(dividend_data, [
-            'dividCashPsBeforeTax', 'dividCashPsAfterTax',
-            'dividStocksPs', 'dividCashStock', 'dividReserveToStockPs'
-        ])
+        profit_data = self.__fetch_profit_data(code, year, quarter)
+        balance_data = self.__fetch_balance_data(code, year, quarter)
+        cashflow_data = self.__fetch_cashflow_data(code, year, quarter)
+        growth_data = self.__fetch_growth_data(code, year, quarter)
+        operation_data = self.__fetch_operation_data(code, year, quarter)
+        dupont_data = self.__fetch_dupont_data(code, year, quarter)
+        dividend_data = self.__fetch_dividend_data(code, year)
 
         # 保存到数据库
         if not profit_data.empty:
@@ -371,3 +270,135 @@ class DataUpdateManager:
             "failed": failed_count,
             "failed_codes": failed_codes
         }
+
+    @staticmethod
+    def __format_financial_df(df: pd.DataFrame, numeric_columns: list) -> pd.DataFrame:
+        """格式化财务数据DataFrame"""
+        if df.empty:
+            return df
+
+        # 创建一个新的 DataFrame 来存储转换后的数据
+        result_df = df.copy()
+
+        # 转换日期列
+        date_columns = [col for col in result_df.columns if 'Date' in col]
+        for col in date_columns:
+            # 将 NaT 转换为 None
+            result_df[col] = pd.to_datetime(result_df[col], errors='coerce')
+            result_df[col] = result_df[col].apply(lambda x: x.date() if pd.notna(x) else None)
+
+        # 只处理指定的数值列
+        for col in numeric_columns:
+            if col in result_df.columns:
+                # 将列转换为数值类型，无效值变为 NaN
+                result_df[col] = pd.to_numeric(result_df[col], errors='coerce')
+
+                # 将无效的数值转换为 None
+                result_df[col] = result_df[col].apply(
+                    lambda x: float(x) if pd.notna(x) and not np.isinf(x) else None
+                )
+
+        # 最后的安全检查：确保数值列没有任何 NaN 或 inf 值
+        for col in numeric_columns:
+            if col in result_df.columns:
+                result_df[col] = result_df[col].replace([np.inf, -np.inf, np.nan], None)
+
+        return result_df
+
+    def __fetch_profit_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+        """获取单个股票的利润数据"""
+        profit_data = self._retry_operation(
+            self.data_source.get_profit_data,
+            code=code,
+            year=year,
+            quarter=quarter
+        )
+        profit_data = self.__format_financial_df(profit_data, [
+            'roeAvg', 'npMargin', 'gpMargin', 'netProfit',
+            'epsTTM', 'MBRevenue', 'totalShare', 'liqaShare'
+        ])
+        return profit_data
+
+    def __fetch_balance_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+        """获取单个股票的资产负债表数据"""
+        balance_data = self._retry_operation(
+            self.data_source.get_balance_data,
+            code=code,
+            year=year,
+            quarter=quarter
+        )
+        balance_data = self.__format_financial_df(balance_data, [
+            'currentRatio', 'quickRatio', 'cashRatio',
+            'YOYLiability', 'liabilityToAsset', 'assetToEquity'
+        ])
+        return balance_data
+
+    def __fetch_cashflow_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+        """获取单个股票的现金流量表数据"""
+        cashflow_data = self._retry_operation(
+            self.data_source.get_cashflow_data,
+            code=code,
+            year=year,
+            quarter=quarter
+        )
+        cashflow_data = self.__format_financial_df(cashflow_data, [
+            'CAToAsset', 'NCAToAsset', 'tangibleAssetToAsset',
+            'ebitToInterest', 'CFOToOR', 'CFOToNP', 'CFOToGr'
+        ])
+        return cashflow_data
+
+    def __fetch_growth_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+        """获取单个股票的成长数据"""
+        growth_data = self._retry_operation(
+            self.data_source.get_growth_data,
+            code=code,
+            year=year,
+            quarter=quarter
+        )
+        growth_data = self.__format_financial_df(growth_data, [
+            'YOYEquity', 'YOYAsset', 'YOYNI',
+            'YOYEPSBasic', 'YOYPNI'
+        ])
+        return growth_data
+
+    def __fetch_operation_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+        """获取单个股票的经营数据"""
+        operation_data = self._retry_operation(
+            self.data_source.get_operation_data,
+            code=code,
+            year=year,
+            quarter=quarter
+        )
+        operation_data = self.__format_financial_df(operation_data, [
+            'NRTurnRatio', 'NRTurnDays', 'INVTurnRatio',
+            'INVTurnDays', 'CATurnRatio', 'AssetTurnRatio'
+        ])
+        return operation_data
+
+    def __fetch_dupont_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+        """获取单个股票的杜邦分析数据"""
+        dupont_data = self._retry_operation(
+            self.data_source.get_dupont_data,
+            code=code,
+            year=year,
+            quarter=quarter
+        )
+        dupont_data = self.__format_financial_df(dupont_data, [
+            'dupontROE', 'dupontAssetStoEquity', 'dupontAssetTurn',
+            'dupontPnitoni', 'dupontNitogr', 'dupontTaxBurden',
+            'dupontIntburden', 'dupontEbittogr'
+        ])
+        return dupont_data
+
+    def __fetch_dividend_data(self, code: str, year: int) -> pd.DataFrame:
+        """获取单个股票的分红数据"""
+        dividend_data = self._retry_operation(
+            self.data_source.get_dividend_data,
+            code=code,
+            year=year,
+        )
+        dividend_data = self.__format_financial_df(dividend_data, [
+            'dividCashPsBeforeTax', 'dividCashPsAfterTax',
+            'dividStocksPs', 'dividCashStock', 'dividReserveToStockPs'
+        ])
+        return dividend_data
