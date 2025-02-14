@@ -25,21 +25,24 @@ class BaostockSource(DataSource):
         self._connected = False
 
     def connect(self):
-        try:
-            if self._connected:
-                bs.logout()
-                time.sleep(1)
+        for i in range(3):
+            try:
+                if self._connected:
+                    bs.logout()
+                    time.sleep(1)
 
-            login_result = bs.login()
-            self._connected = login_result.error_code == self.SUCCESS_CODE
-            if self._connected:
-                logging.info("Baostock login successful")
-            else:
-                logging.error(f"Baostock login failed: {login_result.error_msg}")
-        except Exception as e:
-            logging.error(f"Baostock login failed: {e}")
-            self._connected = False
-        return self._connected
+                login_result = bs.login()
+                self._connected = login_result.error_code == self.SUCCESS_CODE
+                if self._connected:
+                    logging.info("Baostock login successful")
+                else:
+                    logging.error(f"Baostock login failed: {login_result.error_msg}")
+                return self._connected
+            except Exception as e:
+                logging.error(f"Baostock login failed: {e}")
+                self._connected = False
+                if i == 2:
+                    raise Exception(f"Baostock login failed: {e}, 尝试{i+1}次失败，退出")
 
     def disconnect(self):
         try:

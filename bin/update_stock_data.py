@@ -40,10 +40,11 @@ def update_database(args, logger):
         data_manager = DataUpdateManager()
         stock_list = data_manager.get_stock_list()
         data_manager.update_stock_list(stock_list)
+        logger.info("更新股票列表完成")
         total_stocks = len(stock_list)
 
-        # 创建进度条
-        with tqdm(total=total_stocks, desc="更新数据库", unit="只股票") as pbar:
+        # 创建进度条，因为要更新不复权和后复权两个股票库，所以total * 2
+        with tqdm(total=total_stocks * 2, desc="更新数据库", unit="份数据") as pbar:
             result = data_manager.update_all_stocks(force_full_update=args.full,
                                                     progress_callback=lambda: pbar.update(1))
 
