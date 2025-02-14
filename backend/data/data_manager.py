@@ -100,6 +100,14 @@ class DataUpdateManager:
     def update_stock_data(self, code: str, force_full_update: bool = False, latest_date: Optional[str] = None,
                           adjust: str = '3'):
         """更新单个股票数据"""
+        # 获取单只股票的数据
+        df = self.__fetch_stock_data(code, force_full_update, latest_date, adjust)
+        # 更新该股票数据到数据库
+        self.db.update_stock_daily(code, df, adjust)
+
+    def __fetch_stock_data(self, code: str, force_full_update: bool = False, latest_date: Optional[str] = None,
+                           adjust: str = '3') -> pd.DataFrame:
+        """获取单只股票的数据"""
         if isinstance(latest_date, str):
             latest_date = dt.datetime.strptime(latest_date, '%Y-%m-%d %H:%M:%S')
         today_6pm = dt.datetime.combine(dt.datetime.today(), dt.time(18, 0))
@@ -109,7 +117,7 @@ class DataUpdateManager:
         elif latest_date > today_6pm:
             # 如果是今天下午六点后更新的，无需更新
             logging.warning(f"股票 {code}_{adjust} 今天已经更新，无需重复更新")
-            return
+            return pd.DataFrame()
         else:
             # 如果最新更新日期为交易日，则选择start_date该日期，否则选择前一个交易日为start_date，避免出现跨0点运行代码导致的数据缺失
             days = (dt.datetime.today() - latest_date).days + 1
@@ -124,16 +132,16 @@ class DataUpdateManager:
         # 如果开始日期晚于结束日期，则不更新
         if start_date > end_date:
             logging.warning(f"股票 {code}_{adjust} 的开始日期晚于结束日期，不更新")
-            return
+            return pd.DataFrame()
 
         df = self._retry_operation(self.data_source.get_stock_data, code=code, start_date=start_date, end_date=end_date,
                                    adjust=adjust)
 
         if df.empty:
             logging.warning(f"股票 {code}_{adjust} 没有更新数据")
-            return
+            return pd.DataFrame()
 
-        self.db.update_stock_daily(code, df, adjust)
+        return df
 
     def update_financial_data(self, code: str, year: int, quarter: int = None):
         """更新单个股票的财务数据
