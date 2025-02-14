@@ -111,15 +111,11 @@ class DataUpdateManager:
             logging.warning(f"股票 {code}_{adjust} 今天已经更新，无需重复更新")
             return
         else:
-            # 如果最新更新日期为交易日，则选择前一个交易日为start_date，否则选择前两个交易日为start_date，避免出现跨0点运行代码导致的数据缺失
+            # 如果最新更新日期为交易日，则选择start_date该日期，否则选择前一个交易日为start_date，避免出现跨0点运行代码导致的数据缺失
             days = (dt.datetime.today() - latest_date).days + 1
             start_date = "2025-01-01"
-            mark = 0
             for i in range(days, len(self.trading_calendar) + 1):
                 if self.trading_calendar.is_trading_day.iloc[-i] == "1":
-                    if mark == 0:
-                        mark = 1
-                        continue
                     start_date = self.trading_calendar.calendar_date.iloc[-i]
                     break
 
