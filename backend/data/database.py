@@ -345,7 +345,7 @@ class DatabaseManager:
                 total_records += len(values)
                 logging.debug(f"Updated {len(values)} records for {code} in {year}")
             except Exception as e:
-                logging.error(f"Failed to update {code} in {year}: {e}")
+                logging.error(f"Failed to update {code}_{adjust} in {year}: {e}")
                 logging.error(f"问题数据实例：{group.head().to_dict('records')}")
                 raise
 
