@@ -11,6 +11,7 @@ import logging
 import queue
 import threading
 import time
+from concurrent.futures import ProcessPoolExecutor
 from typing import Optional, Dict
 
 import numpy as np
@@ -105,7 +106,8 @@ class DataUpdateManager:
                             progress_callback()
 
                         # 获取后复权数据
-                        df_back = self.__fetch_stock_data(code, force_full_update, latest_dates_back.get(code), adjust='1')
+                        df_back = self.__fetch_stock_data(code, force_full_update, latest_dates_back.get(code),
+                                                          adjust='1')
                         if not df_back.empty:
                             self.data_queue.put((code, df_back, '1'))
                         elif progress_callback:
@@ -237,9 +239,301 @@ class DataUpdateManager:
         if not dividend_data.empty:
             self.db.save_dividend_data(dividend_data)
 
+    @staticmethod
+    def __fetch_all_financial_data(stock_list, fetcher, start_year, end_year, data_queue, update_stats, progress_callback):
+        """财务数据生产者：通过fetcher来获取每一只股票的财务数据"""
+        for code in stock_list['code']:
+            try:
+                for year in range(start_year, end_year + 1):
+                    profit_data = fetcher(code, year)
+                    if not profit_data.empty:
+                        data_queue.put((code, profit_data))
+                        update_stats["updated"] += 1
+                        if progress_callback:
+                            progress_callback()
+            except Exception as e:
+                logging.exception(f"获取股票 {code} 利润表数据失败: {e}")
+                update_stats["failed"] += 1
+                update_stats["failed_codes"].append(code)
+                if progress_callback:
+                    progress_callback()
+
+    @staticmethod
+    def __consume_financial_data(producer_done, data_queue, data_saver, update_stats, progress_callback):
+        """财务数据消费者：消费对应data_queue里的财务数据"""
+        while not (producer_done.is_set() and data_queue.empty()):
+            try:
+                code, data = data_queue.get(timeout=5)
+                try:
+                    data_saver(data)
+                    update_stats["updated"] += 1
+                except Exception as e:
+                    logging.exception(f"保存利润数据失败：{e}")
+                    update_stats["failed"] += 1
+                    update_stats["failed_codes"].append(code)
+                finally:
+                    data_queue.task_done()
+                    if progress_callback:
+                        progress_callback()
+            except queue.Empty:
+                logging.info(f"利润数据队列为空，等待数据...")
+                continue
+
+    def _update_profit_data(self, stock_list, start_year, end_year, progress_callback):
+        """更新单个股票的利润数据"""
+        producer_done = threading.Event()
+        data_queue = queue.Queue(maxsize=100)
+        update_stats = {
+            "updated": 0,
+            "failed": 0,
+            "failed_codes": []
+        }
+
+        # 启动消费者线程
+        consumer = threading.Thread(
+            target=self.__consume_financial_data,
+            args=(producer_done, data_queue, self.db.save_profit_data, update_stats, progress_callback)
+        )
+        consumer.start()
+
+        try:
+            self.__fetch_all_financial_data(
+                stock_list=stock_list,
+                fetcher=self.__fetch_profit_data,
+                start_year=start_year,
+                end_year=end_year,
+                data_queue=data_queue,
+                update_stats=update_stats,
+                progress_callback=progress_callback
+            )
+        finally:
+            # 标记生产者完成
+            producer_done.set()
+
+        # 等待消费者处理完所有数据
+        consumer.join()
+
+        return update_stats
+
+    def _update_balance_data(self, stock_list, start_year, end_year, progress_callback):
+        """更新单个股票的资产负债表数据"""
+        producer_done = threading.Event()
+        data_queue = queue.Queue(maxsize=100)
+        update_stats = {
+            "updated": 0,
+            "failed": 0,
+            "failed_codes": []
+        }
+
+        # 启动消费者线程
+        consumer = threading.Thread(
+            target=self.__consume_financial_data,
+            args=(producer_done, data_queue, self.db.save_balance_data, update_stats, progress_callback)
+        )
+        consumer.start()
+
+        try:
+            self.__fetch_all_financial_data(
+                stock_list=stock_list,
+                fetcher=self.__fetch_balance_data,
+                start_year=start_year,
+                end_year=end_year,
+                data_queue=data_queue,
+                update_stats=update_stats,
+                progress_callback=progress_callback
+            )
+        finally:
+            # 标记生产者完成
+            producer_done.set()
+
+        # 等待消费者处理完所有数据
+        consumer.join()
+
+        return update_stats
+
+    def _update_cashflow_data(self, stock_list, start_year, end_year, progress_callback):
+        """更新单个股票的现金流量表数据"""
+        producer_done = threading.Event()
+        data_queue = queue.Queue(maxsize=100)
+        update_stats = {
+            "updated": 0,
+            "failed": 0,
+            "failed_codes": []
+        }
+
+        # 启动消费者线程
+        consumer = threading.Thread(
+            target=self.__consume_financial_data,
+            args=(producer_done, data_queue, self.db.save_cashflow_data, update_stats, progress_callback)
+        )
+        consumer.start()
+
+        try:
+            self.__fetch_all_financial_data(
+                stock_list=stock_list,
+                fetcher=self.__fetch_cashflow_data,
+                start_year=start_year,
+                end_year=end_year,
+                data_queue=data_queue,
+                update_stats=update_stats,
+                progress_callback=progress_callback
+            )
+        finally:
+            # 标记生产者完成
+            producer_done.set()
+
+        # 等待消费者处理完所有数据
+        consumer.join()
+
+        return update_stats
+
+    def _update_growth_data(self, stock_list, start_year, end_year, progress_callback):
+        """更新单个股票的成长数据"""
+        producer_done = threading.Event()
+        data_queue = queue.Queue(maxsize=100)
+        update_stats = {
+            "updated": 0,
+            "failed": 0,
+            "failed_codes": []
+        }
+
+        # 启动消费者线程
+        consumer = threading.Thread(
+            target=self.__consume_financial_data,
+            args=(producer_done, data_queue, self.db.save_growth_data, update_stats, progress_callback)
+        )
+        consumer.start()
+
+        try:
+            self.__fetch_all_financial_data(
+                stock_list=stock_list,
+                fetcher=self.__fetch_growth_data,
+                start_year=start_year,
+                end_year=end_year,
+                data_queue=data_queue,
+                update_stats=update_stats,
+                progress_callback=progress_callback
+            )
+        finally:
+            # 标记生产者完成
+            producer_done.set()
+
+        # 等待消费者处理完所有数据
+        consumer.join()
+
+        return update_stats
+
+    def _update_operation_data(self, stock_list, start_year, end_year, progress_callback):
+        """更新单个股票的经营数据"""
+        producer_done = threading.Event()
+        data_queue = queue.Queue(maxsize=100)
+        update_stats = {
+            "updated": 0,
+            "failed": 0,
+            "failed_codes": []
+        }
+
+        # 启动消费者线程
+        consumer = threading.Thread(
+            target=self.__consume_financial_data,
+            args=(producer_done, data_queue, self.db.save_operation_data, update_stats, progress_callback)
+        )
+        consumer.start()
+
+        try:
+            self.__fetch_all_financial_data(
+                stock_list=stock_list,
+                fetcher=self.__fetch_operation_data,
+                start_year=start_year,
+                end_year=end_year,
+                data_queue=data_queue,
+                update_stats=update_stats,
+                progress_callback=progress_callback
+            )
+        finally:
+            # 标记生产者完成
+            producer_done.set()
+
+        # 等待消费者处理完所有数据
+        consumer.join()
+
+        return update_stats
+
+    def _update_dupont_data(self, stock_list, start_year, end_year, progress_callback):
+        """更新单个股票的杜邦分析数据"""
+        producer_done = threading.Event()
+        data_queue = queue.Queue(maxsize=100)
+        update_stats = {
+            "updated": 0,
+            "failed": 0,
+            "failed_codes": []
+        }
+
+        # 启动消费者线程
+        consumer = threading.Thread(
+            target=self.__consume_financial_data,
+            args=(producer_done, data_queue, self.db.save_dupont_data, update_stats, progress_callback)
+        )
+        consumer.start()
+
+        try:
+            self.__fetch_all_financial_data(
+                stock_list=stock_list,
+                fetcher=self.__fetch_dupont_data,
+                start_year=start_year,
+                end_year=end_year,
+                data_queue=data_queue,
+                update_stats=update_stats,
+                progress_callback=progress_callback
+            )
+        finally:
+            # 标记生产者完成
+            producer_done.set()
+
+        # 等待消费者处理完所有数据
+        consumer.join()
+
+        return update_stats
+
+    def _update_dividend_data(self, stock_list, start_year, end_year, progress_callback):
+        """更新单个股票的分红数据"""
+        producer_done = threading.Event()
+        data_queue = queue.Queue(maxsize=100)
+        update_stats = {
+            "updated": 0,
+            "failed": 0,
+            "failed_codes": []
+        }
+
+        # 启动消费者线程
+        consumer = threading.Thread(
+            target=self.__consume_financial_data,
+            args=(producer_done, data_queue, self.db.save_dividend_data, update_stats, progress_callback)
+        )
+        consumer.start()
+
+        try:
+            self.__fetch_all_financial_data(
+                stock_list=stock_list,
+                fetcher=self.__fetch_dividend_data,
+                start_year=start_year,
+                end_year=end_year,
+                data_queue=data_queue,
+                update_stats=update_stats,
+                progress_callback=progress_callback
+            )
+        finally:
+            # 标记生产者完成
+            producer_done.set()
+
+        # 等待消费者处理完所有数据
+        consumer.join()
+
+        return update_stats
+
     def update_all_financial_data(self, start_year: int, end_year: int = None):
         """更新所有股票的财务数据
-        
+
         Args:
             start_year: 开始年份
             end_year: 结束年份（默认为当前年份）
@@ -250,40 +544,53 @@ class DataUpdateManager:
         stock_list = self.get_stock_list()
         total_stocks = len(stock_list)
         years_count = end_year - start_year + 1
-        total_updates = total_stocks * years_count
-        current_count = 0
-        updated_count = 0
-        failed_count = 0
-        failed_codes = []
+        # 每一年一份数据，7个财务表
+        total_updates = total_stocks * years_count * 7
 
         # 添加进度条
         pbar = tqdm(total=total_updates, desc="更新财务数据")
 
-        for code in stock_list['code']:
-            try:
-                for year in range(start_year, end_year + 1):
-                    self.update_financial_data(code, year)
-                    current_count += 1
-                    pbar.update(1)  # 更新进度条
-                updated_count += 1
-            except Exception as e:
-                failed_count += 1
-                failed_codes.append(code)
-                logging.exception(f"更新股票 {code} 财务数据失败: {e}")
-                # 即使失败也要更新进度
-                remaining_steps = years_count - (current_count % years_count)
-                current_count += remaining_steps
-                pbar.update(remaining_steps)  # 更新进度条
-                continue
+        results = {}
+        # 创建进程池来并行更新不同类型的财务数据
+        with ProcessPoolExecutor() as executor:
+            # 定义要更新的所有财务数据类型及其对应的更新方法
+            update_tasks = [
+                (self._update_profit_data, "利润表"),
+                (self._update_balance_data, "资产负债表"),
+                (self._update_cashflow_data, "现金流量表"),
+                (self._update_growth_data, "成长能力"),
+                (self._update_operation_data, "营运能力"),
+                (self._update_dupont_data, "杜邦分析"),
+                (self._update_dividend_data, "分红数据")
+            ]
+
+            # 提交所有任务到进程池
+            futures = []
+            for update_func, data_type in update_tasks:
+                future = executor.submit(
+                    update_func,
+                    stock_list=stock_list,
+                    start_year=start_year,
+                    end_year=end_year,
+                    progress_callback=lambda: pbar.update(1)
+                )
+                futures.append((future, data_type))
+
+            # 等待所有任务完成
+            for future, data_type in futures:
+                try:
+                    results[data_type] = future.result()  # 等待任务完成
+                    logging.info(f"{data_type}数据更新完成")
+                except Exception as e:
+                    logging.exception(f"更新{data_type}数据时发生错误: {e}")
 
         pbar.close()  # 关闭进度条
+        for data_type, result in results.items():
+            logging.info(f"{data_type} 数据更新结果：")
+            for key, value in result.items():
+                logging.info(f"{key}: {value}")
 
-        return {
-            "total": total_stocks,
-            "updated": updated_count,
-            "failed": failed_count,
-            "failed_codes": failed_codes
-        }
+        return results
 
     @staticmethod
     def __format_financial_df(df: pd.DataFrame, numeric_columns: list) -> pd.DataFrame:
@@ -404,7 +711,7 @@ class DataUpdateManager:
         ])
         return dupont_data
 
-    def __fetch_dividend_data(self, code: str, year: int) -> pd.DataFrame:
+    def __fetch_dividend_data(self, code: str, year: int, quarter=None) -> pd.DataFrame:
         """获取单个股票的分红数据"""
         dividend_data = self._retry_operation(
             self.data_source.get_dividend_data,
