@@ -473,37 +473,41 @@ class DatabaseManager:
         
         # 定义各字段合理范围
         range_limits = {
-            'NRTurnRatio': (-1e11, 1e11),
-            'INVTurnRatio': (-1e11, 1e11), 
-            'CATurnRatio': (-1e11, 1e11),
-            'AssetTurnRatio': (-1e11, 1e11),
+            'NRTurnRatio': (-1e10, 1e10),
+            'NRTurnDays': (-1e10, 1e10),
+            'INVTurnRatio': (-1e10, 1e10),
+            'INVTurnDays': (-1e10, 1e10),
+            'CATurnRatio': (-1e10, 1e10),
+            'CATurnDays': (-1e10, 1e10),
+            'AssetTurnRatio': (-1e10, 1e10),
+            'AssetTurnDays': (-1e10, 1e10),
             'roeAvg': (-100, 100),
             'npMargin': (-100, 100),
             'gpMargin': (-100, 100),
-            'netProfit': (-1e16, 1e16),
-            'epsTTM': (-1e11, 1e11),
-            'MBRevenue': (-1e16, 1e16),
-            'totalShare': (-1e16, 1e16),
-            'liqaShare': (-1e16, 1e16),
-            'currentRatio': (-1e11, 1e11),
-            'quickRatio': (-1e11, 1e11), 
-            'cashRatio': (-1e11, 1e11),
-            'YOYLiability': (-1e11, 1e11),
-            'liabilityToAsset': (-1e11, 1e11),
-            'assetToEquity': (-1e11, 1e11),
-            'dupontROE': (-1e11, 1e11),
-            'dupontAssetStoEquity': (-1e11, 1e11),
-            'dupontAssetTurn': (-1e11, 1e11),
-            'dupontPnitoni': (-1e11, 1e11),
-            'dupontNitogr': (-1e11, 1e11),
-            'dupontTaxBurden': (-1e11, 1e11),
-            'dupontIntburden': (-1e11, 1e11),
-            'dupontEbittogr': (-1e11, 1e11),
-            'dividCashPsBeforeTax': (-1e11, 1e11),
-            'dividCashPsAfterTax': (-1e11, 1e11),
-            'dividStocksPs': (-1e11, 1e11),
-            'dividCashStock': (-1e11, 1e11),
-            'dividReserveToStockPs': (-1e11, 1e11)
+            'netProfit': (-1e15, 1e15),
+            'epsTTM': (-1e10, 1e10),
+            'MBRevenue': (-1e15, 1e15),
+            'totalShare': (-1e15, 1e15),
+            'liqaShare': (-1e15, 1e15),
+            'currentRatio': (-1e10, 1e10),
+            'quickRatio': (-1e10, 1e10), 
+            'cashRatio': (-1e10, 1e10),
+            'YOYLiability': (-1e10, 1e10),
+            'liabilityToAsset': (-1e10, 1e10),
+            'assetToEquity': (-1e10, 1e10),
+            'dupontROE': (-1e10, 1e10),
+            'dupontAssetStoEquity': (-1e10, 1e10),
+            'dupontAssetTurn': (-1e10, 1e10),
+            'dupontPnitoni': (-1e10, 1e10),
+            'dupontNitogr': (-1e10, 1e10),
+            'dupontTaxBurden': (-1e10, 1e10),
+            'dupontIntburden': (-1e10, 1e10),
+            'dupontEbittogr': (-1e10, 1e10),
+            'dividCashPsBeforeTax': (-1e10, 1e10),
+            'dividCashPsAfterTax': (-1e10, 1e10),
+            'dividStocksPs': (-1e10, 1e10),
+            'dividCashStock': (-1e10, 1e10),
+            'dividReserveToStockPs': (-1e10, 1e10)
         }
         
         # 清洗数据
@@ -512,9 +516,18 @@ class DatabaseManager:
                 min_val, max_val = range_limits[col]
                 # 确保列是浮点数类型
                 df[col] = df[col].astype('float64', errors='ignore')
+                
                 # 先处理无穷大值
                 mask = np.isinf(df[col])
                 df.loc[mask, col] = np.nan
+                
+                # 检查异常值并记录
+                outliers = df[(df[col] < min_val) | (df[col] > max_val)]
+                if not outliers.empty:
+                    logging.warning(f"在 {table_name} 表中发现 {len(outliers)} 条 {col} 异常数据：")
+                    for _, row in outliers.iterrows():
+                        logging.warning(f"代码：{row['code']}, 日期：{row.get('statDate', 'N/A')}, {col}：{row[col]}")
+                
                 # 限制数值范围
                 df[col] = df[col].clip(lower=min_val, upper=max_val)
             

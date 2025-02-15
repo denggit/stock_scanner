@@ -25,7 +25,7 @@ if __name__ == "__main__":
 
         data_manager.update_all_financial_data(
             start_year=2020,
-            end_year=2025,
+            end_year=2024,
         )
 
         logger.info("Financial data update completed successfully")
