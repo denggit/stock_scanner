@@ -47,19 +47,15 @@ class DataUpdateManager:
     RETRY_DELAY: int = 5
     QUEUE_TIMEOUT: int = 5
 
-    def __init__(self, data_source: Optional[DataSource] = None, calendar_start: Optional[str] = None):
+    def __init__(self, data_source: Optional[DataSource] = None):
         """初始化数据更新管理器
         
         Args:
             data_source (Optional[DataSource]): 数据源，默认使用 BaostockSource
-            calendar_start (Optional[str]): 交易日历起始日期，格式：YYYY-MM-DD
         """
         self.db = DatabaseManager()
         self.data_source = data_source or BaostockSource()
         self._init_connection()
-        self.trading_calendar = self.data_source.get_trading_calendar(
-            start_date=calendar_start or self.DEFAULT_CALENDAR_START
-        )
         self.data_queue = queue.Queue(maxsize=self.MAX_QUEUE_SIZE)  # 限制队列大小以控制内存使用
         self.producer_done = threading.Event()
         self.stats_lock = threading.Lock()  # 添加线程锁用于保护统计信息
@@ -124,20 +120,23 @@ class DataUpdateManager:
         )
         consumer.start()
 
+        trading_calendar = self.data_source.get_trading_calendar(start_date=self.DEFAULT_CALENDAR_START)
         # 生产者：获取股票数据
         try:
             for code in stock_list['code']:
                 try:
                     if not adjust:
                         # 获取不复权数据
-                        df = self.__fetch_stock_data(code, force_full_update, latest_dates.get(code), adjust='3')
+                        df = self.__fetch_stock_data(code, trading_calendar, force_full_update, latest_dates.get(code),
+                                                     adjust='3')
                         if not df.empty:
                             self.data_queue.put((code, df, '3'))
                         elif progress_callback:
                             progress_callback()
 
                         # 获取后复权数据
-                        df_back = self.__fetch_stock_data(code, force_full_update, latest_dates_back.get(code),
+                        df_back = self.__fetch_stock_data(code, trading_calendar, force_full_update,
+                                                          latest_dates_back.get(code),
                                                           adjust='1')
                         if not df_back.empty:
                             self.data_queue.put((code, df_back, '1'))
@@ -145,7 +144,8 @@ class DataUpdateManager:
                             progress_callback()
                     else:
                         # 获取数据
-                        df = self.__fetch_stock_data(code, force_full_update, latest_dates.get(code), adjust=adjust)
+                        df = self.__fetch_stock_data(code, trading_calendar, force_full_update, latest_dates.get(code),
+                                                     adjust=adjust)
                         if not df.empty:
                             self.data_queue.put((code, df, adjust))
                         elif progress_callback:
@@ -198,8 +198,8 @@ class DataUpdateManager:
                 logging.info("队列为空，等待数据...")
                 continue
 
-    def __fetch_stock_data(self, code: str, force_full_update: bool = False, latest_date: Optional[str] = None,
-                           adjust: str = '3') -> pd.DataFrame:
+    def __fetch_stock_data(self, code: str, trading_calendar: pd.DataFrame, force_full_update: bool = False,
+                           latest_date: Optional[str] = None, adjust: str = '3') -> pd.DataFrame:
         """获取单只股票的数据"""
         if isinstance(latest_date, str):
             latest_date = dt.datetime.strptime(latest_date, '%Y-%m-%d %H:%M:%S')
@@ -214,10 +214,10 @@ class DataUpdateManager:
         else:
             # 如果最新更新日期为交易日，则选择start_date该日期，否则选择前一个交易日为start_date，避免出现跨0点运行代码导致的数据缺失
             days = (dt.datetime.today() - latest_date).days + 1
-            start_date = self.DEFAULT_CALENDAR_START
-            for i in range(days, len(self.trading_calendar) + 1):
-                if self.trading_calendar.is_trading_day.iloc[-i] == "1":
-                    start_date = self.trading_calendar.calendar_date.iloc[-i]
+            start_date = '2025-01-01'
+            for i in range(days, len(trading_calendar) + 1):
+                if trading_calendar.is_trading_day.iloc[-i] == "1":
+                    start_date = trading_calendar.calendar_date.iloc[-i]
                     break
 
         end_date = dt.datetime.now().strftime('%Y-%m-%d')
