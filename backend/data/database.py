@@ -12,6 +12,7 @@ from datetime import datetime
 
 import pandas as pd
 import pymysql as mysql
+import numpy as np
 
 from backend.config.database import Config
 
@@ -68,7 +69,14 @@ class DatabaseManager:
             type CHAR(1),
             status CHAR(1),
             update_time TIMESTAMP,
-            update_time_back TIMESTAMP,  # 新增后复权数据更新时间
+            update_time_back TIMESTAMP,  # 后复权数据更新时间
+            update_time_profit INT,  # 利润表更新时间
+            update_time_balance INT,  # 资产负债表更新时间
+            update_time_cashflow INT,  # 现金流量表更新时间
+            update_time_growth INT,  # 成长能力更新时间
+            update_time_operation INT,  # 营运能力更新时间
+            update_time_dupont INT,  # 杜邦分析更新时间
+            update_time_dividend INT,  # 分红数据更新时间
             INDEX idx_status(status),
             INDEX idx_type(type))
         """)
@@ -78,11 +86,11 @@ class DatabaseManager:
             code VARCHAR(10),
             pubDate DATE,
             statDate DATE,
-            roeAvg DECIMAL(10,4),
-            npMargin DECIMAL(10,4),
-            gpMargin DECIMAL(10,4),
+            roeAvg DECIMAL(15,4),
+            npMargin DECIMAL(15,4),
+            gpMargin DECIMAL(15,4),
             netProfit DECIMAL(20,4),
-            epsTTM DECIMAL(10,4),
+            epsTTM DECIMAL(15,4),
             MBRevenue DECIMAL(20,4),
             totalShare DECIMAL(20,4),
             liqaShare DECIMAL(20,4),
@@ -94,12 +102,12 @@ class DatabaseManager:
             code VARCHAR(10),
             pubDate DATE,
             statDate DATE,
-            currentRatio DECIMAL(10,4),
-            quickRatio DECIMAL(10,4),
-            cashRatio DECIMAL(10,4),
-            YOYLiability DECIMAL(10,4),
-            liabilityToAsset DECIMAL(10,4),
-            assetToEquity DECIMAL(10,4),
+            currentRatio DECIMAL(15,4),
+            quickRatio DECIMAL(15,4),
+            cashRatio DECIMAL(15,4),
+            YOYLiability DECIMAL(15,4),
+            liabilityToAsset DECIMAL(15,4),
+            assetToEquity DECIMAL(15,4),
             PRIMARY KEY (code, statDate)
         )""")
 
@@ -108,13 +116,13 @@ class DatabaseManager:
             code VARCHAR(10),
             pubDate DATE,
             statDate DATE,
-            CAToAsset DECIMAL(10,4),
-            NCAToAsset DECIMAL(10,4),
-            tangibleAssetToAsset DECIMAL(10,4),
-            ebitToInterest DECIMAL(10,4),
-            CFOToOR DECIMAL(10,4),
-            CFOToNP DECIMAL(10,4),
-            CFOToGr DECIMAL(10,4),
+            CAToAsset DECIMAL(15,4),
+            NCAToAsset DECIMAL(15,4),
+            tangibleAssetToAsset DECIMAL(15,4),
+            ebitToInterest DECIMAL(15,4),
+            CFOToOR DECIMAL(15,4),
+            CFOToNP DECIMAL(15,4),
+            CFOToGr DECIMAL(15,4),
             PRIMARY KEY (code, statDate)
         )""")
 
@@ -123,11 +131,11 @@ class DatabaseManager:
             code VARCHAR(10),
             pubDate DATE,
             statDate DATE,
-            YOYEquity DECIMAL(10,4),
-            YOYAsset DECIMAL(10,4),
-            YOYNI DECIMAL(10,4),
-            YOYEPSBasic DECIMAL(10,4),
-            YOYPNI DECIMAL(10,4),
+            YOYEquity DECIMAL(15,4),
+            YOYAsset DECIMAL(15,4),
+            YOYNI DECIMAL(15,4),
+            YOYEPSBasic DECIMAL(15,4),
+            YOYPNI DECIMAL(15,4),
             PRIMARY KEY (code, statDate)
         )""")
 
@@ -136,12 +144,12 @@ class DatabaseManager:
             code VARCHAR(10),
             pubDate DATE,
             statDate DATE,
-            NRTurnRatio DECIMAL(10,4),
-            NRTurnDays DECIMAL(10,4),
-            INVTurnRatio DECIMAL(10,4),
-            INVTurnDays DECIMAL(10,4),
-            CATurnRatio DECIMAL(10,4),
-            AssetTurnRatio DECIMAL(10,4),
+            NRTurnRatio DECIMAL(15,4),
+            NRTurnDays DECIMAL(15,4),
+            INVTurnRatio DECIMAL(15,4),
+            INVTurnDays DECIMAL(15,4),
+            CATurnRatio DECIMAL(15,4),
+            AssetTurnRatio DECIMAL(15,4),
             PRIMARY KEY (code, statDate)
         )""")
 
@@ -150,14 +158,14 @@ class DatabaseManager:
             code VARCHAR(10),
             pubDate DATE,
             statDate DATE,
-            dupontROE DECIMAL(10,4),
-            dupontAssetStoEquity DECIMAL(10,4),
-            dupontAssetTurn DECIMAL(10,4),
-            dupontPnitoni DECIMAL(10,4),
-            dupontNitogr DECIMAL(10,4),
-            dupontTaxBurden DECIMAL(10,4),
-            dupontIntburden DECIMAL(10,4),
-            dupontEbittogr DECIMAL(10,4),
+            dupontROE DECIMAL(15,4),
+            dupontAssetStoEquity DECIMAL(15,4),
+            dupontAssetTurn DECIMAL(15,4),
+            dupontPnitoni DECIMAL(15,4),
+            dupontNitogr DECIMAL(15,4),
+            dupontTaxBurden DECIMAL(15,4),
+            dupontIntburden DECIMAL(15,4),
+            dupontEbittogr DECIMAL(15,4),
             PRIMARY KEY (code, statDate)
         )""")
 
@@ -172,11 +180,11 @@ class DatabaseManager:
             dividOperateDate DATE,
             dividPayDate DATE,
             dividStockMarketDate DATE,
-            dividCashPsBeforeTax DECIMAL(10,4),
-            dividCashPsAfterTax DECIMAL(10,4),
-            dividStocksPs DECIMAL(10,4),
-            dividCashStock DECIMAL(10,4),
-            dividReserveToStockPs DECIMAL(10,4),
+            dividCashPsBeforeTax DECIMAL(15,4),
+            dividCashPsAfterTax DECIMAL(15,4),
+            dividStocksPs DECIMAL(15,4),
+            dividCashStock DECIMAL(15,4),
+            dividReserveToStockPs DECIMAL(15,4),
             PRIMARY KEY (code, dividOperateDate)
         )""")
 
@@ -462,8 +470,72 @@ class DatabaseManager:
         """通用的财务数据保存方法"""
         if df.empty:
             return
-
-        cursor = self.conn.cursor()
+        
+        # 定义各字段合理范围
+        range_limits = {
+            'NRTurnRatio': (-1e11, 1e11),
+            'INVTurnRatio': (-1e11, 1e11), 
+            'CATurnRatio': (-1e11, 1e11),
+            'AssetTurnRatio': (-1e11, 1e11),
+            'roeAvg': (-100, 100),
+            'npMargin': (-100, 100),
+            'gpMargin': (-100, 100),
+            'netProfit': (-1e16, 1e16),
+            'epsTTM': (-1e11, 1e11),
+            'MBRevenue': (-1e16, 1e16),
+            'totalShare': (-1e16, 1e16),
+            'liqaShare': (-1e16, 1e16),
+            'currentRatio': (-1e11, 1e11),
+            'quickRatio': (-1e11, 1e11), 
+            'cashRatio': (-1e11, 1e11),
+            'YOYLiability': (-1e11, 1e11),
+            'liabilityToAsset': (-1e11, 1e11),
+            'assetToEquity': (-1e11, 1e11),
+            'dupontROE': (-1e11, 1e11),
+            'dupontAssetStoEquity': (-1e11, 1e11),
+            'dupontAssetTurn': (-1e11, 1e11),
+            'dupontPnitoni': (-1e11, 1e11),
+            'dupontNitogr': (-1e11, 1e11),
+            'dupontTaxBurden': (-1e11, 1e11),
+            'dupontIntburden': (-1e11, 1e11),
+            'dupontEbittogr': (-1e11, 1e11),
+            'dividCashPsBeforeTax': (-1e11, 1e11),
+            'dividCashPsAfterTax': (-1e11, 1e11),
+            'dividStocksPs': (-1e11, 1e11),
+            'dividCashStock': (-1e11, 1e11),
+            'dividReserveToStockPs': (-1e11, 1e11)
+        }
+        
+        # 清洗数据
+        for col in df.columns:
+            if col in range_limits:
+                min_val, max_val = range_limits[col]
+                # 确保列是浮点数类型
+                df[col] = df[col].astype('float64', errors='ignore')
+                # 先处理无穷大值
+                mask = np.isinf(df[col])
+                df.loc[mask, col] = np.nan
+                # 限制数值范围
+                df[col] = df[col].clip(lower=min_val, upper=max_val)
+            
+        # 记录 NaN 值的数量
+        nan_count = df.isna().sum()
+        if nan_count.any():
+            logging.info(f"在 {table_name} 表中发现 NaN 值:\n{nan_count[nan_count > 0]}")
+        
+        # 将所有数值列的 NaN 转换为 None
+        numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
+        for col in numeric_cols:
+            df[col] = df[col].astype('float64', errors='ignore')  # 确保类型一致
+            df[col] = df[col].where(pd.notnull(df[col]), None)
+        
+        # 过滤无效数据
+        if 'statDate' in df.columns:
+            df = df.dropna(subset=['code', 'statDate'], how='any')
+        else:
+            df = df.dropna(subset=['code'], how='any')
+        
+        # 准备 SQL 语句
         placeholders = ','.join(['%s'] * len(columns))
         columns_str = ','.join(columns)
         update_str = ','.join([f"{col}=VALUES({col})" for col in columns if col not in ['code', 'statDate']])
@@ -474,10 +546,28 @@ class DatabaseManager:
         ON DUPLICATE KEY UPDATE {update_str}
         """
 
-        values = [tuple(row) for row in df[columns].values]
-        cursor.executemany(sql, values)
-        self.conn.commit()
-        cursor.close()
+        # 准备数据并确保没有 NaN
+        values = []
+        for _, row in df[columns].iterrows():
+            value = []
+            for v in row:
+                if isinstance(v, float) and np.isnan(v):
+                    value.append(None)
+                else:
+                    value.append(v)
+            values.append(tuple(value))
+        
+        # 执行更新
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.executemany(sql, values)
+            self.conn.commit()
+        except Exception as e:
+            logging.error(f"保存到 {table_name} 失败: {str(e)}")
+            # 打印出问题数据的样本
+            if values:
+                logging.error(f"问题数据样本: {values[0]}")
+            raise
 
     def save_profit_data(self, df: pd.DataFrame):
         """保存利润表数据"""

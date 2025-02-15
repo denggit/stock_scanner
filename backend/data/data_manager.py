@@ -252,12 +252,20 @@ class DataUpdateManager:
         # 每一年一份数据，7个财务表
         total_updates = total_stocks * years_count * 7
 
-        # 添加进度条
-        pbar = tqdm(total=total_updates, desc="更新财务数据")
+        # 创建共享队列用于进度更新
+        manager = multiprocessing.Manager()
+        progress_queue = manager.Queue()
+        update_queue = manager.Queue()
+        progress_done = threading.Event()
+
+        # 启动进度监听线程
+        progress_thread = threading.Thread(
+            target=self._handle_progress_updates,
+            args=(progress_queue, total_updates, progress_done)
+        )
+        progress_thread.start()
 
         results = {}
-        # 创建共享队列
-        update_queue = multiprocessing.Queue()
 
         # 启动更新财务数据时间的进程
         update_time_process = multiprocessing.Process(
@@ -287,7 +295,7 @@ class DataUpdateManager:
                     stock_list=stock_list,
                     start_year=start_year,
                     end_year=end_year,
-                    progress_callback=lambda: pbar.update(1),
+                    progress_queue=progress_queue,  # 传递共享队列
                     update_queue=update_queue  # 传递共享队列
                 )
                 futures.append((future, data_type))
@@ -300,11 +308,13 @@ class DataUpdateManager:
                 except Exception as e:
                     logging.exception(f"更新{data_type}数据时发生错误: {e}")
 
-        # 关闭进度条
-        pbar.close()
-
+        # 任务已完成
         # 终止更新时间的进程
         update_time_process.terminate()
+
+        # 等待进度监听线程完成
+        progress_done.set()
+        progress_thread.join()
 
         for data_type, result in results.items():
             logging.info(f"{data_type} 数据更新结果：")
@@ -314,40 +324,56 @@ class DataUpdateManager:
         return results
 
     @staticmethod
+    def _handle_progress_updates(progress_queue: multiprocessing.Queue, total: int, progress_done: threading.Event):
+        """处理进度更新的线程函数"""
+        with tqdm(total=total, desc="更新财务数据") as pbar:
+            while not (progress_done.is_set() and progress_queue.empty()):
+                try:
+                    # 从队列获取更新信号
+                    msg = progress_queue.get(timeout=5)
+                    if msg == "COMPLETE":
+                        break
+                    pbar.update(1)
+                except queue.Empty:
+                    continue
+            pbar.close()
+
+    @staticmethod
     def __fetch_all_financial_data(data_source: DataSource, stock_list: pd.DataFrame, data_type: str, fetcher,
                                    start_year: int, end_year: int,
-                                   data_queue: queue.Queue, update_stats: dict, progress_callback):
+                                   data_queue: queue.Queue, update_stats: dict,
+                                   progress_queue: multiprocessing.Queue = None):
         """财务数据生产者：通过fetcher来获取每一只股票的财务数据"""
         for _, row in stock_list.iterrows():
-            code, updated_year = row.code, row[f"update_time_{data_type}"]
+            code, updated_year = row.code, row.get(f"update_time_{data_type}")
             try:
                 for year in range(start_year, end_year + 1):
-                    if year < updated_year:
+                    if updated_year is not None and year < updated_year:
                         # 如果已经这一年已经更新过也可以覆盖更新，避免遗漏季度，但过去的年份无需重新更新
                         logging.info(f"该数据过去已更新，无需重复更新：{code}_{year}_{data_type}")
-                        if progress_callback:
-                            progress_callback()
+                        if progress_queue:
+                            progress_queue.put(1)
                         continue
                     profit_data = fetcher(data_source, code, year)
                     if not profit_data.empty:
                         data_queue.put((code, profit_data, year))
                         update_stats["updated"] += 1
                     else:
-                        logging.info(f"该数据为空: {code}_{year}_{data_type}")
-                    if progress_callback:
-                        progress_callback()
+                        logging.warning(f"该数据为空: {code}_{year}_{data_type}")
+                    if progress_queue:
+                        progress_queue.put(1)
             except Exception as e:
                 logging.exception(f"获取股票 {code} 利润表数据失败: {e}")
                 update_stats["failed"] += 1
                 update_stats["failed_codes"].append(code)
-                if progress_callback:
-                    progress_callback()
+                if progress_queue:
+                    progress_queue.put(1)
 
     @staticmethod
     def __consume_financial_data(producer_done: threading.Event, data_queue: queue.Queue,
                                  data_saver: Callable, data_type: str,
-                                 update_stats: dict, progress_callback: Optional[Callable],
-                                 update_queue: multiprocessing.Queue):
+                                 update_stats: dict, progress_queue: multiprocessing.Queue = None,
+                                 update_queue: multiprocessing.Queue = None):
         """财务数据消费者：消费对应data_queue里的财务数据
 
         Args:
@@ -356,7 +382,7 @@ class DataUpdateManager:
             data_saver (callable): 数据保存方法
             data_type (str): 数据类型（profit/balance/cashflow等）
             update_stats (dict): 更新统计信息
-            progress_callback (callable): 进度回调函数
+            progress_queue (Queue): 共享队列，用于更新财务数据的时间
             update_queue (Queue): 共享队列，用于更新财务数据的时间
         """
         while not (producer_done.is_set() and data_queue.empty()):
@@ -365,6 +391,7 @@ class DataUpdateManager:
                 try:
                     data_saver(data)
                     update_stats["updated"] += 1
+                    logging.info(f"成功保存 {code} {year}年 {data_type} 数据")
                     # 将更新信息放入共享队列
                     update_queue.put((code, year, data_type))
                 except Exception as e:
@@ -373,10 +400,10 @@ class DataUpdateManager:
                     update_stats["failed_codes"].append(code)
                 finally:
                     data_queue.task_done()
-                    if progress_callback:
-                        progress_callback()
+                    if progress_queue:
+                        progress_queue.put(1)
             except queue.Empty:
-                logging.info("数据队列为空，等待数据...")
+                logging.info(f"{data_type}数据队列为空，等待数据...")
                 continue
 
     @staticmethod
@@ -417,7 +444,7 @@ class DataUpdateManager:
 
     @staticmethod
     def _update_profit_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
-                            update_queue: multiprocessing.Queue, progress_callback):
+                            update_queue: multiprocessing.Queue, progress_queue: multiprocessing.Queue = None):
         """更新单个股票的利润数据"""
         producer_done = threading.Event()
         data_queue = queue.Queue(maxsize=100)
@@ -435,8 +462,9 @@ class DataUpdateManager:
                 'producer_done': producer_done,
                 'data_queue': data_queue,
                 'data_saver': db.save_profit_data,
+                'data_type': "profit",
                 'update_stats': update_stats,
-                'progress_callback': progress_callback,
+                'progress_queue': progress_queue,
                 'update_queue': update_queue
             }
         )
@@ -453,7 +481,7 @@ class DataUpdateManager:
                 end_year=end_year,
                 data_queue=data_queue,
                 update_stats=update_stats,
-                progress_callback=progress_callback
+                progress_queue=progress_queue
             )
         finally:
             # 标记生产者完成
@@ -466,7 +494,7 @@ class DataUpdateManager:
 
     @staticmethod
     def _update_balance_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
-                             update_queue: multiprocessing.Queue, progress_callback):
+                             update_queue: multiprocessing.Queue, progress_queue: multiprocessing.Queue = None):
         """更新单个股票的资产负债表数据"""
         producer_done = threading.Event()
         data_queue = queue.Queue(maxsize=100)
@@ -484,8 +512,9 @@ class DataUpdateManager:
                 'producer_done': producer_done,
                 'data_queue': data_queue,
                 'data_saver': db.save_balance_data,
+                'data_type': "balance",
                 'update_stats': update_stats,
-                'progress_callback': progress_callback,
+                'progress_queue': progress_queue,
                 'update_queue': update_queue
             }
         )
@@ -502,7 +531,7 @@ class DataUpdateManager:
                 end_year=end_year,
                 data_queue=data_queue,
                 update_stats=update_stats,
-                progress_callback=progress_callback
+                progress_queue=progress_queue
             )
         finally:
             # 标记生产者完成
@@ -515,7 +544,7 @@ class DataUpdateManager:
 
     @staticmethod
     def _update_cashflow_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
-                              update_queue: multiprocessing.Queue, progress_callback):
+                              update_queue: multiprocessing.Queue, progress_queue: multiprocessing.Queue = None):
         """更新单个股票的现金流量表数据"""
         producer_done = threading.Event()
         data_queue = queue.Queue(maxsize=100)
@@ -533,8 +562,9 @@ class DataUpdateManager:
                 'producer_done': producer_done,
                 'data_queue': data_queue,
                 'data_saver': db.save_cashflow_data,
+                'data_type': "cashflow",
                 'update_stats': update_stats,
-                'progress_callback': progress_callback,
+                'progress_queue': progress_queue,
                 'update_queue': update_queue
             }
         )
@@ -551,7 +581,7 @@ class DataUpdateManager:
                 end_year=end_year,
                 data_queue=data_queue,
                 update_stats=update_stats,
-                progress_callback=progress_callback
+                progress_queue=progress_queue
             )
         finally:
             # 标记生产者完成
@@ -564,7 +594,7 @@ class DataUpdateManager:
 
     @staticmethod
     def _update_growth_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
-                            update_queue: multiprocessing.Queue, progress_callback):
+                            update_queue: multiprocessing.Queue, progress_queue: multiprocessing.Queue = None):
         """更新单个股票的成长数据"""
         producer_done = threading.Event()
         data_queue = queue.Queue(maxsize=100)
@@ -584,7 +614,7 @@ class DataUpdateManager:
                 'data_saver': db.save_growth_data,
                 'data_type': 'growth',
                 'update_stats': update_stats,
-                'progress_callback': progress_callback,
+                'progress_queue': progress_queue,
                 'update_queue': update_queue
             }
         )
@@ -601,7 +631,7 @@ class DataUpdateManager:
                 end_year=end_year,
                 data_queue=data_queue,
                 update_stats=update_stats,
-                progress_callback=progress_callback
+                progress_queue=progress_queue
             )
         finally:
             # 标记生产者完成
@@ -614,7 +644,7 @@ class DataUpdateManager:
 
     @staticmethod
     def _update_operation_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
-                               update_queue: multiprocessing.Queue, progress_callback):
+                               update_queue: multiprocessing.Queue, progress_queue: multiprocessing.Queue = None):
         """更新单个股票的经营数据"""
         producer_done = threading.Event()
         data_queue = queue.Queue(maxsize=100)
@@ -634,7 +664,7 @@ class DataUpdateManager:
                 'data_saver': db.save_operation_data,
                 'data_type': 'operation',
                 'update_stats': update_stats,
-                'progress_callback': progress_callback,
+                'progress_queue': progress_queue,
                 'update_queue': update_queue
             }
         )
@@ -651,7 +681,7 @@ class DataUpdateManager:
                 end_year=end_year,
                 data_queue=data_queue,
                 update_stats=update_stats,
-                progress_callback=progress_callback
+                progress_queue=progress_queue
             )
         finally:
             # 标记生产者完成
@@ -664,7 +694,7 @@ class DataUpdateManager:
 
     @staticmethod
     def _update_dupont_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
-                            update_queue: multiprocessing.Queue, progress_callback):
+                            update_queue: multiprocessing.Queue, progress_queue: multiprocessing.Queue = None):
         """更新单个股票的杜邦分析数据"""
         producer_done = threading.Event()
         data_queue = queue.Queue(maxsize=100)
@@ -684,7 +714,7 @@ class DataUpdateManager:
                 'data_saver': db.save_dupont_data,
                 'data_type': 'dupont',
                 'update_stats': update_stats,
-                'progress_callback': progress_callback,
+                'progress_queue': progress_queue,
                 'update_queue': update_queue
             }
         )
@@ -701,7 +731,7 @@ class DataUpdateManager:
                 end_year=end_year,
                 data_queue=data_queue,
                 update_stats=update_stats,
-                progress_callback=progress_callback
+                progress_queue=progress_queue
             )
         finally:
             # 标记生产者完成
@@ -714,7 +744,7 @@ class DataUpdateManager:
 
     @staticmethod
     def _update_dividend_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
-                              update_queue: multiprocessing.Queue, progress_callback):
+                              update_queue: multiprocessing.Queue, progress_queue: multiprocessing.Queue = None):
         """更新单个股票的分红数据"""
         producer_done = threading.Event()
         data_queue = queue.Queue(maxsize=100)
@@ -734,7 +764,7 @@ class DataUpdateManager:
                 'data_saver': db.save_dividend_data,
                 'data_type': 'dividend',
                 'update_stats': update_stats,
-                'progress_callback': progress_callback,
+                'progress_queue': progress_queue,
                 'update_queue': update_queue
             }
         )
@@ -751,7 +781,7 @@ class DataUpdateManager:
                 end_year=end_year,
                 data_queue=data_queue,
                 update_stats=update_stats,
-                progress_callback=progress_callback
+                progress_queue=progress_queue
             )
         finally:
             # 标记生产者完成
