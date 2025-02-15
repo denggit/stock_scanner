@@ -46,7 +46,6 @@ def update_database(args, logger):
         # 创建进度条，因为要更新不复权和后复权两个股票库，所以total * 2
         with tqdm(total=total_stocks * 2, desc="更新数据库", unit="份数据") as pbar:
             result = data_manager.update_all_stocks(force_full_update=args.full,
-                                                    adjust=args.adjust,
                                                     progress_callback=lambda: pbar.update(1))
 
         end_time = time.time()
@@ -72,7 +71,6 @@ def main():
     parser = argparse.ArgumentParser(description="更新股票数据库")
     parser.add_argument("--full", action="store_true", help="强制全量更新(默认增量更新)")
     parser.add_argument("--silent", action="store_true", help="静默模式，减少输出信息")
-    parser.add_argument("--adjust", action="store", help="更新股票数据复权: 1->后复权，2->前复权（暂不支持），3->不复权")
     args = parser.parse_args()
 
     # 设置日志

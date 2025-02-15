@@ -36,7 +36,6 @@ class DataUpdateManager:
     Attributes:
         db (DatabaseManager): 数据库管理器实例
         data_source (DataSource): 数据源实例
-        trading_calendar (pd.DataFrame): 交易日历
         data_queue (queue.Queue): 数据更新队列
         producer_done (threading.Event): 生产者完成标志
         stats_lock (threading.Lock): 统计信息线程锁
@@ -56,6 +55,8 @@ class DataUpdateManager:
         self.db = DatabaseManager()
         self.data_source = data_source or BaostockSource()
         self._init_connection()
+
+        # 下面这些是给更新股票行情数据用的，多线程
         self.data_queue = queue.Queue(maxsize=self.MAX_QUEUE_SIZE)  # 限制队列大小以控制内存使用
         self.producer_done = threading.Event()
         self.stats_lock = threading.Lock()  # 添加线程锁用于保护统计信息
@@ -84,12 +85,11 @@ class DataUpdateManager:
         """更新股票列表"""
         self._retry_operation(self.db.save_stock_basic, stock_basic=stock_list)
 
-    def update_all_stocks(self, force_full_update: bool = False, adjust: str = "3", progress_callback=None):
+    def update_all_stocks(self, force_full_update: bool = False, progress_callback=None):
         """更新所有股票数据
 
         Args:
             force_full_update (bool): 是否强制全量更新
-            adjust (str): 是否复权 1->后复权，2->前复权，3->不复权，None->不复权和后复权一起
             progress_callback (callable): 进度回调函数
 
         Returns:
@@ -104,14 +104,8 @@ class DataUpdateManager:
         }
 
         # 获取最新日期
-        if not adjust:
-            latest_dates = {} if force_full_update else self._retry_operation(self.db.get_all_update_time, adjust='3')
-            latest_dates_back = {} if force_full_update else self._retry_operation(self.db.get_all_update_time,
-                                                                                   adjust='1')
-        else:
-            latest_dates = {} if force_full_update else self._retry_operation(self.db.get_all_update_time,
-                                                                              adjust=adjust)
-            latest_dates_back = {}
+        latest_dates = {} if force_full_update else self._retry_operation(self.db.get_all_update_time, adjust='3')
+        latest_dates_back = {} if force_full_update else self._retry_operation(self.db.get_all_update_time, adjust='1')
 
         # 启动消费者线程
         consumer = threading.Thread(
@@ -125,31 +119,21 @@ class DataUpdateManager:
         try:
             for code in stock_list['code']:
                 try:
-                    if not adjust:
-                        # 获取不复权数据
-                        df = self.__fetch_stock_data(code, trading_calendar, force_full_update, latest_dates.get(code),
-                                                     adjust='3')
-                        if not df.empty:
-                            self.data_queue.put((code, df, '3'))
-                        elif progress_callback:
-                            progress_callback()
-
-                        # 获取后复权数据
-                        df_back = self.__fetch_stock_data(code, trading_calendar, force_full_update,
-                                                          latest_dates_back.get(code),
-                                                          adjust='1')
-                        if not df_back.empty:
-                            self.data_queue.put((code, df_back, '1'))
-                        elif progress_callback:
-                            progress_callback()
-                    else:
-                        # 获取数据
-                        df = self.__fetch_stock_data(code, trading_calendar, force_full_update, latest_dates.get(code),
-                                                     adjust=adjust)
-                        if not df.empty:
-                            self.data_queue.put((code, df, adjust))
-                        elif progress_callback:
-                            progress_callback()
+                    # 获取不复权数据
+                    df = self.__fetch_stock_data(code, trading_calendar, force_full_update, latest_dates.get(code),
+                                                 adjust='3')
+                    if not df.empty:
+                        self.data_queue.put((code, df, '3'))
+                    elif progress_callback:
+                        progress_callback()
+                    # 获取后复权数据
+                    df_back = self.__fetch_stock_data(code, trading_calendar, force_full_update,
+                                                      latest_dates_back.get(code),
+                                                      adjust='1')
+                    if not df_back.empty:
+                        self.data_queue.put((code, df_back, '1'))
+                    elif progress_callback:
+                        progress_callback()
                 except Exception as e:
                     with self.stats_lock:  # 使用线程锁保护统计信息的更新
                         update_stats["failed"] += 1
