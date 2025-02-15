@@ -13,7 +13,6 @@ import queue
 import threading
 import time
 from concurrent.futures import ProcessPoolExecutor
-# from multiprocessing import Process, Queue, parent_process
 from typing import Optional, Dict, Callable, Any
 
 import numpy as np
@@ -69,7 +68,8 @@ class DataUpdateManager:
         if not self.data_source.connect():
             raise Exception("Failed to connect to data source")
 
-    def _retry_operation(self, operation, max_retries: int = MAX_RETRIES, retry_delay: int = RETRY_DELAY, **kwargs):
+    @staticmethod
+    def _retry_operation(operation, max_retries: int = MAX_RETRIES, retry_delay: int = RETRY_DELAY, **kwargs):
         for i in range(max_retries):
             try:
                 return operation(**kwargs)
@@ -78,8 +78,6 @@ class DataUpdateManager:
                     f"Operation {operation.__name__} with params {kwargs} failed: {e}. "
                     f"Retrying in {retry_delay} seconds...")
                 time.sleep(retry_delay)
-                if not self.data_source.is_connected():
-                    self._init_connection()
         raise Exception("Operation failed after multiple retries")
 
     def get_stock_list(self) -> pd.DataFrame:
@@ -238,432 +236,6 @@ class DataUpdateManager:
 
         return df
 
-    @staticmethod
-    def __fetch_all_financial_data(stock_list: pd.DataFrame, data_type: str, fetcher, start_year: int, end_year: int,
-                                   data_queue: queue.Queue, update_stats: dict, progress_callback):
-        """财务数据生产者：通过fetcher来获取每一只股票的财务数据"""
-        for _, row in stock_list.iterrows():
-            code, updated_year = row.code, row[f"update_time_{data_type}"]
-            try:
-                for year in range(start_year, end_year + 1):
-                    if year < updated_year:
-                        # 如果已经这一年已经更新过也可以覆盖更新，避免遗漏季度，但过去的年份无需重新更新
-                        logging.info(f"该数据过去已更新，无需重复更新：{code}_{year}_{data_type}")
-                        if progress_callback:
-                            progress_callback()
-                        continue
-                    profit_data = fetcher(code, year)
-                    if not profit_data.empty:
-                        data_queue.put((code, profit_data, year))
-                        update_stats["updated"] += 1
-                    else:
-                        logging.info(f"该数据为空: {code}_{year}_{data_type}")
-                    if progress_callback:
-                        progress_callback()
-            except Exception as e:
-                logging.exception(f"获取股票 {code} 利润表数据失败: {e}")
-                update_stats["failed"] += 1
-                update_stats["failed_codes"].append(code)
-                if progress_callback:
-                    progress_callback()
-
-    def __consume_financial_data(self, producer_done: threading.Event, data_queue: queue.Queue,
-                                 data_saver: Callable, data_type: str,
-                                 update_stats: dict, progress_callback: Optional[Callable],
-                                 update_queue: multiprocessing.Queue):
-        """财务数据消费者：消费对应data_queue里的财务数据
-
-        Args:
-            producer_done (threading.Event): 生产者完成标志
-            data_queue (queue.Queue): 财务数据队列
-            data_saver (callable): 数据保存方法
-            data_type (str): 数据类型（profit/balance/cashflow等）
-            update_stats (dict): 更新统计信息
-            progress_callback (callable): 进度回调函数
-            update_queue (Queue): 共享队列，用于更新财务数据的时间
-        """
-        while not (producer_done.is_set() and data_queue.empty()):
-            try:
-                code, data, year = data_queue.get(timeout=self.QUEUE_TIMEOUT)
-                try:
-                    data_saver(data)
-                    update_stats["updated"] += 1
-                    # 将更新信息放入共享队列
-                    update_queue.put((code, year, data_type))
-                except Exception as e:
-                    logging.exception(f"保存数据失败：{e}")
-                    update_stats["failed"] += 1
-                    update_stats["failed_codes"].append(code)
-                finally:
-                    data_queue.task_done()
-                    if progress_callback:
-                        progress_callback()
-            except queue.Empty:
-                logging.info("数据队列为空，等待数据...")
-                continue
-
-    @staticmethod
-    def _update_financial_update_time(update_queue: multiprocessing.Queue):
-        """进程：更新财务数据的更新时间
-
-        Args:
-            update_queue (Queue): 共享队列，包含需要更新的数据
-        """
-        # 在子进程中创建新的数据库连接
-        db = DatabaseManager()
-        
-        try:
-            while True:
-                try:
-                    # 从队列中获取数据
-                    code, year, data_type = update_queue.get(timeout=5)
-                    # 调用数据库方法更新数据
-                    db.update_financial_update_time(
-                        pd.DataFrame([{"code": code, "year": year}]),
-                        data_type=data_type
-                    )
-                except queue.Empty:
-                    if not multiprocessing.parent_process().is_alive():
-                        logging.info("父进程已终止，更新时间进程退出")
-                        break
-                    logging.debug("财务更新时间队列为空，等待数据...")
-                    continue
-                except (ValueError, KeyError) as e:
-                    logging.error(f"数据格式错误: {e}")
-                except pd.errors.EmptyDataError:
-                    logging.error("更新数据为空")
-        except Exception as e:
-            logging.exception(f"更新财务数据时间时发生错误: {e}")
-        finally:
-            # 确保关闭数据库连接
-            db.close()
-
-    def _update_profit_data(self, stock_list: pd.DataFrame, start_year: int, end_year: int,
-                            update_queue: multiprocessing.Queue, progress_callback):
-        """更新单个股票的利润数据"""
-        producer_done = threading.Event()
-        data_queue = queue.Queue(maxsize=self.MAX_QUEUE_SIZE)
-        update_stats = {
-            "updated": 0,
-            "failed": 0,
-            "failed_codes": []
-        }
-        db = DatabaseManager()
-
-        # 启动消费者线程
-        consumer = threading.Thread(
-            target=self.__consume_financial_data,
-            kwargs={
-                'producer_done': producer_done,
-                'data_queue': data_queue,
-                'data_saver': db.save_profit_data,
-                'update_stats': update_stats,
-                'progress_callback': progress_callback,
-                'update_queue': update_queue
-            }
-        )
-        consumer.start()
-
-        try:
-            self.__fetch_all_financial_data(
-                stock_list=stock_list,
-                data_type="profit",
-                fetcher=self.__fetch_profit_data,
-                start_year=start_year,
-                end_year=end_year,
-                data_queue=data_queue,
-                update_stats=update_stats,
-                progress_callback=progress_callback
-            )
-        finally:
-            # 标记生产者完成
-            producer_done.set()
-
-        # 等待消费者处理完所有数据
-        consumer.join()
-
-        return update_stats
-
-    def _update_balance_data(self, stock_list: pd.DataFrame, start_year: int, end_year: int,
-                             update_queue: multiprocessing.Queue, progress_callback):
-        """更新单个股票的资产负债表数据"""
-        producer_done = threading.Event()
-        data_queue = queue.Queue(maxsize=self.MAX_QUEUE_SIZE)
-        update_stats = {
-            "updated": 0,
-            "failed": 0,
-            "failed_codes": []
-        }
-        db = DatabaseManager()
-
-        # 启动消费者线程
-        consumer = threading.Thread(
-            target=self.__consume_financial_data,
-            kwargs={
-                'producer_done': producer_done,
-                'data_queue': data_queue,
-                'data_saver': db.save_balance_data,
-                'update_stats': update_stats,
-                'progress_callback': progress_callback,
-                'update_queue': update_queue
-            }
-        )
-        consumer.start()
-
-        try:
-            self.__fetch_all_financial_data(
-                stock_list=stock_list,
-                data_type="balance",
-                fetcher=self.__fetch_balance_data,
-                start_year=start_year,
-                end_year=end_year,
-                data_queue=data_queue,
-                update_stats=update_stats,
-                progress_callback=progress_callback
-            )
-        finally:
-            # 标记生产者完成
-            producer_done.set()
-
-        # 等待消费者处理完所有数据
-        consumer.join()
-
-        return update_stats
-
-    def _update_cashflow_data(self, stock_list: pd.DataFrame, start_year: int, end_year: int,
-                              update_queue: multiprocessing.Queue, progress_callback):
-        """更新单个股票的现金流量表数据"""
-        producer_done = threading.Event()
-        data_queue = queue.Queue(maxsize=self.MAX_QUEUE_SIZE)
-        update_stats = {
-            "updated": 0,
-            "failed": 0,
-            "failed_codes": []
-        }
-        db = DatabaseManager()
-
-        # 启动消费者线程
-        consumer = threading.Thread(
-            target=self.__consume_financial_data,
-            kwargs={
-                'producer_done': producer_done,
-                'data_queue': data_queue,
-                'data_saver': db.save_cashflow_data,
-                'update_stats': update_stats,
-                'progress_callback': progress_callback,
-                'update_queue': update_queue
-            }
-        )
-        consumer.start()
-
-        try:
-            self.__fetch_all_financial_data(
-                stock_list=stock_list,
-                data_type="cashflow",
-                fetcher=self.__fetch_cashflow_data,
-                start_year=start_year,
-                end_year=end_year,
-                data_queue=data_queue,
-                update_stats=update_stats,
-                progress_callback=progress_callback
-            )
-        finally:
-            # 标记生产者完成
-            producer_done.set()
-
-        # 等待消费者处理完所有数据
-        consumer.join()
-
-        return update_stats
-
-    def _update_growth_data(self, stock_list: pd.DataFrame, start_year: int, end_year: int,
-                            update_queue: multiprocessing.Queue, progress_callback):
-        """更新单个股票的成长数据"""
-        producer_done = threading.Event()
-        data_queue = queue.Queue(maxsize=self.MAX_QUEUE_SIZE)
-        update_stats = {
-            "updated": 0,
-            "failed": 0,
-            "failed_codes": []
-        }
-        db = DatabaseManager()
-
-        # 启动消费者线程
-        consumer = threading.Thread(
-            target=self.__consume_financial_data,
-            kwargs={
-                'producer_done': producer_done,
-                'data_queue': data_queue,
-                'data_saver': db.save_growth_data,
-                'data_type': 'growth',
-                'update_stats': update_stats,
-                'progress_callback': progress_callback,
-                'update_queue': update_queue
-            }
-        )
-        consumer.start()
-
-        try:
-            self.__fetch_all_financial_data(
-                stock_list=stock_list,
-                data_type="growth",
-                fetcher=self.__fetch_growth_data,
-                start_year=start_year,
-                end_year=end_year,
-                data_queue=data_queue,
-                update_stats=update_stats,
-                progress_callback=progress_callback
-            )
-        finally:
-            # 标记生产者完成
-            producer_done.set()
-
-        # 等待消费者处理完所有数据
-        consumer.join()
-
-        return update_stats
-
-    def _update_operation_data(self, stock_list: pd.DataFrame, start_year: int, end_year: int,
-                               update_queue: multiprocessing.Queue, progress_callback):
-        """更新单个股票的经营数据"""
-        producer_done = threading.Event()
-        data_queue = queue.Queue(maxsize=self.MAX_QUEUE_SIZE)
-        update_stats = {
-            "updated": 0,
-            "failed": 0,
-            "failed_codes": []
-        }
-        db = DatabaseManager()
-
-        # 启动消费者线程
-        consumer = threading.Thread(
-            target=self.__consume_financial_data,
-            kwargs={
-                'producer_done': producer_done,
-                'data_queue': data_queue,
-                'data_saver': db.save_operation_data,
-                'data_type': 'operation',
-                'update_stats': update_stats,
-                'progress_callback': progress_callback,
-                'update_queue': update_queue
-            }
-        )
-        consumer.start()
-
-        try:
-            self.__fetch_all_financial_data(
-                stock_list=stock_list,
-                data_type="operation",
-                fetcher=self.__fetch_operation_data,
-                start_year=start_year,
-                end_year=end_year,
-                data_queue=data_queue,
-                update_stats=update_stats,
-                progress_callback=progress_callback
-            )
-        finally:
-            # 标记生产者完成
-            producer_done.set()
-
-        # 等待消费者处理完所有数据
-        consumer.join()
-
-        return update_stats
-
-    def _update_dupont_data(self, stock_list: pd.DataFrame, start_year: int, end_year: int,
-                            update_queue: multiprocessing.Queue, progress_callback):
-        """更新单个股票的杜邦分析数据"""
-        producer_done = threading.Event()
-        data_queue = queue.Queue(maxsize=self.MAX_QUEUE_SIZE)
-        update_stats = {
-            "updated": 0,
-            "failed": 0,
-            "failed_codes": []
-        }
-        db = DatabaseManager()
-
-        # 启动消费者线程
-        consumer = threading.Thread(
-            target=self.__consume_financial_data,
-            kwargs={
-                'producer_done': producer_done,
-                'data_queue': data_queue,
-                'data_saver': db.save_dupont_data,
-                'data_type': 'dupont',
-                'update_stats': update_stats,
-                'progress_callback': progress_callback,
-                'update_queue': update_queue
-            }
-        )
-        consumer.start()
-
-        try:
-            self.__fetch_all_financial_data(
-                stock_list=stock_list,
-                data_type="dupont",
-                fetcher=self.__fetch_dupont_data,
-                start_year=start_year,
-                end_year=end_year,
-                data_queue=data_queue,
-                update_stats=update_stats,
-                progress_callback=progress_callback
-            )
-        finally:
-            # 标记生产者完成
-            producer_done.set()
-
-        # 等待消费者处理完所有数据
-        consumer.join()
-
-        return update_stats
-
-    def _update_dividend_data(self, stock_list: pd.DataFrame, start_year: int, end_year: int,
-                              update_queue: multiprocessing.Queue, progress_callback):
-        """更新单个股票的分红数据"""
-        producer_done = threading.Event()
-        data_queue = queue.Queue(maxsize=self.MAX_QUEUE_SIZE)
-        update_stats = {
-            "updated": 0,
-            "failed": 0,
-            "failed_codes": []
-        }
-        db = DatabaseManager()
-
-        # 启动消费者线程
-        consumer = threading.Thread(
-            target=self.__consume_financial_data,
-            kwargs={
-                'producer_done': producer_done,
-                'data_queue': data_queue,
-                'data_saver': db.save_dividend_data,
-                'data_type': 'dividend',
-                'update_stats': update_stats,
-                'progress_callback': progress_callback,
-                'update_queue': update_queue
-            }
-        )
-        consumer.start()
-
-        try:
-            self.__fetch_all_financial_data(
-                stock_list=stock_list,
-                data_type="dividend",
-                fetcher=self.__fetch_dividend_data,
-                start_year=start_year,
-                end_year=end_year,
-                data_queue=data_queue,
-                update_stats=update_stats,
-                progress_callback=progress_callback
-            )
-        finally:
-            # 标记生产者完成
-            producer_done.set()
-
-        # 等待消费者处理完所有数据
-        consumer.join()
-
-        return update_stats
-
     def update_all_financial_data(self, start_year: int, end_year: int = None) -> Dict[str, Dict[str, Any]]:
         """更新所有股票的财务数据
 
@@ -742,6 +314,455 @@ class DataUpdateManager:
         return results
 
     @staticmethod
+    def __fetch_all_financial_data(data_source: DataSource, stock_list: pd.DataFrame, data_type: str, fetcher,
+                                   start_year: int, end_year: int,
+                                   data_queue: queue.Queue, update_stats: dict, progress_callback):
+        """财务数据生产者：通过fetcher来获取每一只股票的财务数据"""
+        for _, row in stock_list.iterrows():
+            code, updated_year = row.code, row[f"update_time_{data_type}"]
+            try:
+                for year in range(start_year, end_year + 1):
+                    if year < updated_year:
+                        # 如果已经这一年已经更新过也可以覆盖更新，避免遗漏季度，但过去的年份无需重新更新
+                        logging.info(f"该数据过去已更新，无需重复更新：{code}_{year}_{data_type}")
+                        if progress_callback:
+                            progress_callback()
+                        continue
+                    profit_data = fetcher(data_source, code, year)
+                    if not profit_data.empty:
+                        data_queue.put((code, profit_data, year))
+                        update_stats["updated"] += 1
+                    else:
+                        logging.info(f"该数据为空: {code}_{year}_{data_type}")
+                    if progress_callback:
+                        progress_callback()
+            except Exception as e:
+                logging.exception(f"获取股票 {code} 利润表数据失败: {e}")
+                update_stats["failed"] += 1
+                update_stats["failed_codes"].append(code)
+                if progress_callback:
+                    progress_callback()
+
+    @staticmethod
+    def __consume_financial_data(producer_done: threading.Event, data_queue: queue.Queue,
+                                 data_saver: Callable, data_type: str,
+                                 update_stats: dict, progress_callback: Optional[Callable],
+                                 update_queue: multiprocessing.Queue):
+        """财务数据消费者：消费对应data_queue里的财务数据
+
+        Args:
+            producer_done (threading.Event): 生产者完成标志
+            data_queue (queue.Queue): 财务数据队列
+            data_saver (callable): 数据保存方法
+            data_type (str): 数据类型（profit/balance/cashflow等）
+            update_stats (dict): 更新统计信息
+            progress_callback (callable): 进度回调函数
+            update_queue (Queue): 共享队列，用于更新财务数据的时间
+        """
+        while not (producer_done.is_set() and data_queue.empty()):
+            try:
+                code, data, year = data_queue.get(timeout=5)
+                try:
+                    data_saver(data)
+                    update_stats["updated"] += 1
+                    # 将更新信息放入共享队列
+                    update_queue.put((code, year, data_type))
+                except Exception as e:
+                    logging.exception(f"保存数据失败：{e}")
+                    update_stats["failed"] += 1
+                    update_stats["failed_codes"].append(code)
+                finally:
+                    data_queue.task_done()
+                    if progress_callback:
+                        progress_callback()
+            except queue.Empty:
+                logging.info("数据队列为空，等待数据...")
+                continue
+
+    @staticmethod
+    def _update_financial_update_time(update_queue: multiprocessing.Queue):
+        """进程：更新财务数据的更新时间
+
+        Args:
+            update_queue (Queue): 共享队列，包含需要更新的数据
+        """
+        # 在子进程中创建新的数据库连接
+        db = DatabaseManager()
+
+        try:
+            while True:
+                try:
+                    # 从队列中获取数据
+                    code, year, data_type = update_queue.get(timeout=5)
+                    # 调用数据库方法更新数据
+                    db.update_financial_update_time(
+                        pd.DataFrame([{"code": code, "year": year}]),
+                        data_type=data_type
+                    )
+                except queue.Empty:
+                    if not multiprocessing.parent_process().is_alive():
+                        logging.info("父进程已终止，更新时间进程退出")
+                        break
+                    logging.debug("财务更新时间队列为空，等待数据...")
+                    continue
+                except (ValueError, KeyError) as e:
+                    logging.error(f"数据格式错误: {e}")
+                except pd.errors.EmptyDataError:
+                    logging.error("更新数据为空")
+        except Exception as e:
+            logging.exception(f"更新财务数据时间时发生错误: {e}")
+        finally:
+            # 确保关闭数据库连接
+            db.close()
+
+    @staticmethod
+    def _update_profit_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
+                            update_queue: multiprocessing.Queue, progress_callback):
+        """更新单个股票的利润数据"""
+        producer_done = threading.Event()
+        data_queue = queue.Queue(maxsize=100)
+        update_stats = {
+            "updated": 0,
+            "failed": 0,
+            "failed_codes": []
+        }
+        db = DatabaseManager()
+
+        # 启动消费者线程
+        consumer = threading.Thread(
+            target=DataUpdateManager.__consume_financial_data,
+            kwargs={
+                'producer_done': producer_done,
+                'data_queue': data_queue,
+                'data_saver': db.save_profit_data,
+                'update_stats': update_stats,
+                'progress_callback': progress_callback,
+                'update_queue': update_queue
+            }
+        )
+        consumer.start()
+
+        try:
+            data_source = BaostockSource()
+            DataUpdateManager.__fetch_all_financial_data(
+                data_source=data_source,
+                stock_list=stock_list,
+                data_type="profit",
+                fetcher=DataUpdateManager.__fetch_profit_data,
+                start_year=start_year,
+                end_year=end_year,
+                data_queue=data_queue,
+                update_stats=update_stats,
+                progress_callback=progress_callback
+            )
+        finally:
+            # 标记生产者完成
+            producer_done.set()
+
+        # 等待消费者处理完所有数据
+        consumer.join()
+
+        return update_stats
+
+    @staticmethod
+    def _update_balance_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
+                             update_queue: multiprocessing.Queue, progress_callback):
+        """更新单个股票的资产负债表数据"""
+        producer_done = threading.Event()
+        data_queue = queue.Queue(maxsize=100)
+        update_stats = {
+            "updated": 0,
+            "failed": 0,
+            "failed_codes": []
+        }
+        db = DatabaseManager()
+
+        # 启动消费者线程
+        consumer = threading.Thread(
+            target=DataUpdateManager.__consume_financial_data,
+            kwargs={
+                'producer_done': producer_done,
+                'data_queue': data_queue,
+                'data_saver': db.save_balance_data,
+                'update_stats': update_stats,
+                'progress_callback': progress_callback,
+                'update_queue': update_queue
+            }
+        )
+        consumer.start()
+
+        try:
+            data_source = BaostockSource()
+            DataUpdateManager.__fetch_all_financial_data(
+                data_source=data_source,
+                stock_list=stock_list,
+                data_type="balance",
+                fetcher=DataUpdateManager.__fetch_balance_data,
+                start_year=start_year,
+                end_year=end_year,
+                data_queue=data_queue,
+                update_stats=update_stats,
+                progress_callback=progress_callback
+            )
+        finally:
+            # 标记生产者完成
+            producer_done.set()
+
+        # 等待消费者处理完所有数据
+        consumer.join()
+
+        return update_stats
+
+    @staticmethod
+    def _update_cashflow_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
+                              update_queue: multiprocessing.Queue, progress_callback):
+        """更新单个股票的现金流量表数据"""
+        producer_done = threading.Event()
+        data_queue = queue.Queue(maxsize=100)
+        update_stats = {
+            "updated": 0,
+            "failed": 0,
+            "failed_codes": []
+        }
+        db = DatabaseManager()
+
+        # 启动消费者线程
+        consumer = threading.Thread(
+            target=DataUpdateManager.__consume_financial_data,
+            kwargs={
+                'producer_done': producer_done,
+                'data_queue': data_queue,
+                'data_saver': db.save_cashflow_data,
+                'update_stats': update_stats,
+                'progress_callback': progress_callback,
+                'update_queue': update_queue
+            }
+        )
+        consumer.start()
+
+        try:
+            data_source = BaostockSource()
+            DataUpdateManager.__fetch_all_financial_data(
+                data_source=data_source,
+                stock_list=stock_list,
+                data_type="cashflow",
+                fetcher=DataUpdateManager.__fetch_cashflow_data,
+                start_year=start_year,
+                end_year=end_year,
+                data_queue=data_queue,
+                update_stats=update_stats,
+                progress_callback=progress_callback
+            )
+        finally:
+            # 标记生产者完成
+            producer_done.set()
+
+        # 等待消费者处理完所有数据
+        consumer.join()
+
+        return update_stats
+
+    @staticmethod
+    def _update_growth_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
+                            update_queue: multiprocessing.Queue, progress_callback):
+        """更新单个股票的成长数据"""
+        producer_done = threading.Event()
+        data_queue = queue.Queue(maxsize=100)
+        update_stats = {
+            "updated": 0,
+            "failed": 0,
+            "failed_codes": []
+        }
+        db = DatabaseManager()
+
+        # 启动消费者线程
+        consumer = threading.Thread(
+            target=DataUpdateManager.__consume_financial_data,
+            kwargs={
+                'producer_done': producer_done,
+                'data_queue': data_queue,
+                'data_saver': db.save_growth_data,
+                'data_type': 'growth',
+                'update_stats': update_stats,
+                'progress_callback': progress_callback,
+                'update_queue': update_queue
+            }
+        )
+        consumer.start()
+
+        try:
+            data_source = BaostockSource()
+            DataUpdateManager.__fetch_all_financial_data(
+                data_source=data_source,
+                stock_list=stock_list,
+                data_type="growth",
+                fetcher=DataUpdateManager.__fetch_growth_data,
+                start_year=start_year,
+                end_year=end_year,
+                data_queue=data_queue,
+                update_stats=update_stats,
+                progress_callback=progress_callback
+            )
+        finally:
+            # 标记生产者完成
+            producer_done.set()
+
+        # 等待消费者处理完所有数据
+        consumer.join()
+
+        return update_stats
+
+    @staticmethod
+    def _update_operation_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
+                               update_queue: multiprocessing.Queue, progress_callback):
+        """更新单个股票的经营数据"""
+        producer_done = threading.Event()
+        data_queue = queue.Queue(maxsize=100)
+        update_stats = {
+            "updated": 0,
+            "failed": 0,
+            "failed_codes": []
+        }
+        db = DatabaseManager()
+
+        # 启动消费者线程
+        consumer = threading.Thread(
+            target=DataUpdateManager.__consume_financial_data,
+            kwargs={
+                'producer_done': producer_done,
+                'data_queue': data_queue,
+                'data_saver': db.save_operation_data,
+                'data_type': 'operation',
+                'update_stats': update_stats,
+                'progress_callback': progress_callback,
+                'update_queue': update_queue
+            }
+        )
+        consumer.start()
+
+        try:
+            data_source = BaostockSource()
+            DataUpdateManager.__fetch_all_financial_data(
+                data_source=data_source,
+                stock_list=stock_list,
+                data_type="operation",
+                fetcher=DataUpdateManager.__fetch_operation_data,
+                start_year=start_year,
+                end_year=end_year,
+                data_queue=data_queue,
+                update_stats=update_stats,
+                progress_callback=progress_callback
+            )
+        finally:
+            # 标记生产者完成
+            producer_done.set()
+
+        # 等待消费者处理完所有数据
+        consumer.join()
+
+        return update_stats
+
+    @staticmethod
+    def _update_dupont_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
+                            update_queue: multiprocessing.Queue, progress_callback):
+        """更新单个股票的杜邦分析数据"""
+        producer_done = threading.Event()
+        data_queue = queue.Queue(maxsize=100)
+        update_stats = {
+            "updated": 0,
+            "failed": 0,
+            "failed_codes": []
+        }
+        db = DatabaseManager()
+
+        # 启动消费者线程
+        consumer = threading.Thread(
+            target=DataUpdateManager.__consume_financial_data,
+            kwargs={
+                'producer_done': producer_done,
+                'data_queue': data_queue,
+                'data_saver': db.save_dupont_data,
+                'data_type': 'dupont',
+                'update_stats': update_stats,
+                'progress_callback': progress_callback,
+                'update_queue': update_queue
+            }
+        )
+        consumer.start()
+
+        try:
+            data_source = BaostockSource()
+            DataUpdateManager.__fetch_all_financial_data(
+                data_source=data_source,
+                stock_list=stock_list,
+                data_type="dupont",
+                fetcher=DataUpdateManager.__fetch_dupont_data,
+                start_year=start_year,
+                end_year=end_year,
+                data_queue=data_queue,
+                update_stats=update_stats,
+                progress_callback=progress_callback
+            )
+        finally:
+            # 标记生产者完成
+            producer_done.set()
+
+        # 等待消费者处理完所有数据
+        consumer.join()
+
+        return update_stats
+
+    @staticmethod
+    def _update_dividend_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
+                              update_queue: multiprocessing.Queue, progress_callback):
+        """更新单个股票的分红数据"""
+        producer_done = threading.Event()
+        data_queue = queue.Queue(maxsize=100)
+        update_stats = {
+            "updated": 0,
+            "failed": 0,
+            "failed_codes": []
+        }
+        db = DatabaseManager()
+
+        # 启动消费者线程
+        consumer = threading.Thread(
+            target=DataUpdateManager.__consume_financial_data,
+            kwargs={
+                'producer_done': producer_done,
+                'data_queue': data_queue,
+                'data_saver': db.save_dividend_data,
+                'data_type': 'dividend',
+                'update_stats': update_stats,
+                'progress_callback': progress_callback,
+                'update_queue': update_queue
+            }
+        )
+        consumer.start()
+
+        try:
+            data_source = BaostockSource()
+            DataUpdateManager.__fetch_all_financial_data(
+                data_source=data_source,
+                stock_list=stock_list,
+                data_type="dividend",
+                fetcher=DataUpdateManager.__fetch_dividend_data,
+                start_year=start_year,
+                end_year=end_year,
+                data_queue=data_queue,
+                update_stats=update_stats,
+                progress_callback=progress_callback
+            )
+        finally:
+            # 标记生产者完成
+            producer_done.set()
+
+        # 等待消费者处理完所有数据
+        consumer.join()
+
+        return update_stats
+
+    @staticmethod
     def __format_financial_df(df: pd.DataFrame, numeric_columns: list) -> pd.DataFrame:
         """格式化财务数据DataFrame"""
         if df.empty:
@@ -775,99 +796,106 @@ class DataUpdateManager:
 
         return result_df
 
-    def __fetch_profit_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+    @staticmethod
+    def __fetch_profit_data(data_source, code: str, year: int, quarter: int = None) -> pd.DataFrame:
         """获取单个股票的利润数据"""
-        profit_data = self._retry_operation(
-            self.data_source.get_profit_data,
+        profit_data = DataUpdateManager._retry_operation(
+            data_source.get_profit_data,
             code=code,
             year=year,
             quarter=quarter
         )
-        profit_data = self.__format_financial_df(profit_data, [
+        profit_data = DataUpdateManager.__format_financial_df(profit_data, [
             'roeAvg', 'npMargin', 'gpMargin', 'netProfit',
             'epsTTM', 'MBRevenue', 'totalShare', 'liqaShare'
         ])
         return profit_data
 
-    def __fetch_balance_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+    @staticmethod
+    def __fetch_balance_data(data_source, code: str, year: int, quarter: int = None) -> pd.DataFrame:
         """获取单个股票的资产负债表数据"""
-        balance_data = self._retry_operation(
-            self.data_source.get_balance_data,
+        balance_data = DataUpdateManager._retry_operation(
+            data_source.get_balance_data,
             code=code,
             year=year,
             quarter=quarter
         )
-        balance_data = self.__format_financial_df(balance_data, [
+        balance_data = DataUpdateManager.__format_financial_df(balance_data, [
             'currentRatio', 'quickRatio', 'cashRatio',
             'YOYLiability', 'liabilityToAsset', 'assetToEquity'
         ])
         return balance_data
 
-    def __fetch_cashflow_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+    @staticmethod
+    def __fetch_cashflow_data(data_source, code: str, year: int, quarter: int = None) -> pd.DataFrame:
         """获取单个股票的现金流量表数据"""
-        cashflow_data = self._retry_operation(
-            self.data_source.get_cashflow_data,
+        cashflow_data = DataUpdateManager._retry_operation(
+            data_source.get_cashflow_data,
             code=code,
             year=year,
             quarter=quarter
         )
-        cashflow_data = self.__format_financial_df(cashflow_data, [
+        cashflow_data = DataUpdateManager.__format_financial_df(cashflow_data, [
             'CAToAsset', 'NCAToAsset', 'tangibleAssetToAsset',
             'ebitToInterest', 'CFOToOR', 'CFOToNP', 'CFOToGr'
         ])
         return cashflow_data
 
-    def __fetch_growth_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+    @staticmethod
+    def __fetch_growth_data(data_source, code: str, year: int, quarter: int = None) -> pd.DataFrame:
         """获取单个股票的成长数据"""
-        growth_data = self._retry_operation(
-            self.data_source.get_growth_data,
+        growth_data = DataUpdateManager._retry_operation(
+            data_source.get_growth_data,
             code=code,
             year=year,
             quarter=quarter
         )
-        growth_data = self.__format_financial_df(growth_data, [
+        growth_data = DataUpdateManager.__format_financial_df(growth_data, [
             'YOYEquity', 'YOYAsset', 'YOYNI',
             'YOYEPSBasic', 'YOYPNI'
         ])
         return growth_data
 
-    def __fetch_operation_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+    @staticmethod
+    def __fetch_operation_data(data_source, code: str, year: int, quarter: int = None) -> pd.DataFrame:
         """获取单个股票的经营数据"""
-        operation_data = self._retry_operation(
-            self.data_source.get_operation_data,
+        operation_data = DataUpdateManager._retry_operation(
+            data_source.get_operation_data,
             code=code,
             year=year,
             quarter=quarter
         )
-        operation_data = self.__format_financial_df(operation_data, [
+        operation_data = DataUpdateManager.__format_financial_df(operation_data, [
             'NRTurnRatio', 'NRTurnDays', 'INVTurnRatio',
             'INVTurnDays', 'CATurnRatio', 'AssetTurnRatio'
         ])
         return operation_data
 
-    def __fetch_dupont_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
+    @staticmethod
+    def __fetch_dupont_data(data_source, code: str, year: int, quarter: int = None) -> pd.DataFrame:
         """获取单个股票的杜邦分析数据"""
-        dupont_data = self._retry_operation(
-            self.data_source.get_dupont_data,
+        dupont_data = DataUpdateManager._retry_operation(
+            data_source.get_dupont_data,
             code=code,
             year=year,
             quarter=quarter
         )
-        dupont_data = self.__format_financial_df(dupont_data, [
+        dupont_data = DataUpdateManager.__format_financial_df(dupont_data, [
             'dupontROE', 'dupontAssetStoEquity', 'dupontAssetTurn',
             'dupontPnitoni', 'dupontNitogr', 'dupontTaxBurden',
             'dupontIntburden', 'dupontEbittogr'
         ])
         return dupont_data
 
-    def __fetch_dividend_data(self, code: str, year: int, quarter=None) -> pd.DataFrame:
+    @staticmethod
+    def __fetch_dividend_data(data_source, code: str, year: int, quarter=None) -> pd.DataFrame:
         """获取单个股票的分红数据"""
-        dividend_data = self._retry_operation(
-            self.data_source.get_dividend_data,
+        dividend_data = DataUpdateManager._retry_operation(
+            data_source.get_dividend_data,
             code=code,
             year=year,
         )
-        dividend_data = self.__format_financial_df(dividend_data, [
+        dividend_data = DataUpdateManager.__format_financial_df(dividend_data, [
             'dividCashPsBeforeTax', 'dividCashPsAfterTax',
             'dividStocksPs', 'dividCashStock', 'dividReserveToStockPs'
         ])
