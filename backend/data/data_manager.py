@@ -302,19 +302,23 @@ class DataUpdateManager:
                 logging.info("数据队列为空，等待数据...")
                 continue
 
-    def _update_financial_update_time(self, update_queue: multiprocessing.Queue):
+    @staticmethod
+    def _update_financial_update_time(update_queue: multiprocessing.Queue):
         """进程：更新财务数据的更新时间
 
         Args:
             update_queue (Queue): 共享队列，包含需要更新的数据
         """
+        # 在子进程中创建新的数据库连接
+        db = DatabaseManager()
+        
         try:
             while True:
                 try:
                     # 从队列中获取数据
-                    code, year, data_type = update_queue.get(timeout=self.QUEUE_TIMEOUT)
+                    code, year, data_type = update_queue.get(timeout=5)
                     # 调用数据库方法更新数据
-                    self.db.update_financial_update_time(
+                    db.update_financial_update_time(
                         pd.DataFrame([{"code": code, "year": year}]),
                         data_type=data_type
                     )
@@ -330,6 +334,9 @@ class DataUpdateManager:
                     logging.error("更新数据为空")
         except Exception as e:
             logging.exception(f"更新财务数据时间时发生错误: {e}")
+        finally:
+            # 确保关闭数据库连接
+            db.close()
 
     def _update_profit_data(self, stock_list: pd.DataFrame, start_year: int, end_year: int,
                             update_queue: multiprocessing.Queue, progress_callback):
@@ -341,6 +348,7 @@ class DataUpdateManager:
             "failed": 0,
             "failed_codes": []
         }
+        db = DatabaseManager()
 
         # 启动消费者线程
         consumer = threading.Thread(
@@ -348,7 +356,7 @@ class DataUpdateManager:
             kwargs={
                 'producer_done': producer_done,
                 'data_queue': data_queue,
-                'data_saver': self.db.save_profit_data,
+                'data_saver': db.save_profit_data,
                 'update_stats': update_stats,
                 'progress_callback': progress_callback,
                 'update_queue': update_queue
@@ -386,6 +394,7 @@ class DataUpdateManager:
             "failed": 0,
             "failed_codes": []
         }
+        db = DatabaseManager()
 
         # 启动消费者线程
         consumer = threading.Thread(
@@ -393,7 +402,7 @@ class DataUpdateManager:
             kwargs={
                 'producer_done': producer_done,
                 'data_queue': data_queue,
-                'data_saver': self.db.save_balance_data,
+                'data_saver': db.save_balance_data,
                 'update_stats': update_stats,
                 'progress_callback': progress_callback,
                 'update_queue': update_queue
@@ -431,6 +440,7 @@ class DataUpdateManager:
             "failed": 0,
             "failed_codes": []
         }
+        db = DatabaseManager()
 
         # 启动消费者线程
         consumer = threading.Thread(
@@ -438,7 +448,7 @@ class DataUpdateManager:
             kwargs={
                 'producer_done': producer_done,
                 'data_queue': data_queue,
-                'data_saver': self.db.save_cashflow_data,
+                'data_saver': db.save_cashflow_data,
                 'update_stats': update_stats,
                 'progress_callback': progress_callback,
                 'update_queue': update_queue
@@ -476,6 +486,7 @@ class DataUpdateManager:
             "failed": 0,
             "failed_codes": []
         }
+        db = DatabaseManager()
 
         # 启动消费者线程
         consumer = threading.Thread(
@@ -483,7 +494,7 @@ class DataUpdateManager:
             kwargs={
                 'producer_done': producer_done,
                 'data_queue': data_queue,
-                'data_saver': self.db.save_growth_data,
+                'data_saver': db.save_growth_data,
                 'data_type': 'growth',
                 'update_stats': update_stats,
                 'progress_callback': progress_callback,
@@ -522,6 +533,7 @@ class DataUpdateManager:
             "failed": 0,
             "failed_codes": []
         }
+        db = DatabaseManager()
 
         # 启动消费者线程
         consumer = threading.Thread(
@@ -529,7 +541,7 @@ class DataUpdateManager:
             kwargs={
                 'producer_done': producer_done,
                 'data_queue': data_queue,
-                'data_saver': self.db.save_operation_data,
+                'data_saver': db.save_operation_data,
                 'data_type': 'operation',
                 'update_stats': update_stats,
                 'progress_callback': progress_callback,
@@ -568,6 +580,7 @@ class DataUpdateManager:
             "failed": 0,
             "failed_codes": []
         }
+        db = DatabaseManager()
 
         # 启动消费者线程
         consumer = threading.Thread(
@@ -575,7 +588,7 @@ class DataUpdateManager:
             kwargs={
                 'producer_done': producer_done,
                 'data_queue': data_queue,
-                'data_saver': self.db.save_dupont_data,
+                'data_saver': db.save_dupont_data,
                 'data_type': 'dupont',
                 'update_stats': update_stats,
                 'progress_callback': progress_callback,
@@ -614,6 +627,7 @@ class DataUpdateManager:
             "failed": 0,
             "failed_codes": []
         }
+        db = DatabaseManager()
 
         # 启动消费者线程
         consumer = threading.Thread(
@@ -621,7 +635,7 @@ class DataUpdateManager:
             kwargs={
                 'producer_done': producer_done,
                 'data_queue': data_queue,
-                'data_saver': self.db.save_dividend_data,
+                'data_saver': db.save_dividend_data,
                 'data_type': 'dividend',
                 'update_stats': update_stats,
                 'progress_callback': progress_callback,
@@ -674,7 +688,10 @@ class DataUpdateManager:
         update_queue = multiprocessing.Queue()
 
         # 启动更新财务数据时间的进程
-        update_time_process = multiprocessing.Process(target=self._update_financial_update_time, args=(update_queue,))
+        update_time_process = multiprocessing.Process(
+            target=self._update_financial_update_time,
+            args=(update_queue,)
+        )
         update_time_process.start()
 
         # 创建进程池来并行更新不同类型的财务数据
