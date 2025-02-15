@@ -232,8 +232,8 @@ class DatabaseManager:
             self.conn.commit()
             cursor.close()
 
-    def save_stock_update_time(self, df: pd.DataFrame, adjust: str = '3'):
-        """保存股票更新时间
+    def update_stock_update_time(self, df: pd.DataFrame, adjust: str = '3'):
+        """保存股票行情数据更新时间
         
         Args:
             df: 包含code和update_time的DataFrame
@@ -248,6 +248,25 @@ class DatabaseManager:
             VALUES (%s, %s)
             ON DUPLICATE KEY UPDATE {time_field} = VALUES({time_field})
             """, (row['code'], row['update_time']))
+        self.conn.commit()
+        cursor.close()
+
+    def update_financial_update_time(self, df: pd.DataFrame, data_type: str):
+        """保存股票行情数据更新时间
+
+        Args:
+            df: 包含code和update_time的DataFrame
+            data_type: 财务数据类型 -> [dividend, dupont, growth, operation, profit, balance, cashflow]
+        """
+        cursor = self.conn.cursor()
+        column = f"update_time_{data_type}"
+
+        for _, row in df.iterrows():
+            cursor.execute(f"""
+                INSERT INTO stock_list (code, {column})
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE {column} = VALUES({column})
+                """, (row['code'], row['year']))
         self.conn.commit()
         cursor.close()
 
@@ -352,7 +371,7 @@ class DatabaseManager:
         logging.info(f"Total records updated for {code}_{adjust}: {total_records}")
 
         # 更新股票列表中的更新时间
-        self.save_stock_update_time(pd.DataFrame({'code': [code], 'update_time': [datetime.now()]}), adjust)
+        self.update_stock_update_time(pd.DataFrame({'code': [code], 'update_time': [datetime.now()]}), adjust)
 
     def get_all_update_time(self, adjust: str = '3') -> dict:
         """获取所有股票更新时间
@@ -500,3 +519,4 @@ class DatabaseManager:
                    'dividStockMarketDate', 'dividCashPsBeforeTax', 'dividCashPsAfterTax',
                    'dividStocksPs', 'dividCashStock', 'dividReserveToStockPs']
         self._save_financial_data(df, 'stock_dividend', columns)
+
