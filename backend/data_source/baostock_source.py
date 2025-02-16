@@ -15,6 +15,22 @@ import pandas as pd
 from .base import DataSource
 
 
+def ensure_connection(func):
+    """确保在执行方法前已经建立连接的装饰器
+    
+    Args:
+        func: 需要确保连接的方法
+        
+    Returns:
+        wrapper: 包装后的方法
+    """
+    def wrapper(self, *args, **kwargs):
+        if not self._connected:
+            self.connect()
+        return func(self, *args, **kwargs)
+    return wrapper
+
+
 class BaostockSource(DataSource):
     # 定义错误码
     NETWORK_ERROR_CODES = ['10002007', '10002009', '10002010']
@@ -55,11 +71,9 @@ class BaostockSource(DataSource):
     def is_connected(self) -> bool:
         return self._connected
 
+    @ensure_connection
     def get_stock_list(self) -> pd.DataFrame:
         """获取股票列表（仅上市的A股）"""
-        if not self._connected:
-            self.connect()
-
         rs = bs.query_stock_basic()
         if rs.error_code != self.SUCCESS_CODE:
             raise Exception(f"Failed to get stock list: {rs.error_msg}")
@@ -84,6 +98,7 @@ class BaostockSource(DataSource):
 
         return df
 
+    @ensure_connection
     def get_stock_data(self, code: str, start_date: str, end_date: str, period: str = 'daily',
                        adjust: str = '3') -> pd.DataFrame:
         """获取股票数据
@@ -110,9 +125,6 @@ class BaostockSource(DataSource):
             pcfNcfTTM	滚动市现率	(指定交易日的股票收盘价/指定交易日的每股现金流TTM)=(指定交易日的股票收盘价*截至当日公司总股本)/现金以及现金等价物净增加额TTM
             isST	是否ST股，1是，0否
         """
-        if not self._connected:
-            self.connect()
-
         fields = 'date,code,open,high,low,close,preclose,volume,amount,turn,tradestatus,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,isST'
 
         rs = bs.query_history_k_data_plus(code, fields=fields, start_date=start_date, end_date=end_date,
@@ -171,27 +183,22 @@ class BaostockSource(DataSource):
 
         return df[required_columns]  # 只返回必须的列，并按照固定顺去配置
 
+    @ensure_connection
     def get_sz50(self):
         """获取上证50股票"""
-        if not self._connected:
-            self.connect()
-
         return bs.query_sz50_stocks().get_data()
 
+    @ensure_connection
     def get_hs300(self):
         """获取沪深300股票"""
-        if not self._connected:
-            self.connect()
-
         return bs.query_hs300_stocks().get_data()
 
+    @ensure_connection
     def get_zz500(self):
         """获取中证500股票"""
-        if not self._connected:
-            self.connect()
-
         return bs.query_zz500_stocks().get_data()
 
+    @ensure_connection
     def get_profit_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
         """获取上市公司利润表数据
         
@@ -209,8 +216,6 @@ class BaostockSource(DataSource):
             liqaShare	流通股本
 
         """
-        if not self._connected:
-            self.connect()
         if quarter:
             return bs.query_profit_data(code=code, year=year, quarter=quarter).get_data()
         else:
@@ -220,6 +225,7 @@ class BaostockSource(DataSource):
             quarter_4 = bs.query_profit_data(code=code, year=year, quarter=4).get_data()
             return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
 
+    @ensure_connection
     def get_balance_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
         """获取上市公司资产负债表数据
         
@@ -235,9 +241,6 @@ class BaostockSource(DataSource):
             assetToEquity	权益乘数	资产总额/股东权益总额=1/(1-资产负债率)
         
         """
-        if not self._connected:
-            self.connect()
-
         if quarter:
             return bs.query_balance_data(code=code, year=year, quarter=quarter).get_data()
         else:
@@ -247,6 +250,7 @@ class BaostockSource(DataSource):
             quarter_4 = bs.query_balance_data(code=code, year=year, quarter=4).get_data()
             return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
 
+    @ensure_connection
     def get_cashflow_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
         """获取上市公司现金流量表数据
         
@@ -263,9 +267,6 @@ class BaostockSource(DataSource):
             CFOToGr	经营性现金净流量除以营业总收入	
         
         """
-        if not self._connected:
-            self.connect()
-
         if quarter:
             return bs.query_cash_flow_data(code=code, year=year, quarter=quarter).get_data()
         else:
@@ -275,6 +276,7 @@ class BaostockSource(DataSource):
             quarter_4 = bs.query_cash_flow_data(code=code, year=year, quarter=4).get_data()
             return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
 
+    @ensure_connection
     def get_dupont_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
         """获取上市公司杜邦分析数据
         
@@ -292,9 +294,6 @@ class BaostockSource(DataSource):
             dupontEbittogr	息税前利润/营业总收入，反映企业经营利润率，是企业经营获得的可供全体投资人（股东和债权人）分配的盈利占企业全部营收收入的百分比	
             
         """
-        if not self._connected:
-            self.connect()
-
         if quarter:
             return bs.query_dupont_data(code=code, year=year, quarter=quarter).get_data()
         else:
@@ -304,6 +303,7 @@ class BaostockSource(DataSource):
             quarter_4 = bs.query_dupont_data(code=code, year=year, quarter=4).get_data()
             return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
 
+    @ensure_connection
     def get_growth_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
         """获取上市公司成长能力数据
         
@@ -318,9 +318,6 @@ class BaostockSource(DataSource):
             YOYPNI	归属母公司股东净利润同比增长率	(本期归属母公司股东净利润-上年同期归属母公司股东净利润)/上年同期归属母公司股东净利润的绝对值*100%
         
         """
-        if not self._connected:
-            self.connect()
-
         if quarter:
             return bs.query_growth_data(code=code, year=year, quarter=quarter).get_data()
         else:
@@ -330,6 +327,7 @@ class BaostockSource(DataSource):
             quarter_4 = bs.query_growth_data(code=code, year=year, quarter=4).get_data()
             return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
 
+    @ensure_connection
     def get_operation_data(self, code: str, year: int, quarter: int = None) -> pd.DataFrame:
         """获取上市公司营运能力数据
         
@@ -345,9 +343,6 @@ class BaostockSource(DataSource):
             AssetTurnRatio	总资产周转率	营业总收入/[(期初资产总额+期末资产总额)/2]
         
         """
-        if not self._connected:
-            self.connect()
-
         if quarter:
             return bs.query_operation_data(code=code, year=year, quarter=quarter).get_data()
         else:
@@ -357,6 +352,7 @@ class BaostockSource(DataSource):
             quarter_4 = bs.query_operation_data(code=code, year=year, quarter=4).get_data()
             return pd.concat([quarter_1, quarter_2, quarter_3, quarter_4])
 
+    @ensure_connection
     def get_dividend_data(self, code: str, year: int, year_type: str = "report") -> pd.DataFrame:
         """获取上市公司股息分红数据
 
@@ -382,14 +378,9 @@ class BaostockSource(DataSource):
             dividReserveToStockPs	每股转增资本
 
         """
-        if not self._connected:
-            self.connect()
-
         return bs.query_dividend_data(code=code, year=year, yearType=year_type).get_data()
 
+    @ensure_connection
     def get_trading_calendar(self, start_date: str = None, end_date: str = None) -> pd.DataFrame:
         """获取交易日历数据"""
-        if not self._connected:
-            self.connect()
-
         return bs.query_trade_dates(start_date=start_date, end_date=end_date).get_data()

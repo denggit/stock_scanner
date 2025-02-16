@@ -17,15 +17,16 @@ from backend.utils.logger import setup_logger
 logger = setup_logger("update_financial_data", log_level=logging.WARNING, set_root_logger=True)
 
 if __name__ == "__main__":
+    start_year = 2020
+    end_year = 2024
     data_manager = DataUpdateManager()
 
     try:
-
         logger.info("Starting financial data update...")
 
         data_manager.update_all_financial_data(
-            start_year=2020,
-            end_year=2024,
+            start_year=start_year,
+            end_year=end_year,
         )
 
         logger.info("Financial data update completed successfully")

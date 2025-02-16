@@ -227,8 +227,8 @@ class DataUpdateManager:
             start_year: 开始年份
             end_year: 结束年份（默认为当前年份）
         """
-        if end_year is None:
-            end_year = dt.datetime.now().year
+        if end_year is None or end_year > dt.date.today().year:
+            end_year = dt.date.today().year
 
         stock_list = self.db.get_stock_list()
         total_stocks = len(stock_list)
@@ -316,6 +316,7 @@ class DataUpdateManager:
                     # 从队列获取更新信号
                     msg = progress_queue.get(timeout=5)
                     if msg == "COMPLETE":
+                        # 但这里目前是不会运行到的，因为有7个不同的进程同时发送queue过来，等progress_done.is_set()再退出
                         break
                     pbar.update(1)
                 except queue.Empty:
@@ -326,8 +327,10 @@ class DataUpdateManager:
     def __fetch_all_financial_data(data_source: DataSource, stock_list: pd.DataFrame, data_type: str, fetcher,
                                    start_year: int, end_year: int,
                                    data_queue: queue.Queue, update_stats: dict,
+                                   update_queue: multiprocessing.Queue = None,
                                    progress_queue: multiprocessing.Queue = None):
         """财务数据生产者：通过fetcher来获取每一只股票的财务数据"""
+        current_year = dt.date.today().year
         for _, row in stock_list.iterrows():
             code, updated_year = row.code, row.get(f"update_time_{data_type}")
             try:
@@ -344,6 +347,12 @@ class DataUpdateManager:
                         update_stats["updated"] += 1
                     else:
                         logging.warning(f"该数据为空: {code}_{year}_{data_type}")
+                        # 尽管数据为空也已经更新过了
+                        if year < current_year:
+                            update_queue.put((code, year, data_type))
+                        else:
+                            # 避免前一年的季度数据还未更新
+                            update_queue.put((code, year - 1, data_type))
                     if progress_queue:
                         progress_queue.put(1)
             except Exception as e:
@@ -465,6 +474,7 @@ class DataUpdateManager:
                 end_year=end_year,
                 data_queue=data_queue,
                 update_stats=update_stats,
+                update_queue=update_queue,
                 progress_queue=progress_queue
             )
         finally:
@@ -515,6 +525,7 @@ class DataUpdateManager:
                 end_year=end_year,
                 data_queue=data_queue,
                 update_stats=update_stats,
+                update_queue=update_queue,
                 progress_queue=progress_queue
             )
         finally:
@@ -565,6 +576,7 @@ class DataUpdateManager:
                 end_year=end_year,
                 data_queue=data_queue,
                 update_stats=update_stats,
+                update_queue=update_queue,
                 progress_queue=progress_queue
             )
         finally:
@@ -615,6 +627,7 @@ class DataUpdateManager:
                 end_year=end_year,
                 data_queue=data_queue,
                 update_stats=update_stats,
+                update_queue=update_queue,
                 progress_queue=progress_queue
             )
         finally:
@@ -665,6 +678,7 @@ class DataUpdateManager:
                 end_year=end_year,
                 data_queue=data_queue,
                 update_stats=update_stats,
+                update_queue=update_queue,
                 progress_queue=progress_queue
             )
         finally:
@@ -715,6 +729,7 @@ class DataUpdateManager:
                 end_year=end_year,
                 data_queue=data_queue,
                 update_stats=update_stats,
+                update_queue=update_queue,
                 progress_queue=progress_queue
             )
         finally:
@@ -765,6 +780,7 @@ class DataUpdateManager:
                 end_year=end_year,
                 data_queue=data_queue,
                 update_stats=update_stats,
+                update_queue=update_queue,
                 progress_queue=progress_queue
             )
         finally:
