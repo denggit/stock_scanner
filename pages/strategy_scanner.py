@@ -648,13 +648,8 @@ def main():
 
         elif strategy == "放量上涨策略":
             st.subheader("放量上涨策略参数配置")
-            col1, col2 = st.columns(2)
-            with col1:
-                params["volume_up_days"] = st.number_input("持续放量天数", min_value=1, value=3, max_value=10,
-                                                           help="持续放量天数")
-            with col2:
-                params["price_up_days"] = st.number_input("持续上涨天数", min_value=1, value=3, max_value=10,
-                                                          help="持续上涨天数")
+            params["continuous_days"] = st.number_input("量价齐升天数", min_value=1, value=3, max_value=10,
+                                                        help="持续量价齐升天数")
 
     # 主界面
     col1, col2 = st.columns([1, 4])  # 创建两列，比例为1:4

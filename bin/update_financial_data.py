@@ -17,6 +17,7 @@ from backend.utils.logger import setup_logger
 logger = setup_logger("update_financial_data", log_level=logging.INFO, set_root_logger=True)
 
 if __name__ == "__main__":
+    """没Wi-Fi不要跑！！！花费时间很长！！！流量很多！！！"""
     start_year = 2020
     end_year = 2024
     data_manager = DataUpdateManager()
