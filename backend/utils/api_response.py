@@ -14,6 +14,14 @@ import pandas as pd
 
 
 def convert_to_python_types(obj: Any) -> Any:
+    """将各种数据类型转换为Python原生类型
+    
+    Args:
+        obj: 任意类型的输入对象
+        
+    Returns:
+        转换后的Python原生类型对象
+    """
     if isinstance(obj, dict):
         return {k: convert_to_python_types(v) for k, v in obj.items()}
     elif isinstance(obj, list):
@@ -26,6 +34,8 @@ def convert_to_python_types(obj: Any) -> Any:
         return bool(obj)
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
+    elif isinstance(obj, pd.DataFrame):
+        return obj.to_dict('records')
     elif pd.isna(obj):
         return None
     return obj

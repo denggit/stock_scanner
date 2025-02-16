@@ -58,7 +58,7 @@ def main():
         strategy = st.selectbox(
             "选择策略",
             ["均线回踩策略", "突破策略", "波段交易策略", "扫描翻倍股", "长期上涨策略", "头肩底形态策略",
-             "爆发式选股策略"]
+             "爆发式选股策略", "放量上涨策略"]
         )
         # 股票池选择
         stock_pool = st.selectbox(
@@ -646,6 +646,16 @@ def main():
 
             params['weights'] = weights
 
+        elif strategy == "放量上涨策略":
+            st.subheader("放量上涨策略参数配置")
+            col1, col2 = st.columns(2)
+            with col1:
+                params["volume_up_days"] = st.number_input("持续放量天数", min_value=1, value=3, max_value=10,
+                                                           help="持续放量天数")
+            with col2:
+                params["price_up_days"] = st.number_input("持续上涨天数", min_value=1, value=3, max_value=10,
+                                                          help="持续上涨天数")
+
     # 主界面
     col1, col2 = st.columns([1, 4])  # 创建两列，比例为1:4
     with col1:
@@ -694,7 +704,10 @@ def main():
 
         if results:
             # 将结果转换为DataFrame
-            df = pd.DataFrame(results)
+            if isinstance(results, pd.DataFrame):
+                df = results
+            else:
+                df = pd.DataFrame(results)
 
             # 显示统计信息
             st.subheader(f"扫描结果统计，耗时 {end_time - start_time}")

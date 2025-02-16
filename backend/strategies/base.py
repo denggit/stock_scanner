@@ -57,7 +57,7 @@ class BaseStrategy(ABC):
         return "\n".join(desc)
 
     @abstractmethod
-    def generate_signal(self, data: pd.DataFrame) -> pd.Series:
+    def generate_signal(self, data: pd.DataFrame) -> pd.Series | pd.DataFrame:
         """
         生成交易信号
 

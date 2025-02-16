@@ -345,6 +345,8 @@ class DataUpdateManager:
             code, updated_year = row.code, row.get(f"update_time_{data_type}")
             try:
                 for year in range(start_year, end_year + 1):
+                    # 如果当天停止重新扫描就用这个，省时间
+                    # if updated_year is not None and year <= updated_year:
                     if updated_year is not None and year < updated_year:
                         # 如果已经这一年已经更新过也可以覆盖更新，避免遗漏季度，但过去的年份无需重新更新
                         logging.debug(f"该数据过去已更新，无需重复更新：{code}_{year}_{data_type}")
