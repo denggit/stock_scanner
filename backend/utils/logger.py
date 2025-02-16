@@ -40,7 +40,7 @@ def setup_logger(name: str, log_dir: str = "logs", log_level=logging.INFO, set_r
 
     # 设置日志格式
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        '%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s - %(message)s'
     )
     file_handler.setFormatter(formatter)
     console_handler.setFormatter(formatter)

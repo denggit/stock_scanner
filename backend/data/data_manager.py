@@ -74,6 +74,9 @@ class DataUpdateManager:
                 logging.warning(
                     f"Operation {operation.__name__} with params {kwargs} failed: {e}. "
                     f"Retrying in {retry_delay} seconds...")
+                if i == max_retries - 1:
+                    logging.exception(f"Operation {operation.__name__} with params {kwargs} failed: \n{e}.")
+
                 time.sleep(retry_delay)
         raise Exception("Operation failed after multiple retries")
 
@@ -110,7 +113,10 @@ class DataUpdateManager:
         # 启动消费者线程
         consumer = threading.Thread(
             target=self._consume_stock_data,
-            args=(update_stats, progress_callback)
+            kwargs={
+                'update_stats': update_stats,
+                'progress_callback': progress_callback
+            }
         )
         consumer.start()
 
@@ -179,7 +185,7 @@ class DataUpdateManager:
                         progress_callback()
                     self.data_queue.task_done()
             except queue.Empty:
-                logging.info("队列为空，等待数据...")
+                logging.debug("队列为空，等待数据...")
                 continue
 
     def __fetch_stock_data(self, code: str, trading_calendar: pd.DataFrame, force_full_update: bool = False,
@@ -245,7 +251,11 @@ class DataUpdateManager:
         # 启动进度监听线程
         progress_thread = threading.Thread(
             target=self._handle_progress_updates,
-            args=(progress_queue, total_updates, progress_done)
+            kwargs={
+                "progress_queue": progress_queue,
+                "total": total_updates,
+                "progress_done": progress_done
+            }
         )
         progress_thread.start()
 
@@ -254,7 +264,7 @@ class DataUpdateManager:
         # 启动更新财务数据时间的进程
         update_time_process = multiprocessing.Process(
             target=self._update_financial_update_time,
-            args=(update_queue,)
+            kwargs={"update_queue": update_queue}
         )
         update_time_process.start()
 
@@ -337,16 +347,17 @@ class DataUpdateManager:
                 for year in range(start_year, end_year + 1):
                     if updated_year is not None and year < updated_year:
                         # 如果已经这一年已经更新过也可以覆盖更新，避免遗漏季度，但过去的年份无需重新更新
-                        logging.info(f"该数据过去已更新，无需重复更新：{code}_{year}_{data_type}")
+                        logging.debug(f"该数据过去已更新，无需重复更新：{code}_{year}_{data_type}")
                         if progress_queue:
                             progress_queue.put(1)
                         continue
                     profit_data = fetcher(data_source, code, year)
                     if not profit_data.empty:
                         data_queue.put((code, profit_data, year))
-                        update_stats["updated"] += 1
+                        with threading.Lock():
+                            update_stats["updated"] += 1
                     else:
-                        logging.warning(f"该数据为空: {code}_{year}_{data_type}")
+                        logging.debug(f"该数据为空: {code}_{year}_{data_type}")
                         # 尽管数据为空也已经更新过了
                         if year < current_year:
                             update_queue.put((code, year, data_type))
@@ -357,10 +368,12 @@ class DataUpdateManager:
                         progress_queue.put(1)
             except Exception as e:
                 logging.exception(f"获取股票 {code} 利润表数据失败: {e}")
-                update_stats["failed"] += 1
-                update_stats["failed_codes"].append(code)
+                with threading.Lock():
+                    update_stats["failed"] += 1
+                    update_stats["failed_codes"].append(code)
                 if progress_queue:
                     progress_queue.put(1)
+        logging.info(f"{data_type}所有数据已获取完毕")
 
     @staticmethod
     def __consume_financial_data(producer_done: threading.Event, data_queue: queue.Queue,
@@ -383,21 +396,24 @@ class DataUpdateManager:
                 code, data, year = data_queue.get(timeout=5)
                 try:
                     data_saver(data)
-                    update_stats["updated"] += 1
-                    logging.info(f"成功保存 {code} {year}年 {data_type} 数据")
+                    with threading.Lock():
+                        update_stats["updated"] += 1
+                    logging.debug(f"成功保存 {code} {year}年 {data_type} 数据")
                     # 将更新信息放入共享队列
                     update_queue.put((code, year, data_type))
                 except Exception as e:
                     logging.exception(f"保存数据失败：{e}")
-                    update_stats["failed"] += 1
-                    update_stats["failed_codes"].append(code)
+                    with threading.Lock():
+                        update_stats["failed"] += 1
+                        update_stats["failed_codes"].append(code)
                 finally:
                     data_queue.task_done()
                     if progress_queue:
                         progress_queue.put(1)
             except queue.Empty:
-                logging.info(f"{data_type}数据队列为空，等待数据...")
+                logging.debug(f"{data_type}数据队列为空，等待数据...")
                 continue
+        logging.info(f"{data_type}所有数据已消费完毕")
 
     @staticmethod
     def _update_financial_update_time(update_queue: multiprocessing.Queue):

@@ -534,7 +534,7 @@ class DatabaseManager:
         # 记录 NaN 值的数量
         nan_count = df.isna().sum()
         if nan_count.any():
-            logging.info(f"在 {table_name} 表中发现 NaN 值:\n{nan_count[nan_count > 0]}")
+            logging.debug(f"在 {table_name} 表中发现 NaN 值:\n{nan_count[nan_count > 0]}")
         
         # 将所有数值列的 NaN 转换为 None
         numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns

@@ -14,7 +14,7 @@ dotenv.load_dotenv()
 from backend.data.data_manager import DataUpdateManager
 from backend.utils.logger import setup_logger
 
-logger = setup_logger("update_financial_data", log_level=logging.WARNING, set_root_logger=True)
+logger = setup_logger("update_financial_data", log_level=logging.INFO, set_root_logger=True)
 
 if __name__ == "__main__":
     start_year = 2020
