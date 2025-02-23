@@ -35,7 +35,7 @@ def convert_to_python_types(obj: Any) -> Any:
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
     elif isinstance(obj, pd.DataFrame):
-        return obj.to_dict('records')
+        return obj.to_dict('hrecords')
     elif pd.isna(obj):
         return None
     return obj
