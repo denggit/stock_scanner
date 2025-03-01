@@ -676,13 +676,13 @@ def main():
 
             if results:
                 st.session_state.scan_results = {
-                    'backtest_results': results,
+                    'results': results,
                     'start_time': start_time,
                     'end_time': end_time
                 }
             else:
                 st.session_state.scan_results = {
-                    'backtest_results': None,
+                    'results': None,
                     'start_time': start_time,
                     'end_time': end_time
                 }
@@ -692,7 +692,7 @@ def main():
 
     # 显示结果
     if st.session_state.scan_results:
-        results = st.session_state.scan_results['backtest_results']
+        results = st.session_state.scan_results['results']
         start_time = st.session_state.scan_results['start_time']
         end_time = st.session_state.scan_results['end_time']
         st.session_state.scan_results = None
@@ -803,7 +803,7 @@ def main():
             )
 
             # 创建必要的目录
-            results_dir = os.path.join(os.getcwd(), "backtest_results", datetime.today().strftime("%Y%m%d"))
+            results_dir = os.path.join(os.getcwd(), "results", datetime.today().strftime("%Y%m%d"))
             ensure_dir(results_dir)
 
             # 设置文件路径

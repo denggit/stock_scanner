@@ -4,8 +4,7 @@
 @Author     : Zijun Deng
 @Date       : 2/23/25 10:00 PM
 @File       : factor_generator.py
-@Description: 实现因子注册机制，支持动态加载因子类（如FactorMomentum）
-
+@Description: 建立基础因子库，实现因子注册机制，支持动态加载因子
 
 设计要点：
 1. 性能优化 - 因子并行计算：使用Dask或Ray实现跨CPU核的因子并行计算
