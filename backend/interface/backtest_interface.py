@@ -49,7 +49,7 @@ async def run_backtest(
             params=params,
         )
         if result is None:
-            raise HTTPException(status_code=404, detail="No backtest results found")
+            raise HTTPException(status_code=404, detail="No backtest backtest_results found")
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -57,13 +57,13 @@ async def run_backtest(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
-@router.get("/results/{backtest_id}")
+@router.get("/backtest_results/{backtest_id}")
 async def get_backtest_results(backtest_id: str):
     """获取回测结果"""
     try:
         result = await backtest_service.get_backtest_results(backtest_id)
         if result is None:
-            raise HTTPException(status_code=404, detail=f"No results found for backtest ID: {backtest_id}")
+            raise HTTPException(status_code=404, detail=f"No backtest_results found for backtest ID: {backtest_id}")
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

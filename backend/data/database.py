@@ -14,13 +14,13 @@ import pandas as pd
 import pymysql as mysql
 import numpy as np
 
-from backend.config.database import Config
+from backend.configs.database.database import config
 
 
 class DatabaseManager:
 
     def __init__(self):
-        self.config = Config()
+        self.config = config
         self.conn = self._create_connection()
         self._init_database()
 

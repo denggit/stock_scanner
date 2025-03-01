@@ -1,0 +1,13 @@
+name: "均线回踩策略"
+description: "股价回踩均线且符合多重技术条件的交易策略"
+params:
+  ma_period: 20
+  lookback_period: 10
+  price_margin: 0.01
+  volume_ratio: 1.5
+  min_pullback_count: 2
+  weights:
+    price: 0.4
+    volume: 0.3
+    frequency: 0.3
+factor_dependencies: ["MA", "VolumeMA"]

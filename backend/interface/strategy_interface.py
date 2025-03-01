@@ -30,7 +30,7 @@ async def scan(request: ScanRequest):
     try:
         result = await strategy_service.scan_stocks(strategy=request.strategy, params=request.params)
         if result is None:
-            raise HTTPException(status_code=404, detail="No results found")
+            raise HTTPException(status_code=404, detail="No backtest_results found")
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
