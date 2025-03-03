@@ -149,7 +149,7 @@ class FactorAnalyzer:
                             ic = aligned_factors.corr(aligned_returns, method='spearman')
                         else:
                             ic = aligned_factors.corr(aligned_returns, method='pearson')
-                        
+
                         ic_series[date] = ic
                         valid_dates += 1
                     except Exception as e:
@@ -157,7 +157,7 @@ class FactorAnalyzer:
 
                 # 存储每日IC值
                 daily_ic[period] = ic_series.dropna()
-                
+
                 # 只输出有效IC日期总数
                 print(f"周期 {period} 共有 {valid_dates} 个有效交易日进行了IC计算")
 
@@ -693,70 +693,82 @@ class FactorAnalyzer:
         print("\n" + "=" * 50)
         print("因子有效性分析摘要")
         print("=" * 50)
-        
+
         try:
             # ====== IC分析结果解读 ======
             print("\n【IC分析结果】(Information Coefficient，因子预测能力)")
             print("-" * 50)
-            
+
             if self.ic_series is not None and not self.ic_series.empty:
-                print(f"因子IC均值:", end=' ')
-                for period in self.ic_series.index:
-                    print(f"{period}: {self.ic_series.loc[period, 'ic']:.4f}", end='  ')
-                
-                print("\n\nIC为正比例:", end=' ')
-                for period in self.ic_series.index:
-                    print(f"{period}: {self.ic_series.loc[period, 'pos_rate']:.2%}", end='  ')
-                
-                print("\n\nIC绝对值均值:", end=' ')
-                for period in self.ic_series.index:
-                    print(f"{period}: {self.ic_series.loc[period, 'abs_ic']:.4f}", end='  ')
-                
-                print("\n\n* IC解读: 绝对值越大表示预测能力越强，通常>0.05认为有效")
+                # 格式化输出IC统计表
+                ic_table = pd.DataFrame({
+                    '周期': self.ic_series.index,
+                    'IC均值': self.ic_series['ic'].map('{:.4f}'.format),
+                    'IC为正比例': self.ic_series['pos_rate'].map('{:.2%}'.format),
+                    'IC绝对值均值': self.ic_series['abs_ic'].map('{:.4f}'.format)
+                }).set_index('周期')
+
+                print("IC统计表：")
+                print(ic_table)
+
+                # 提供总体建议
+                print("\n总体建议：")
+                if self.ic_series['ic'].abs().mean() > 0.05:
+                    print("  - 该因子整体预测能力较强，可以考虑使用")
+                else:
+                    print("  - 该因子整体预测能力较弱，建议进一步优化或结合其他因子使用")
+
+                if self.ic_series['pos_rate'].mean() > 0.5:
+                    print("  - 因子方向总体正确，无需调整")
+                else:
+                    print("  - 因子方向可能存在问题，建议检查因子计算逻辑或考虑反转因子方向")
+
+                print("\n* IC解读: IC均值的绝对值越大表示预测能力越强，通常>0.05认为有效")
                 print("* IC为正比例: >50%表示因子方向正确")
+                print("* IC绝对值均值越大，如果IC为正比例远大于50%，因子与收益的相关性较强，否则无效")
             else:
                 print("未能计算有效IC值，请检查数据")
-            
+
             # ====== 分组收益结果解读 ======
             print("\n\n【分组收益分析】(按因子值分组后各组平均收益)")
             print("-" * 50)
-            
+
             if self.group_returns is not None and not self.group_returns.empty:
                 # 打印格式化的分组收益表
                 pd.set_option('display.float_format', '{:.2%}'.format)
                 print(self.group_returns)
                 pd.reset_option('display.float_format')
-                
+
                 # 提取关键信息并解读
                 if 'long_short' in self.group_returns.index:
                     print("\n多空组合收益:", end=' ')
                     for col in self.group_returns.columns:
                         print(f"{col}: {self.group_returns.loc['long_short', col]:.2%}", end='  ')
-                
+
                 print("\n\n* 分组解读: 若高分位组收益显著高于低分位组，表明因子有区分能力")
                 print("* 多空组合: 顶层组减底层组的收益，越大表示区分能力越强")
             else:
                 print("未能计算有效分组收益，请检查数据")
-            
+
             # ====== 胜率分析结果解读 ======
             win_rates = self.calculate_win_rate()
             print("\n\n【胜率分析】(收益为正的比例)")
             print("-" * 50)
-            
+
             if win_rates is not None and not win_rates.empty:
                 pd.set_option('display.float_format', '{:.2%}'.format)
                 print(win_rates)
                 pd.reset_option('display.float_format')
-                
+
                 print("\n* 胜率解读: 顶层组胜率>55%通常认为因子有效")
             else:
                 print("未能计算有效胜率，请检查数据")
-            
+
         except Exception as e:
             print(f"打印摘要时出错: {e}")
             import traceback
             traceback.print_exc()
-        
+
         print("\n" + "=" * 50)
 
         # 绘图，添加异常处理
@@ -764,12 +776,12 @@ class FactorAnalyzer:
             self.plot_ic_series()
         except Exception as e:
             print(f"绘制IC序列时出错: {e}")
-            
+
         try:
             self.plot_quantile_returns()
         except Exception as e:
             print(f"绘制分位数收益时出错: {e}")
-            
+
         try:
             self.plot_cumulative_returns()
         except Exception as e:
@@ -798,15 +810,16 @@ def analyze_single_factor(factor_data: Union[pd.Series, pd.DataFrame, Dict[str, 
         因子分析器对象
     """
     # 判断是否为多股票数据
-    is_panel_data = isinstance(factor_data, dict) or (isinstance(factor_data, pd.DataFrame) and factor_data.shape[1] > 1)
+    is_panel_data = isinstance(factor_data, dict) or (
+                isinstance(factor_data, pd.DataFrame) and factor_data.shape[1] > 1)
 
     if is_panel_data:
         # 处理多只股票数据的情况
-        
+
         # 处理因子数据已经是面板格式的情况
         if isinstance(factor_data, pd.DataFrame) and factor_data.shape[1] > 1:
             factor_panel = factor_data
-            
+
             # 如果需要，转换price_data为面板格式
             if isinstance(price_data, dict) and all(isinstance(df, pd.DataFrame) for df in price_data.values()):
                 # 确保所有DataFrame都使用日期索引
@@ -815,16 +828,16 @@ def analyze_single_factor(factor_data: Union[pd.Series, pd.DataFrame, Dict[str, 
                     if date_col in df.columns and not isinstance(df.index, pd.DatetimeIndex):
                         df.set_index(pd.to_datetime(df[date_col]), inplace=True)
                     all_dates.update(df.index)
-                
+
                 date_index = pd.DatetimeIndex(sorted(all_dates))
                 price_panel = {'close': pd.DataFrame(index=date_index)}
-                
+
                 for code, df in price_data.items():
                     price_panel['close'][code] = df['close']
             else:
                 # 如果price_data已经是面板格式
                 price_panel = price_data
-                
+
         # 处理因子数据是字典格式的情况
         else:
             # 第一步：获取所有日期
@@ -856,7 +869,7 @@ def analyze_single_factor(factor_data: Union[pd.Series, pd.DataFrame, Dict[str, 
                     # 如果价格数据已经使用日期索引
                     temp_series = series.copy()
                     temp_series.index = pd.to_datetime(temp_series.index)
-                    
+
                 # 添加到面板
                 factor_panel[code] = temp_series
 
@@ -918,7 +931,7 @@ if __name__ == "__main__":
 
     # 创建股票数据获取器
     fetcher = StockDataFetcher()
-    
+
     # 获取所有注册的因子
     try:
         factors = get_registered_factors()
@@ -927,53 +940,54 @@ if __name__ == "__main__":
         print(f"获取因子时出错: {e}")
         # 使用备用方案
         factors = {}
-    
+
     # 准备股票池和日期范围 - 增加股票数量以便更好地进行分组
-    stock_codes = ["sh.605300", "sz.300490", "sh.603336", "sh.600519", "sz.000858", 
+    stock_codes = ["sh.605300", "sz.300490", "sh.603336", "sh.600519", "sz.000858",
                    "sh.601398", "sz.000651", "sh.601318", "sz.000333", "sh.600036"]
     start_date = "2022-01-01"
     end_date = "2023-03-01"
-    
+
     print(f"分析周期: {start_date} 至 {end_date}")
     print(f"股票样本: {stock_codes}")
-    
+
     # 获取股票数据并计算因子
     price_data = {}
     factor_values = {}
     valid_stocks = 0
-    
+
     for code in stock_codes:
         try:
             # 获取股票数据
             df = fetcher.fetch_stock_data(code=code, start_date=start_date, end_date=end_date)
-            
+
             if df is None or df.empty:
                 print(f"警告: 无法获取股票 {code} 的数据")
                 continue
-                
+
             valid_stocks += 1
             price_data[code] = df
-            
+
             # 计算因子 - 使用更简单可靠的移动平均因子作为示例
             df['ma5'] = df['close'].rolling(5).mean()
             df['ma20'] = df['close'].rolling(20).mean()
             factor_values[code] = df['ma5'] / df['ma20']  # MA比值作为示例因子
         except Exception as e:
             print(f"处理股票 {code} 时出错: {e}")
-    
+
     print(f"成功处理 {valid_stocks} 只股票数据")
-    
+
     # 对因子进行有效性分析
     try:
         print("\n开始因子有效性分析...")
         analyzer = analyze_single_factor(
-            factor_data=factor_values, 
-            price_data=price_data, 
-            factor_name='MA5/MA20', 
+            factor_data=factor_values,
+            price_data=price_data,
+            factor_name='MA5/MA20',
             date_col='trade_date'
         )
-        
+
     except Exception as e:
         print(f"因子分析过程中出错: {e}")
         import traceback
+
         traceback.print_exc()
