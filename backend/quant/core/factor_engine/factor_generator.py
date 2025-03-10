@@ -82,9 +82,9 @@ class VolatilityFactors(BaseFactor):
 
     @BaseFactor.register_factor(name='volatility_1m')
     @staticmethod
-    def volatility_1m(returns: pd.Series) -> pd.Series:
+    def volatility_1m(pct_chg: pd.Series) -> pd.Series:
         """1个月历史波动率"""
-        return returns.rolling(21).std() * np.sqrt(252)
+        return pct_chg.rolling(21).std() * np.sqrt(252)
 
     @BaseFactor.register_factor(name='parkinson_volatility')
     @staticmethod

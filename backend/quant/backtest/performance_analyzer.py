@@ -166,7 +166,7 @@ class FactorAnalyzer:
                             ic = aligned_factors.corr(aligned_returns, method='spearman')
                         else:
                             ic = aligned_factors.corr(aligned_returns, method='pearson')
-                        
+
                         ic_series[date] = ic
                         valid_dates += 1
                     except Exception as e:
@@ -186,7 +186,7 @@ class FactorAnalyzer:
                     ic_std = ic_series.std()
                     ic_mean = ic_series.mean()
                     ic_ir = ic_mean / ic_std if ic_std != 0 else np.nan  # 处理零标准差情况
-                    
+
                     ic_summary[period] = {
                         'ic': ic_mean,
                         'ic_std': ic_std,
@@ -666,23 +666,44 @@ class FactorAnalyzer:
         # 汇总报告
         if self.is_panel_data:
             # 多只股票数据的报告
+            
+            # 更灵活地选择代表周期：优先使用20日，否则使用第一个可用周期
+            available_periods = self.ic_series.index.tolist()
+            representative_period = 'return_20d' if 'return_20d' in available_periods else available_periods[0] if available_periods else None
+            
+            # 计算所有周期的平均值作为备选
+            ic_mean_all_periods = self.ic_series['ic'].mean() if not self.ic_series.empty else np.nan
+            ic_ir_all_periods = self.ic_series['ic_ir'].mean() if not self.ic_series.empty else np.nan
+            
             report = {
                 'ic_data': self.ic_series,
                 'group_returns': self.group_returns,
                 'win_rates': win_rates,
                 'summary': {
-                    'ic_mean': self.ic_series.loc[
-                        'return_20d', 'ic'] if 'return_20d' in self.ic_series.index else np.nan,
-                    'ic_pos_rate': self.ic_series.loc[
-                        'return_20d', 'pos_rate'] if 'return_20d' in self.ic_series.index else np.nan,
-                    'top_group_return': self.group_returns.loc[
-                        5, 'return_20d'] if 5 in self.group_returns.index and 'return_20d' in self.group_returns.columns else np.nan,
-                    'bottom_group_return': self.group_returns.loc[
-                        1, 'return_20d'] if 1 in self.group_returns.index and 'return_20d' in self.group_returns.columns else np.nan,
-                    'long_short_return': self.group_returns.loc[
-                        'long_short', 'return_20d'] if 'long_short' in self.group_returns.index and 'return_20d' in self.group_returns.columns else np.nan,
-                    'top_group_win_rate': win_rates.loc[
-                        5, 'return_20d'] if 5 in win_rates.index and 'return_20d' in win_rates.columns else np.nan
+                    # 主要指标：使用代表周期或所有周期均值
+                    'ic_mean': self.ic_series.loc[representative_period, 'ic'] if representative_period else ic_mean_all_periods,
+                    'ic_std': self.ic_series.loc[representative_period, 'ic_std'] if representative_period else np.nan,
+                    'ic_ir': self.ic_series.loc[representative_period, 'ic_ir'] if representative_period else ic_ir_all_periods,
+                    'ic_pos_rate': self.ic_series.loc[representative_period, 'pos_rate'] if representative_period else np.nan,
+                    
+                    # 收益相关指标
+                    'top_group_return': self.group_returns.loc[5, representative_period] 
+                                        if 5 in self.group_returns.index and representative_period in self.group_returns.columns 
+                                        else np.nan,
+                    'bottom_group_return': self.group_returns.loc[1, representative_period] 
+                                           if 1 in self.group_returns.index and representative_period in self.group_returns.columns 
+                                           else np.nan,
+                    'long_short_return': self.group_returns.loc['long_short', representative_period] 
+                                         if 'long_short' in self.group_returns.index and representative_period in self.group_returns.columns 
+                                         else np.nan,
+                    'top_group_win_rate': win_rates.loc[5, representative_period] 
+                                          if 5 in win_rates.index and representative_period in win_rates.columns 
+                                          else np.nan,
+                    
+                    # 附加所有周期的均值指标
+                    'all_periods_ic_mean': ic_mean_all_periods,
+                    'all_periods_ic_ir': ic_ir_all_periods,
+                    'representative_period': representative_period
                 }
             }
         else:
@@ -713,7 +734,7 @@ class FactorAnalyzer:
 
         return report
 
-    def print_summary(self) -> None:
+    def print_summary(self, need_plot=True) -> None:
         """打印因子分析摘要"""
         report = self.generate_report()
         summary = report['summary']
@@ -751,12 +772,12 @@ class FactorAnalyzer:
                 header = "│".join(header_parts)
 
                 # 构建分隔线
-                separator = "─"*max_period_len + "┼" + \
-                            "─"*col_widths['ic'] + "┼" + \
-                            "─"*col_widths['ic_std'] + "┼" + \
-                            "─"*col_widths['ic_ir'] + "┼" + \
-                            "─"*col_widths['pos_rate'] + "┼" + \
-                            "─"*col_widths['abs_ic']
+                separator = "─" * max_period_len + "┼" + \
+                            "─" * col_widths['ic'] + "┼" + \
+                            "─" * col_widths['ic_std'] + "┼" + \
+                            "─" * col_widths['ic_ir'] + "┼" + \
+                            "─" * col_widths['pos_rate'] + "┼" + \
+                            "─" * col_widths['abs_ic']
 
                 print("\nIC统计表：")
                 print(header)
@@ -824,27 +845,266 @@ class FactorAnalyzer:
 
         print("\n" + "=" * 50)
 
-        # 绘图，添加异常处理
-        try:
-            self.plot_ic_series()
-        except Exception as e:
-            print(f"绘制IC序列时出错: {e}")
+        if need_plot:
+            # 绘图
+            try:
+                self.plot_ic_series()
+            except Exception as e:
+                print(f"绘制IC序列时出错: {e}")
 
-        try:
-            self.plot_quantile_returns()
-        except Exception as e:
-            print(f"绘制分位数收益时出错: {e}")
+            try:
+                self.plot_quantile_returns()
+            except Exception as e:
+                print(f"绘制分位数收益时出错: {e}")
 
-        try:
-            self.plot_cumulative_returns()
-        except Exception as e:
-            print(f"绘制累积收益时出错: {e}")
+            try:
+                self.plot_cumulative_returns()
+            except Exception as e:
+                print(f"绘制累积收益时出错: {e}")
+
+    def save_report(self, filename: str) -> None:
+        """
+        将因子分析结果保存为HTML报告
+        
+        Args:
+            filename: 报告文件名，应以.html结尾
+        
+        Returns:
+            None，但会在指定目录生成HTML报告文件
+        """
+        import os
+        import jinja2
+        from functools import reduce
+        import matplotlib.pyplot as plt
+        import base64
+        from io import BytesIO
+        
+        # 确保目标目录存在
+        directory = os.path.dirname(filename)
+        if directory and not os.path.exists(directory):
+            try:
+                os.makedirs(directory, exist_ok=True)
+                print(f"已创建目录: {directory}")
+            except Exception as e:
+                print(f"无法创建目录: {e}")
+                # 使用当前目录作为备选方案
+                filename = os.path.basename(filename)
+                print(f"将在当前目录保存报告: {filename}")
+        
+        # 确保生成报告前已计算所有必要指标
+        if self.ic_series is None:
+            self.calculate_ic()
+            
+        if self.group_returns is None:
+            self.calculate_quantile_returns()
+            
+        win_rates = self.calculate_win_rate()
+        report_data = self.generate_report()
+        
+        # 纯函数：将DataFrame转换为HTML表格
+        def df_to_html(df, float_format='{:.4f}', caption=''):
+            if df is None or df.empty:
+                return "<p>无有效数据</p>"
+            styled_df = df.style.format(float_format)
+            if caption:
+                styled_df = styled_df.set_caption(caption)
+            return styled_df.to_html()
+        
+        # 修复图表生成函数，确保每个图表有新的图形对象并正确关闭
+        def plot_to_base64(plot_func):
+            try:
+                # 清除当前图形
+                plt.close('all')
+                # 创建新的图表
+                fig, ax = plt.subplots(figsize=(10, 6))
+                # 执行绘图函数，传入轴对象
+                plot_func(ax)
+                # 调整布局
+                plt.tight_layout()
+                # 保存到内存缓冲区
+                buffer = BytesIO()
+                fig.savefig(buffer, format='png', dpi=100, bbox_inches='tight')
+                plt.close(fig)
+                # 转换为base64
+                img_str = base64.b64encode(buffer.getvalue()).decode('utf-8')
+                return f'<img src="data:image/png;base64,{img_str}" alt="图表" style="max-width:100%;" />'
+            except Exception as e:
+                return f'<div class="error">生成图表时出错: {str(e)}</div>'
+        
+        # 生成IC图表 - 修改为接受ax参数的版本
+        def plot_ic(ax):
+            if self.ic_series is not None and not self.ic_series.empty:
+                self.ic_series.plot(y='ic', kind='bar', ax=ax, color='skyblue')
+                ax.axhline(y=0, color='r', linestyle='-', alpha=0.3)
+                ax.set_title('IC值分布')
+                ax.set_ylabel('IC值')
+                ax.set_xlabel('收益周期')
+                # 添加水平参考线
+                ax.axhline(y=0.05, color='g', linestyle='--', alpha=0.5)
+                ax.axhline(y=-0.05, color='g', linestyle='--', alpha=0.5)
+                ax.grid(True, alpha=0.3)
+        
+        # 生成分位数收益图表
+        def plot_quantile(ax):
+            if self.group_returns is not None and not self.group_returns.empty:
+                # 只选择数值分组，排除long_short行
+                returns = self.group_returns.loc[[i for i in self.group_returns.index if isinstance(i, (int, float))]]
+                returns.T.plot(kind='bar', ax=ax)
+                ax.set_title('分位数收益对比')
+                ax.set_ylabel('收益率')
+                ax.set_xlabel('收益周期')
+                ax.grid(True, alpha=0.3)
+                ax.legend(title='分位数')
+        
+        # 生成累积收益图表
+        def plot_cumulative(ax):
+            if hasattr(self, 'cumulative_returns') and self.cumulative_returns is not None:
+                self.cumulative_returns.plot(ax=ax)
+                ax.set_title('累积收益曲线')
+                ax.set_ylabel('累积收益')
+                ax.set_xlabel('日期')
+                ax.grid(True, alpha=0.3)
+            else:
+                # 如果没有累积收益数据，尝试计算并绘制
+                try:
+                    if self.group_returns is not None and not self.group_returns.empty:
+                        # 简单绘制最高分位和最低分位的对比
+                        if 5 in self.group_returns.index and 1 in self.group_returns.index:
+                            # 创建一个虚拟的累积收益曲线
+                            import pandas as pd
+                            import numpy as np
+                            columns = self.group_returns.columns
+                            dates = pd.date_range(end=pd.Timestamp.today(), periods=len(columns))
+                            data = {
+                                '最高分位': np.cumprod(1 + self.group_returns.loc[5].values) - 1,
+                                '最低分位': np.cumprod(1 + self.group_returns.loc[1].values) - 1,
+                                '多空组合': np.cumprod(1 + self.group_returns.loc['long_short'].values) - 1
+                            }
+                            pd.DataFrame(data, index=columns).plot(ax=ax)
+                            ax.set_title('累积收益曲线(模拟)')
+                            ax.set_ylabel('累积收益')
+                            ax.grid(True, alpha=0.3)
+                except Exception as e:
+                    ax.text(0.5, 0.5, f"无法生成累积收益图表: {e}", 
+                            horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
+        
+        # 生成图表
+        ic_plot = plot_to_base64(plot_ic)
+        quantile_plot = plot_to_base64(plot_quantile)
+        cumulative_plot = plot_to_base64(plot_cumulative)
+        
+        # 预先格式化数据，避免在模板中使用Python的格式化语法
+        summary = {
+            'ic_mean': f"{report_data['summary'].get('ic_mean', float('nan')):.4f}",
+            'ic_ir': f"{report_data['summary'].get('ic_ir', float('nan')):.4f}",
+            'ic_pos_rate': f"{report_data['summary'].get('ic_pos_rate', float('nan')) * 100:.2f}%",
+            'long_short_return': f"{report_data['summary'].get('long_short_return', float('nan')) * 100:.2f}%",
+            'top_group_win_rate': f"{report_data['summary'].get('top_group_win_rate', float('nan')) * 100:.2f}%"
+        }
+
+        # 其余代码保持不变
+        html_template = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>因子分析报告</title>
+            <style>
+                body { font-family: SimHei, Arial, sans-serif; margin: 20px; }
+                h1 { color: #2c3e50; text-align: center; }
+                h2 { color: #3498db; margin-top: 30px; }
+                h3 { color: #2980b9; }
+                table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+                th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+                th { background-color: #f2f2f2; }
+                tr:nth-child(even) { background-color: #f9f9f9; }
+                .summary { background-color: #eaf7ff; padding: 15px; border-radius: 5px; }
+                .chart { margin: 20px 0; text-align: center; }
+                .footnote { font-size: 0.8em; color: #7f8c8d; margin-top: 20px; }
+                .error { color: #e74c3c; padding: 10px; background-color: #fadbd8; border-radius: 5px; }
+            </style>
+        </head>
+        <body>
+            <h1>因子分析报告</h1>
+            
+            <div class="summary">
+                <h2>摘要</h2>
+                <p>IC均值: {{summary.ic_mean}} (>0.05为强有效因子)</p>
+                <p>IC IR值: {{summary.ic_ir}} (>1.0为优秀因子, >1.5为极优)</p>
+                <p>IC正比例: {{summary.ic_pos_rate}} (>55%表示方向一致)</p>
+                <p>多空组合收益: {{summary.long_short_return}} (越大表示区分能力越强)</p>
+                <p>顶层组胜率: {{summary.top_group_win_rate}} (>55%通常认为有效)</p>
+            </div>
+            
+            <h2>IC分析</h2>
+            <p>Information Coefficient（因子与未来收益的相关性）</p>
+            {{ic_table}}
+            
+            <div class="chart">
+                <h3>IC时间序列</h3>
+                {{ic_plot}}
+            </div>
+            
+            <h2>分组收益分析</h2>
+            <p>按因子值分组后各组平均收益</p>
+            {{group_returns_table}}
+            
+            <div class="chart">
+                <h3>分位数收益热力图</h3>
+                {{quantile_plot}}
+            </div>
+            
+            <div class="chart">
+                <h3>累积收益曲线</h3>
+                {{cumulative_plot}}
+            </div>
+            
+            <h2>胜率分析</h2>
+            <p>各分组收益为正的比例</p>
+            {{win_rates_table}}
+            
+            <div class="footnote">
+                <p>生成时间: {{generation_time}}</p>
+                <p>注：IC均值大于0.05通常被视为强有效因子；IR>1.0被视为优秀因子；顶层组胜率>55%通常认为因子有效</p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # 格式化表格
+        ic_table = df_to_html(self.ic_series, float_format='{:.4f}', caption='IC值统计表')
+        group_returns_table = df_to_html(self.group_returns, float_format='{:.2%}', caption='分组收益表')
+        win_rates_table = df_to_html(win_rates, float_format='{:.2%}', caption='胜率统计表')
+        
+        # 准备报告数据
+        from datetime import datetime
+        context = {
+            'summary': summary,
+            'ic_table': ic_table,
+            'group_returns_table': group_returns_table,
+            'win_rates_table': win_rates_table,
+            'ic_plot': ic_plot,
+            'quantile_plot': quantile_plot,
+            'cumulative_plot': cumulative_plot,
+            'generation_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        # 渲染HTML
+        template = jinja2.Template(html_template)
+        html_content = template.render(**context)
+        
+        # 保存到文件
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+            
+        print(f"分析报告已保存到: {os.path.abspath(filename)}")
 
 
 def analyze_single_factor(factor_data: Union[pd.Series, pd.DataFrame, Dict[str, pd.Series]],
                           price_data: Union[pd.DataFrame, Dict[str, pd.DataFrame]],
                           factor_name: str = '',
-                          date_col: str = 'trade_date') -> FactorAnalyzer:
+                          date_col: str = 'trade_date',
+                          need_plot: bool = True) -> FactorAnalyzer:
     """
     单因子有效性分析主函数
     
@@ -858,13 +1118,14 @@ def analyze_single_factor(factor_data: Union[pd.Series, pd.DataFrame, Dict[str, 
                     - 多只股票的字典，key为股票代码，value为该股票的价格DataFrame
         factor_name: 因子名称，用于显示
         date_col: 日期列名称，当索引不是日期时使用此列作为日期索引
+        need_plot: 是否需要画图
         
     Returns:
         因子分析器对象
     """
     # 判断是否为多股票数据
     is_panel_data = isinstance(factor_data, dict) or (
-                isinstance(factor_data, pd.DataFrame) and factor_data.shape[1] > 1)
+            isinstance(factor_data, pd.DataFrame) and factor_data.shape[1] > 1)
 
     if is_panel_data:
         # 处理多只股票数据的情况
@@ -971,7 +1232,7 @@ def analyze_single_factor(factor_data: Union[pd.Series, pd.DataFrame, Dict[str, 
 
     # 打印报告
     print(f"\n{factor_name}因子分析报告" if factor_name else "\n因子分析报告")
-    analyzer.print_summary()
+    analyzer.print_summary(need_plot=need_plot)
 
     return analyzer
 
