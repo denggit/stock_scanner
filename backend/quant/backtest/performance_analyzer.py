@@ -19,6 +19,18 @@ e.g.:
         PE因子近5年IC均值 = 0.12
         前10%低PE组5日平均收益 = 1.2%
         胜率 = 58%
+
+
+IC均值范围	因子预测能力	实际案例
+>0.05	强有效	动量因子（IC均值0.08-0.12）
+0.02-0.05	中等有效	低波动率因子（IC均值0.03-0.05）
+<0.02	弱有效或无效	市值因子（IC均值接近0，已失效）
+
+IR范围	稳定性评价	应用建议
+IR > 1.5	极优	核心因子，赋予高权重（如60%-80%）
+IR 1.0-1.5	优秀	主力因子，可长期使用
+IR 0.5-1.0	合格	需搭配其他因子分散风险
+IR < 0.5	不稳定	谨慎使用，需动态监控或淘汰
 """
 
 from typing import Dict, List, Union
@@ -104,7 +116,7 @@ class FactorAnalyzer:
         计算因子IC值
         
         Args:
-            method: 相关系数计算方法，'pearson' 或 'spearman'(秩相关)
+            method: 相关系数计算方法，'pearman' 或 'spearman'(秩相关)
             
         Returns:
             IC值数据框
@@ -117,7 +129,7 @@ class FactorAnalyzer:
             daily_ic = {}
             ic_summary = {}
 
-            # 简化日志，只显示整体形状
+            # 添加调试信息
             print(f"因子数据形状: {self.factor_data.shape}")
             print(f"收益率数据周期: {list(self.returns_data.keys())}")
 
@@ -125,6 +137,7 @@ class FactorAnalyzer:
                 # 计算每个交易日的IC值
                 ic_series = pd.Series(index=self.factor_data.index)
                 valid_dates = 0  # 计数有效日期数
+                constant_dates = 0  # 计数因子值为常数的日期数
 
                 for date in self.factor_data.index:
                     if date not in returns_panel.index:
@@ -142,29 +155,42 @@ class FactorAnalyzer:
                     aligned_factors = factors[common_stocks]
                     aligned_returns = future_returns[common_stocks]
 
-                    # 移除过多的日志输出
+                    # 检查因子值是否为常数
+                    if aligned_factors.nunique() == 1:
+                        constant_dates += 1
+                        continue
+
                     # 计算相关系数
                     try:
                         if method == 'spearman':
                             ic = aligned_factors.corr(aligned_returns, method='spearman')
                         else:
                             ic = aligned_factors.corr(aligned_returns, method='pearson')
-
+                        
                         ic_series[date] = ic
                         valid_dates += 1
                     except Exception as e:
                         print(f"计算{date}的IC值时出错: {e}")
 
+                # 输出统计信息
+                print(f"周期 {period} 统计：")
+                print(f"  - 有效交易日: {valid_dates}")
+                print(f"  - 因子值为常数的交易日: {constant_dates}")
+                print(f"  - 总交易日: {len(self.factor_data.index)}")
+
                 # 存储每日IC值
                 daily_ic[period] = ic_series.dropna()
 
-                # 只输出有效IC日期总数
-                print(f"周期 {period} 共有 {valid_dates} 个有效交易日进行了IC计算")
-
                 # 计算IC统计指标
                 if not ic_series.dropna().empty:
+                    ic_std = ic_series.std()
+                    ic_mean = ic_series.mean()
+                    ic_ir = ic_mean / ic_std if ic_std != 0 else np.nan  # 处理零标准差情况
+                    
                     ic_summary[period] = {
-                        'ic': ic_series.mean(),
+                        'ic': ic_mean,
+                        'ic_std': ic_std,
+                        'ic_ir': ic_ir,
                         'abs_ic': ic_series.abs().mean(),
                         'pos_rate': (ic_series > 0).mean(),
                         'mean_monthly_ic': self._calculate_monthly_ic_panel(ic_series, method)
@@ -173,6 +199,8 @@ class FactorAnalyzer:
                     print(f"警告: {period} 周期无有效IC值")
                     ic_summary[period] = {
                         'ic': float('nan'),
+                        'ic_std': float('nan'),
+                        'ic_ir': float('nan'),
                         'abs_ic': float('nan'),
                         'pos_rate': float('nan'),
                         'mean_monthly_ic': float('nan')
@@ -700,32 +728,57 @@ class FactorAnalyzer:
             print("-" * 50)
 
             if self.ic_series is not None and not self.ic_series.empty:
-                # 格式化输出IC统计表
-                ic_table = pd.DataFrame({
-                    '周期': self.ic_series.index,
-                    'IC均值': self.ic_series['ic'].map('{:.4f}'.format),
-                    'IC为正比例': self.ic_series['pos_rate'].map('{:.2%}'.format),
-                    'IC绝对值均值': self.ic_series['abs_ic'].map('{:.4f}'.format)
-                }).set_index('周期')
+                # 计算各列最大宽度
+                periods = self.ic_series.index.tolist()
+                max_period_len = max(len(p) for p in periods) + 1
+                col_widths = {
+                    'ic': 8,
+                    'ic_std': 8,
+                    'ic_ir': 6,
+                    'pos_rate': 6,
+                    'abs_ic': 8
+                }
 
-                print("IC统计表：")
-                print(ic_table)
+                # 构建表头
+                header_parts = [
+                    f"{'收益周期':<{max_period_len - 2}}",
+                    f"{'IC均值':^{col_widths['ic'] - 1}}",
+                    f"{'IC标准差':^{col_widths['ic_std'] - 2}}",
+                    f"{'IR':^{col_widths['ic_ir']}}",
+                    f"{'正比例':^{col_widths['pos_rate'] - 2}}",
+                    f"{'绝对IC':^{col_widths['abs_ic']}}"
+                ]
+                header = "│".join(header_parts)
 
-                # 提供总体建议
-                print("\n总体建议：")
-                if self.ic_series['ic'].abs().mean() > 0.05:
-                    print("  - 该因子整体预测能力较强，可以考虑使用")
-                else:
-                    print("  - 该因子整体预测能力较弱，建议进一步优化或结合其他因子使用")
+                # 构建分隔线
+                separator = "─"*max_period_len + "┼" + \
+                            "─"*col_widths['ic'] + "┼" + \
+                            "─"*col_widths['ic_std'] + "┼" + \
+                            "─"*col_widths['ic_ir'] + "┼" + \
+                            "─"*col_widths['pos_rate'] + "┼" + \
+                            "─"*col_widths['abs_ic']
 
-                if self.ic_series['pos_rate'].mean() > 0.5:
-                    print("  - 因子方向总体正确，无需调整")
-                else:
-                    print("  - 因子方向可能存在问题，建议检查因子计算逻辑或考虑反转因子方向")
+                print("\nIC统计表：")
+                print(header)
+                print(separator)
 
-                print("\n* IC解读: IC均值的绝对值越大表示预测能力越强，通常>0.05认为有效")
-                print("* IC为正比例: >50%表示因子方向正确")
-                print("* IC绝对值均值越大，如果IC为正比例远大于50%，因子与收益的相关性较强，否则无效")
+                # 输出每行数据
+                for period, row in self.ic_series.iterrows():
+                    parts = [
+                        f"{period:<{max_period_len}}",
+                        f"{row['ic']:^{col_widths['ic']}.4f}",
+                        f"{row['ic_std']:^{col_widths['ic_std']}.4f}",
+                        f"{row['ic_ir'] if not pd.isna(row['ic_ir']) else 'N/A':^{col_widths['ic_ir']}.2f}",
+                        f"{row['pos_rate']:^{col_widths['pos_rate']}.1%}",
+                        f"{row['abs_ic']:^{col_widths['abs_ic']}.4f}"
+                    ]
+                    print("│".join(parts))
+
+                # 添加单位说明
+                print("\n* 单位说明:")
+                print("  - IC均值和标准差保留4位小数")
+                print("  - IR(信息比率) = IC均值 / IC标准差")
+                print("  - 正比例显示为百分比格式")
             else:
                 print("未能计算有效IC值，请检查数据")
 
@@ -967,10 +1020,8 @@ if __name__ == "__main__":
             valid_stocks += 1
             price_data[code] = df
 
-            # 计算因子 - 使用更简单可靠的移动平均因子作为示例
-            df['ma5'] = df['close'].rolling(5).mean()
-            df['ma20'] = df['close'].rolling(20).mean()
-            factor_values[code] = df['ma5'] / df['ma20']  # MA比值作为示例因子
+            # 计算因子
+            factor_values[code] = factors['macd'](close=df.close)
         except Exception as e:
             print(f"处理股票 {code} 时出错: {e}")
 
@@ -982,7 +1033,7 @@ if __name__ == "__main__":
         analyzer = analyze_single_factor(
             factor_data=factor_values,
             price_data=price_data,
-            factor_name='MA5/MA20',
+            factor_name='macd',
             date_col='trade_date'
         )
 
