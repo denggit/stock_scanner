@@ -299,10 +299,13 @@ def main():
 if __name__ == "__main__":
     # main()
 
-    stock_codes = ["sh.605300", "sz.300490", "sh.603336", "sh.600519", "sz.000858",
-                   "sh.601398", "sz.000651", "sh.601318", "sz.000333", "sh.600036"]
-    start_date = "2022-01-01"
-    end_date = "2023-03-01"
+    # stock_codes = ["sh.605300", "sz.300490", "sh.603336", "sh.600519", "sz.000858",
+    #                "sh.601398", "sz.000651", "sh.601318", "sz.000333", "sh.600036"]
+    start_date = "2024-01-01"
+    end_date = "2025-03-01"
+    fetcher = StockDataFetcher()
+    all_stocks = fetcher.get_stock_list()
+    stock_codes = all_stocks[all_stocks["ipo_date"] < datetime.date(2024, 1, 1)].code.to_list()
 
     run_factor_analysis(
         factor_name="all",

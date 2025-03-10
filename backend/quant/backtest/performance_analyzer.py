@@ -97,15 +97,15 @@ class FactorAnalyzer:
             close_panel = self.price_data['close']
 
             for period in periods:
-                # 对每只股票计算未来收益率
-                pct_change = close_panel.pct_change(period).shift(-period)
+                # 对每只股票计算未来收益率，明确指定fill_method=None
+                pct_change = close_panel.pct_change(period, fill_method=None).shift(-period)
                 returns[f'return_{period}d'] = pct_change
         else:
             # 单只股票数据的处理
             returns = pd.DataFrame(index=self.price_data.index)
 
             for period in periods:
-                pct_change = self.price_data['close'].pct_change(period).shift(-period)
+                pct_change = self.price_data['close'].pct_change(period, fill_method=None).shift(-period)
                 returns[f'return_{period}d'] = pct_change
 
         self.returns_data = returns
@@ -1165,7 +1165,8 @@ def analyze_single_factor(factor_data: Union[pd.Series, pd.DataFrame, Dict[str, 
             date_index = pd.DatetimeIndex(sorted(all_dates))
 
             # 第二步：合并因子数据到面板
-            factor_panel = pd.DataFrame(index=date_index)
+            factor_data_dict = {}  # 收集所有股票的因子数据
+            
             for code, series in factor_data.items():
                 if date_col in price_data[code].columns:
                     # 获取日期映射
@@ -1184,20 +1185,27 @@ def analyze_single_factor(factor_data: Union[pd.Series, pd.DataFrame, Dict[str, 
                     temp_series = series.copy()
                     temp_series.index = pd.to_datetime(temp_series.index)
 
-                # 添加到面板
-                factor_panel[code] = temp_series
+                # 添加到数据字典而不是直接添加到面板
+                factor_data_dict[code] = temp_series
+            
+            # 一次性构建DataFrame，避免内存碎片化
+            factor_panel = pd.DataFrame(factor_data_dict, index=date_index)
 
             # 第三步：合并价格数据到面板
             price_panel = {}
-            price_panel['close'] = pd.DataFrame(index=date_index)
-
+            
+            # 收集所有股票的收盘价数据
+            close_data = {}
             for code, df in price_data.items():
                 # 设置日期索引
                 temp_df = df.copy()
                 if date_col in temp_df.columns and not isinstance(temp_df.index, pd.DatetimeIndex):
                     temp_df.set_index(pd.to_datetime(temp_df[date_col]), inplace=True)
-                # 添加到面板
-                price_panel['close'][code] = temp_df['close']
+                # 添加到临时字典
+                close_data[code] = temp_df['close']
+            
+            # 一次性构建DataFrame，避免内存碎片化
+            price_panel['close'] = pd.DataFrame(close_data, index=date_index)
 
         # 创建分析器对象
         analyzer = FactorAnalyzer(factor_panel, price_panel, is_panel_data=True)
