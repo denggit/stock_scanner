@@ -152,6 +152,193 @@ class VolumeFactors(BaseFactor):
         return (np.sign(close.diff()) * volume).cumsum()
 
 
+class ShortTermFactors(BaseFactor):
+    """短期交易因子 - 适合1-30天的做多策略"""
+
+    @BaseFactor.register_factor(name='momentum_accel')
+    @staticmethod
+    def momentum_accel(close: pd.Series) -> pd.Series:
+        """
+        动量加速度因子 - 短期动量相对中期动量的加速度
+
+        Args:
+            close: 收盘价序列
+        Returns:
+            动量加速度因子值
+        """
+        ret_5 = close.pct_change(5)
+        ret_3 = close.pct_change(3)
+        return (ret_3 - ret_5) / ret_5.abs().replace(0, 1e-6)
+
+    @BaseFactor.register_factor(name='gap_strength')
+    @staticmethod
+    def gap_strength(open_price: pd.Series, preclose: pd.Series) -> pd.Series:
+        """
+        跳空高开强度 - 相对于历史均值的跳空强度
+
+        Args:
+            open_price: 开盘价序列
+            preclose: 前收盘价序列
+        Returns:
+            跳空强度值
+        """
+        gap = (open_price - preclose) / preclose
+        gap_strength = gap - gap.rolling(20).mean()
+        return gap_strength
+
+    @BaseFactor.register_factor(name='vol_break')
+    @staticmethod
+    def volatility_breakout(high: pd.Series, low: pd.Series, preclose: pd.Series) -> pd.Series:
+        """
+        波动突破因子 - 当日波动相对历史波动突破的强度
+
+        Args:
+            high: 最高价序列
+            low: 最低价序列
+            preclose: 前收盘价序列
+        Returns:
+            波动突破指标（大于1表示突破）
+        """
+        # 计算真实波幅
+        tr1 = (high - low)
+        tr2 = (high - preclose).abs()
+        tr3 = (low - preclose).abs()
+        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+        # 当日波动与过去5日平均波幅的比值
+        daily_range = (high - low) / preclose
+        avg_range = true_range.rolling(5).mean() / preclose
+        return daily_range / avg_range.replace(0, 1e-6)
+
+    @BaseFactor.register_factor(name='pv_resonance')
+    @staticmethod
+    def price_volume_resonance(close: pd.Series, volume: pd.Series, window: int = 20) -> pd.Series:
+        """
+        量价共振因子 - 价格创新高且成交量放大
+
+        Args:
+            close: 收盘价序列
+            volume: 成交量序列
+            window: 回顾窗口
+        Returns:
+            量价共振指标（越大越强）
+        """
+        price_ratio = close / close.rolling(window).max().shift()
+        volume_ratio = volume / volume.rolling(window).mean().shift()
+        return price_ratio * volume_ratio
+
+    @BaseFactor.register_factor(name='block_strength')
+    @staticmethod
+    def block_trade_strength(amount: pd.Series, turn: pd.Series) -> pd.Series:
+        """
+        大单强度因子 - 成交额相对于流通市值的异常强度
+
+        Args:
+            amount: 成交额序列
+            turn: 换手率序列(%)
+        Returns:
+            大单强度指标
+        """
+        # 近似流通市值 = 成交额 / (换手率/100)
+        circ_mv = amount / (turn / 100 + 1e-6)
+
+        # 成交额异常值
+        amount_deviation = amount - amount.rolling(20).mean()
+
+        return amount_deviation / circ_mv
+
+    @BaseFactor.register_factor(name='upper_pressure')
+    @staticmethod
+    def upper_pressure(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+        """
+        盘口压力因子 - 收盘价距离当日最高价的反转指标
+
+        Args:
+            high: 最高价序列
+            low: 最低价序列
+            close: 收盘价序列
+        Returns:
+            盘口压力指标（越小越好）
+        """
+        return (high - close) / (high - low + 1e-6)
+
+    @BaseFactor.register_factor(name='overnight_momentum')
+    @staticmethod
+    def overnight_momentum(open_price: pd.Series, preclose: pd.Series, window: int = 3) -> pd.Series:
+        """
+        隔夜动量因子 - 过去几天隔夜收益的平均值
+
+        Args:
+            open_price: 开盘价序列
+            preclose: 前收盘价序列
+            window: 平均窗口
+        Returns:
+            隔夜动量因子值
+        """
+        overnight_ret = (open_price - preclose) / preclose
+        return overnight_ret.rolling(window).mean()
+
+    @BaseFactor.register_factor(name='intraday_trend')
+    @staticmethod
+    def intraday_trend(open_price: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+        """
+        日内趋势因子 - 收盘价相对开盘价在日内高低点范围的相对位置
+
+        Args:
+            open_price: 开盘价序列
+            high: 最高价序列
+            low: 最低价序列
+            close: 收盘价序列
+        Returns:
+            日内趋势指标（1为全天上涨，-1为全天下跌）
+        """
+        return (close - open_price) / (high - low + 1e-6)
+
+    @BaseFactor.register_factor(name='value_momentum')
+    @staticmethod
+    def value_momentum(close: pd.Series, pe_ttm: pd.Series, window: int = 5) -> pd.Series:
+        """
+        估值动量因子 - 短期动量与PE估值的复合因子
+
+        Args:
+            close: 收盘价序列
+            pe_ttm: PE(TTM)序列
+            window: 动量计算窗口
+        Returns:
+            估值动量因子值
+        """
+        # 短期动量
+        momentum = close.pct_change(window)
+
+        # PE排名（越低越好）
+        pe_rank = 1 - pe_ttm.rolling(20).rank(pct=True)
+
+        # 复合因子
+        return momentum * pe_rank
+
+    @BaseFactor.register_factor(name='smart_money')
+    @staticmethod
+    def smart_money(close: pd.Series, open_price: pd.Series, pct_chg: pd.Series) -> pd.Series:
+        """
+        聪明钱因子 - 尾盘收益占比
+
+        Args:
+            close: 收盘价序列
+            open_price: 开盘价序列
+            pct_chg: 日涨跌幅(%)
+        Returns:
+            聪明钱指标（越大表示尾盘拉升越强）
+        """
+        # 模拟最后30分钟收益占比(假定交易时段为4小时)
+        last_hour_ret = close / open_price.shift(3) - 1
+
+        # 防止除0
+        abs_pct_chg = pct_chg.abs() / 100 + 1e-6
+
+        # 计算尾盘收益占比
+        return (pct_chg / 100 - last_hour_ret) / abs_pct_chg
+
+
 def get_registered_factors() -> Dict[str, Callable]:
     """获取所有已注册的因子"""
     return FACTOR_REGISTRY

@@ -30,6 +30,7 @@ os.chdir(root_dir)
 
 import argparse
 from typing import List, Optional
+import importlib
 
 from backend.data.stock_data_fetcher import StockDataFetcher
 from backend.quant.backtest.performance_analyzer import analyze_single_factor
@@ -65,15 +66,20 @@ def run_factor_analysis(
     if factor_type is not None:
         # 如果指定了因子类型
         try:
-            factor_class = globals()[factor_type]
+            # 动态导入指定的因子类
+            module = importlib.import_module('backend.quant.core.factor_engine.factor_generator')
+            factor_class = getattr(module, factor_type)
+            
+            # 获取该类的所有注册因子，而不是通过方法名匹配
             factors_to_analyze = {
                 name: func for name, func in FACTOR_REGISTRY.items()
-                if name in [method for method in dir(factor_class)
-                            if not method.startswith('_') and method != 'register_factor']
+                if any(name == getattr(factor_class, attr).__name__ or 
+                       (hasattr(func, '__wrapped__') and func.__wrapped__.__qualname__.startswith(f"{factor_type}."))
+                       for attr in dir(factor_class) if not attr.startswith('_') and attr != 'register_factor')
             }
             print(f"将分析{factor_type}类的所有因子: {list(factors_to_analyze.keys())}")
-        except KeyError:
-            print(f"错误: 未找到因子类型 '{factor_type}'")
+        except (KeyError, AttributeError, ImportError) as e:
+            print(f"错误: 未找到因子类型 '{factor_type}': {e}")
             return
     elif factor_name.lower() == 'all':
         # 分析所有注册的因子
@@ -133,6 +139,9 @@ def run_factor_analysis(
                 for param in param_names:
                     if param in df.columns:
                         args[param] = df[param]
+                    elif param == "open_price":
+                        # 因为open是一个built_in参数，所以尽量不直接使用它
+                        args["open_price"] = df["open"]
 
                 # 计算因子
                 if args:
@@ -155,7 +164,7 @@ def run_factor_analysis(
 
             # 获取分析结果并记录
             report_data = analyzer.generate_report()
-            
+
             # 记录因子分析结果
             factor_result = {
                 'factor_name': factor_name,
@@ -189,58 +198,57 @@ def run_factor_analysis(
 def print_excellent_factors(factor_results: List[dict]) -> None:
     """
     输出优秀因子汇总
-    
+
     Args:
         factor_results: 因子分析结果列表
     """
     import pandas as pd
-    import numpy as np
-    
+
     # 转换为DataFrame方便处理
     results_df = pd.DataFrame(factor_results)
-    
+
     # 定义优秀因子标准
     # 1. 强有效: IC均值 > 0.05
     # 2. 优秀因子: IR > 1.0
     # 3. 方向一致: IC正比例 > 0.55
     # 4. 区分能力强: 多空组合收益 > 0.5%
     # 5. 有效: 顶层组胜率 > 0.55
-    
+
     # 标记每个指标是否达到优秀标准
     results_df['强有效'] = results_df['ic_mean'] > 0.05
     results_df['高IR值'] = results_df['ic_ir'] > 1.0
     results_df['方向一致'] = results_df['ic_pos_rate'] > 0.55
     results_df['区分能力'] = results_df['long_short_return'] > 0.005
     results_df['高胜率'] = results_df['top_group_win_rate'] > 0.55
-    
+
     # 计算综合得分 (满足的标准数量)
     results_df['优秀度'] = results_df[['强有效', '高IR值', '方向一致', '区分能力', '高胜率']].sum(axis=1)
-    
+
     # 按优秀度排序
     results_df = results_df.sort_values('优秀度', ascending=False)
-    
+
     # 格式化输出数据
-    formatted_df = results_df[['factor_name', 'ic_mean', 'ic_ir', 'ic_pos_rate', 
+    formatted_df = results_df[['factor_name', 'ic_mean', 'ic_ir', 'ic_pos_rate',
                                'long_short_return', 'top_group_win_rate', '优秀度']].copy()
-    
+
     # 格式化显示
     formatted_df['ic_mean'] = formatted_df['ic_mean'].map(lambda x: f"{x:.4f}")
     formatted_df['ic_ir'] = formatted_df['ic_ir'].map(lambda x: f"{x:.4f}")
     formatted_df['ic_pos_rate'] = formatted_df['ic_pos_rate'].map(lambda x: f"{x:.2%}")
     formatted_df['long_short_return'] = formatted_df['long_short_return'].map(lambda x: f"{x:.2%}")
     formatted_df['top_group_win_rate'] = formatted_df['top_group_win_rate'].map(lambda x: f"{x:.2%}")
-    
+
     # 重命名列
     formatted_df.columns = ['因子名称', 'IC均值', 'IR值', 'IC正比例', '多空收益', '顶层胜率', '优秀度']
-    
+
     print("\n\n" + "=" * 100)
     print("因子有效性排名")
     print("=" * 100)
-    
+
     pd.set_option('display.max_rows', None)
     pd.set_option('display.width', 200)
     print(formatted_df)
-    
+
     # 输出优秀因子 (优秀度 >= 3)
     excellent_factors = formatted_df[formatted_df['优秀度'] >= 3]
     if not excellent_factors.empty:
@@ -248,11 +256,11 @@ def print_excellent_factors(factor_results: List[dict]) -> None:
         print("优秀因子汇总 (满足至少3项标准)")
         print("=" * 100)
         print(excellent_factors)
-    
+
     # 输出评价标准说明
     print("\n评价标准:")
     print("- 强有效: IC均值 > 0.05")
-    print("- 高IR值: IR > 1.0") 
+    print("- 高IR值: IR > 1.0")
     print("- 方向一致: IC正比例 > 55%")
     print("- 区分能力: 多空组合收益 > 0.5%")
     print("- 高胜率: 顶层组胜率 > 55%")
@@ -304,13 +312,15 @@ if __name__ == "__main__":
     start_date = "2024-01-01"
     end_date = "2025-03-01"
     fetcher = StockDataFetcher()
-    all_stocks = fetcher.get_stock_list()
-    stock_codes = all_stocks[all_stocks["ipo_date"] < datetime.date(2024, 1, 1)].code.to_list()
+    all_stock_codes = fetcher.get_stock_list()
+    stock_codes = all_stock_codes[
+        all_stock_codes['ipo_date'] < datetime.datetime.strptime(start_date, "%Y-%m-%d").date()].code.to_list()
 
+    # from backend.quant.core.factor_engine.factor_generator import ShortTermFactors
     run_factor_analysis(
-        factor_name="all",
+        factor_name="",
         stock_codes=stock_codes,
         start_date=start_date,
         end_date=end_date,
-        factor_type=None
+        factor_type="ShortTermFactors"
     )
