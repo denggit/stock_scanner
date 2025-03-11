@@ -1,1 +1,1 @@
-D:\Code_Project\stock_scanner\venv\Scripts\python.exe update_stock_data.py --silent
+D:\Code_Project\stock_scanner\venv\Scripts\python.exe D:\Code_Project\stock_scanner\bin\update_stock_data.py --silent

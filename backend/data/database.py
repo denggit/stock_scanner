@@ -60,7 +60,7 @@ class DatabaseManager:
     def _init_database(self):
         """初始化数据库"""
         cursor = self.conn.cursor()
-        cursor.execute("""
+        cursor.execute(""" 
         CREATE TABLE IF NOT EXISTS stock_list(
             code VARCHAR(10) PRIMARY KEY,
             name VARCHAR(100),
@@ -70,13 +70,6 @@ class DatabaseManager:
             status CHAR(1),
             update_time TIMESTAMP,
             update_time_back TIMESTAMP,  # 后复权数据更新时间
-            update_time_profit INT,  # 利润表更新时间
-            update_time_balance INT,  # 资产负债表更新时间
-            update_time_cashflow INT,  # 现金流量表更新时间
-            update_time_growth INT,  # 成长能力更新时间
-            update_time_operation INT,  # 营运能力更新时间
-            update_time_dupont INT,  # 杜邦分析更新时间
-            update_time_dividend INT,  # 分红数据更新时间
             INDEX idx_status(status),
             INDEX idx_type(type))
         """)
