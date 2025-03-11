@@ -223,9 +223,21 @@ class ShortTermFactors(BaseFactor):
         Returns:
             量价共振指标（越大越强）
         """
-        price_ratio = close / close.rolling(window).max().shift()
-        volume_ratio = volume / volume.rolling(window).mean().shift()
-        return price_ratio * volume_ratio
+        # 安全处理：确保没有零值和NaN值
+        rolling_max = close.rolling(window).max().shift()
+        rolling_volume_mean = volume.rolling(window).mean().shift()
+        
+        # 添加小常数避免除零错误
+        price_ratio = close / (rolling_max + 1e-10)
+        volume_ratio = volume / (rolling_volume_mean + 1e-10)
+        
+        # 处理极端值
+        price_ratio = price_ratio.clip(0, 10)  # 限制在合理范围内
+        volume_ratio = volume_ratio.clip(0, 100)
+        
+        result = price_ratio * volume_ratio
+        # 处理计算结果中的NaN和inf
+        return result.replace([np.inf, -np.inf], np.nan).fillna(0)
 
     @BaseFactor.register_factor(name='block_strength')
     @staticmethod
@@ -239,13 +251,26 @@ class ShortTermFactors(BaseFactor):
         Returns:
             大单强度指标
         """
-        # 近似流通市值 = 成交额 / (换手率/100)
-        circ_mv = amount / (turn / 100 + 1e-6)
+        # 预处理：填充缺失值，避免NaN
+        amount = amount.fillna(0)
+        turn = turn.fillna(0)
 
-        # 成交额异常值
-        amount_deviation = amount - amount.rolling(20).mean()
-
-        return amount_deviation / circ_mv
+        # 安全处理：确保换手率不为零，计算流通市值
+        safe_turn = turn / 100 + 1e-6  # 加上小常数避免除零
+        circ_mv = amount / safe_turn
+        
+        # 限制流通市值在合理范围内
+        circ_mv = circ_mv.clip(lower=0, upper=circ_mv.quantile(0.95) * 10)
+        
+        # 计算成交额的移动平均，安全处理NaN
+        amount_mean = amount.rolling(20).mean().fillna(amount)
+        amount_deviation = amount - amount_mean
+        
+        # 计算结果并处理极端值
+        result = amount_deviation / (circ_mv + 1e-10)
+        
+        # 最终清理结果中的无效值
+        return result.replace([np.inf, -np.inf], np.nan).fillna(0)
 
     @BaseFactor.register_factor(name='upper_pressure')
     @staticmethod
