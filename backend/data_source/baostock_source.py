@@ -24,10 +24,12 @@ def ensure_connection(func):
     Returns:
         wrapper: 包装后的方法
     """
+
     def wrapper(self, *args, **kwargs):
         if not self._connected:
             self.connect()
         return func(self, *args, **kwargs)
+
     return wrapper
 
 
@@ -58,7 +60,7 @@ class BaostockSource(DataSource):
                 logging.error(f"Baostock login failed: {e}")
                 self._connected = False
                 if i == 2:
-                    raise Exception(f"Baostock login failed: {e}, 尝试{i+1}次失败，退出")
+                    raise Exception(f"Baostock login failed: {e}, 尝试{i + 1}次失败，退出")
 
     def disconnect(self):
         try:
@@ -99,7 +101,7 @@ class BaostockSource(DataSource):
         return df
 
     @ensure_connection
-    def get_stock_data(self, code: str, start_date: str, end_date: str, period: str = 'daily',
+    def get_stock_data(self, code: str, start_date: str, end_date: str, frequency: str = 'daily',
                        adjust: str = '3') -> pd.DataFrame:
         """获取股票数据
         
@@ -125,14 +127,18 @@ class BaostockSource(DataSource):
             pcfNcfTTM	滚动市现率	(指定交易日的股票收盘价/指定交易日的每股现金流TTM)=(指定交易日的股票收盘价*截至当日公司总股本)/现金以及现金等价物净增加额TTM
             isST	是否ST股，1是，0否
         """
-        fields = 'date,code,open,high,low,close,preclose,volume,amount,turn,tradestatus,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,isST'
-
-        rs = bs.query_history_k_data_plus(code, fields=fields, start_date=start_date, end_date=end_date,
-                                          frequency=period[0], adjustflag=adjust)
+        if frequency in ['daily', 'weekly', 'monthly', 'd', 'w', 'm']:
+            fields = 'date,code,open,high,low,close,preclose,volume,amount,turn,tradestatus,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,isST'
+            rs = bs.query_history_k_data_plus(code, fields=fields, start_date=start_date, end_date=end_date,
+                                              frequency=frequency[0], adjustflag=adjust)
+        else:
+            fields = "date,time,code,open,high,low,close,volume,amount,adjustflag"
+            rs = bs.query_history_k_data_plus(code, fields=fields, start_date=start_date, end_date=end_date,
+                                              frequency=frequency, adjustflag=adjust)
         if rs.error_code != self.SUCCESS_CODE:
             if rs.error_code in self.NETWORK_ERROR_CODES + self.LOGIN_ERROR_CODES:
                 self.connect()
-                return self.get_stock_data(code, start_date, end_date, period, adjust)
+                return self.get_stock_data(code, start_date, end_date, frequency, adjust)
             else:
                 raise Exception(f"Failed to get stock data: {rs.error_msg}")
 

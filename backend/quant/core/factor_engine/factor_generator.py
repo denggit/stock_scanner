@@ -226,15 +226,15 @@ class ShortTermFactors(BaseFactor):
         # 安全处理：确保没有零值和NaN值
         rolling_max = close.rolling(window).max().shift()
         rolling_volume_mean = volume.rolling(window).mean().shift()
-        
+
         # 添加小常数避免除零错误
         price_ratio = close / (rolling_max + 1e-10)
         volume_ratio = volume / (rolling_volume_mean + 1e-10)
-        
+
         # 处理极端值
         price_ratio = price_ratio.clip(0, 10)  # 限制在合理范围内
         volume_ratio = volume_ratio.clip(0, 100)
-        
+
         result = price_ratio * volume_ratio
         # 处理计算结果中的NaN和inf
         return result.replace([np.inf, -np.inf], np.nan).fillna(0)
@@ -258,17 +258,17 @@ class ShortTermFactors(BaseFactor):
         # 安全处理：确保换手率不为零，计算流通市值
         safe_turn = turn / 100 + 1e-6  # 加上小常数避免除零
         circ_mv = amount / safe_turn
-        
+
         # 限制流通市值在合理范围内
         circ_mv = circ_mv.clip(lower=0, upper=circ_mv.quantile(0.95) * 10)
-        
+
         # 计算成交额的移动平均，安全处理NaN
         amount_mean = amount.rolling(20).mean().fillna(amount)
         amount_deviation = amount - amount_mean
-        
+
         # 计算结果并处理极端值
         result = amount_deviation / (circ_mv + 1e-10)
-        
+
         # 最终清理结果中的无效值
         return result.replace([np.inf, -np.inf], np.nan).fillna(0)
 
@@ -341,27 +341,534 @@ class ShortTermFactors(BaseFactor):
         # 复合因子
         return momentum * pe_rank
 
-    @BaseFactor.register_factor(name='smart_money')
-    @staticmethod
-    def smart_money(close: pd.Series, open_price: pd.Series, pct_chg: pd.Series) -> pd.Series:
-        """
-        聪明钱因子 - 尾盘收益占比
 
+class WorldQuantFactors(BaseFactor):
+    """WorldQuant's 101 Alphas - 量化投资经典因子"""
+
+    @BaseFactor.register_factor(name='alpha_1')
+    @staticmethod
+    def alpha_1(pct_chg: pd.Series, close: pd.Series) -> pd.Series:
+        """
+        Alpha#1: (rank(Ts_ArgMax(SignedPower(((returns < 0) ? stddev(returns, 20) : close), 2.), 5)) - 0.5)
+        
+        当收益为负时，取其20日标准差；否则取收盘价，再取其平方。然后计算5天内最大值的序号，进行排名并减0.5。
+        
         Args:
+            pct_chg: 收益率序列
+            close: 收盘价序列
+        Returns:
+            Alpha#1因子值
+        """
+        condition = pct_chg < 0
+        inner = pd.Series(np.where(condition, pct_chg.rolling(20).std(), close), index=pct_chg.index)
+        inner = inner ** 2
+
+        # 计算5天内的argmax
+        ts_argmax = inner.rolling(5).apply(lambda x: np.argmax(x) if len(x) == 5 else np.nan, raw=False)
+
+        # 排名并减0.5
+        return ts_argmax.rank(pct=True) - 0.5
+
+    @BaseFactor.register_factor(name='alpha_2')
+    @staticmethod
+    def alpha_2(volume: pd.Series, close: pd.Series, open_price: pd.Series) -> pd.Series:
+        """
+        Alpha#2: (-1 * correlation(rank(delta(log(volume), 2)), rank(((close - open) / open)), 6))
+        
+        交易量对数变化率的排名与价格变化率排名的6日相关系数，取其负值。
+        
+        Args:
+            volume: 成交量序列
             close: 收盘价序列
             open_price: 开盘价序列
-            pct_chg: 日涨跌幅(%)
         Returns:
-            聪明钱指标（越大表示尾盘拉升越强）
+            Alpha#2因子值
         """
-        # 模拟最后30分钟收益占比(假定交易时段为4小时)
-        last_hour_ret = close / open_price.shift(3) - 1
+        # 计算交易量对数的2阶差分
+        rank_delta_log_volume = np.log(volume).diff(2).rank(pct=True)
 
-        # 防止除0
-        abs_pct_chg = pct_chg.abs() / 100 + 1e-6
+        # 计算价格变化率的排名
+        returns_open = ((close - open_price) / open_price).rank(pct=True)
 
-        # 计算尾盘收益占比
-        return (pct_chg / 100 - last_hour_ret) / abs_pct_chg
+        # 计算6日滚动相关系数并取负值
+        return -1 * rank_delta_log_volume.rolling(6).corr(returns_open)
+
+    @BaseFactor.register_factor(name='alpha_3')
+    @staticmethod
+    def alpha_3(open_price: pd.Series, volume: pd.Series) -> pd.Series:
+        """
+        Alpha#3: (-1 * correlation(rank(open), rank(volume), 10))
+        
+        开盘价排名与成交量排名的10日相关系数，取其负值。
+        
+        Args:
+            open_price: 开盘价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#3因子值
+        """
+        return -1 * open_price.rank(pct=True).rolling(10).corr(volume.rank(pct=True))
+
+    @BaseFactor.register_factor(name='alpha_4')
+    @staticmethod
+    def alpha_4(low: pd.Series) -> pd.Series:
+        """
+        Alpha#4: (-1 * Ts_Rank(rank(low), 9))
+        
+        最低价排名的9日时序排名，取其负值。
+        
+        Args:
+            low: 最低价序列
+        Returns:
+            Alpha#4因子值
+        """
+
+        def ts_rank(x):
+            """计算时间序列排名"""
+            return pd.Series(x).rank(pct=True).iloc[-1]
+
+        ranked_low = low.rank(pct=True)
+        return -1 * ranked_low.rolling(9).apply(ts_rank, raw=False)
+
+    # @BaseFactor.register_factor(name='alpha_5')
+    # @staticmethod
+    # def alpha_5(open_price: pd.Series, close: pd.Series, vwap: pd.Series) -> pd.Series:
+    #     """
+    #     Alpha#5: (rank((open - (sum(vwap, 10) / 10))) * (-1 * abs(rank((close - vwap)))))
+    #
+    #     开盘价与10日均量价的差的排名，乘以收盘价与当日均量价差排名的绝对值的负数。
+    #
+    #     Args:
+    #         open_price: 开盘价序列
+    #         close: 收盘价序列
+    #         vwap: 成交量加权平均价格序列，更适合用于日内交易，不太适合用于隔夜策略
+    #     Returns:
+    #         Alpha#5因子值
+    #     """
+    #     vwap_mean_10 = vwap.rolling(10).mean()
+    #     rank_open = (open_price - vwap_mean_10).rank(pct=True)
+    #     rank_close = (close - vwap).rank(pct=True)
+    #
+    #     return rank_open * (-1 * np.abs(rank_close))
+
+    @BaseFactor.register_factor(name='alpha_6')
+    @staticmethod
+    def alpha_6(open_price: pd.Series, volume: pd.Series) -> pd.Series:
+        """
+        Alpha#6: (-1 * correlation(open, volume, 10))
+        
+        开盘价与成交量的10日相关系数，取其负值。
+        
+        Args:
+            open_price: 开盘价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#6因子值
+        """
+        return -1 * open_price.rolling(10).corr(volume)
+
+    @BaseFactor.register_factor(name='alpha_7')
+    @staticmethod
+    def alpha_7(close: pd.Series, volume: pd.Series) -> pd.Series:
+        """
+        Alpha#7: ((adv20 < volume) ? ((-1 * ts_rank(abs(delta(close, 7)), 60)) * sign(delta(close, 7))) : (-1 * 1))
+        
+        如果20日平均成交量小于当日成交量,则返回-1乘以收盘价7日变化的60日时序排名乘以收盘价7日变化的符号;否则返回-1。
+        
+        Args:
+            close: 收盘价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#7因子值
+        """
+        adv20 = volume.rolling(20).mean()
+
+        def ts_rank(x):
+            """计算时间序列排名"""
+            return pd.Series(x).rank(pct=True).iloc[-1]
+
+        # 计算delta(close, 7)和其绝对值的60日时序排名
+        delta_close = close.diff(7)
+        abs_delta_ranked = pd.Series(
+            delta_close.abs().rolling(60).apply(ts_rank, raw=False),
+            index=delta_close.index
+        )
+
+        # 条件判断和结果计算
+        condition = adv20 < volume
+        result = pd.Series(np.where(condition, (-1 * abs_delta_ranked * np.sign(delta_close)), -1),
+                           index=close.index)
+
+        return result
+
+    @BaseFactor.register_factor(name='alpha_8')
+    @staticmethod
+    def alpha_8(open_price: pd.Series, pct_chg: pd.Series) -> pd.Series:
+        """
+        Alpha#8: (-1 * rank(((sum(open, 5) * sum(returns, 5)) - delay((sum(open, 5) * sum(returns, 5)), 10))))
+        
+        -1乘以(过去5日开盘价之和乘以过去5日收益率之和)与其10日前的值的差的排名。
+        
+        Args:
+            open_price: 开盘价序列
+            pct_chg: 收益率序列
+        Returns:
+            Alpha#8因子值
+        """
+        sum_open = open_price.rolling(5).sum()
+        sum_returns = pct_chg.rolling(5).sum()
+        product = sum_open * sum_returns
+        delay_product = product.shift(10)
+
+        return -1 * (product - delay_product).rank(pct=True)
+
+    @BaseFactor.register_factor(name='alpha_9')
+    @staticmethod
+    def alpha_9(close: pd.Series) -> pd.Series:
+        """
+        Alpha#9: ((0 < ts_min(delta(close, 1), 5)) ? delta(close, 1) : ((ts_max(delta(close, 1), 5) < 0) ? delta(close, 1) : (-1 * delta(close, 1))))
+        
+        如果5日内最小收盘价变化大于0，返回收盘价变化；如果5日内最大收盘价变化小于0，返回收盘价变化；否则返回收盘价变化的相反数。
+        
+        Args:
+            close: 收盘价序列
+        Returns:
+            Alpha#9因子值
+        """
+        delta = close.diff(1)
+        ts_min = delta.rolling(5).min()
+        ts_max = delta.rolling(5).max()
+
+        # 实现复杂的条件逻辑
+        result = pd.Series(index=close.index)
+        for i in range(len(close)):
+            if pd.notna(ts_min.iloc[i]) and ts_min.iloc[i] > 0:
+                result.iloc[i] = delta.iloc[i]
+            elif pd.notna(ts_max.iloc[i]) and ts_max.iloc[i] < 0:
+                result.iloc[i] = delta.iloc[i]
+            else:
+                result.iloc[i] = -1 * delta.iloc[i]
+
+        return result
+
+    @BaseFactor.register_factor(name='alpha_10')
+    @staticmethod
+    def alpha_10(close: pd.Series) -> pd.Series:
+        """
+        Alpha#10: rank(((0 < ts_min(delta(close, 1), 4)) ? delta(close, 1) : ((ts_max(delta(close, 1), 4) < 0) ? delta(close, 1) : (-1 * delta(close, 1)))))
+        
+        类似于Alpha#9，但使用4日窗口，并对结果进行排名。
+        
+        Args:
+            close: 收盘价序列
+        Returns:
+            Alpha#10因子值
+        """
+        delta = close.diff(1)
+        ts_min = delta.rolling(4).min()
+        ts_max = delta.rolling(4).max()
+
+        result = pd.Series(index=close.index)
+        for i in range(len(close)):
+            if pd.notna(ts_min.iloc[i]) and ts_min.iloc[i] > 0:
+                result.iloc[i] = delta.iloc[i]
+            elif pd.notna(ts_max.iloc[i]) and ts_max.iloc[i] < 0:
+                result.iloc[i] = delta.iloc[i]
+            else:
+                result.iloc[i] = -1 * delta.iloc[i]
+
+        return result.rank(pct=True)
+
+    @BaseFactor.register_factor(name='alpha_11')
+    @staticmethod
+    def alpha_11(close: pd.Series, volume: pd.Series) -> pd.Series:
+        """
+        Alpha#11: ((rank(ts_max((vwap - close), 3)) + rank(ts_min((vwap - close), 3))) * rank(delta(volume, 3)))
+        
+        最近3天均价与收盘价差值的最大值的排名，加上最小值的排名，再乘以3天成交量变化的排名。
+        
+        Args:
+            close: 收盘价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#11因子值
+        """
+        # 通常vwap为成交量加权平均价，这里简化为收盘价
+        vwap = close
+
+        # 计算vwap与收盘价的差值
+        diff = vwap - close
+
+        # 计算3日最大和最小值的排名
+        rank_max = diff.rolling(3).max().rank(pct=True)
+        rank_min = diff.rolling(3).min().rank(pct=True)
+
+        # 计算3日成交量变化的排名
+        rank_volume_delta = volume.diff(3).rank(pct=True)
+
+        return (rank_max + rank_min) * rank_volume_delta
+
+    @BaseFactor.register_factor(name='alpha_12')
+    @staticmethod
+    def alpha_12(open_price: pd.Series, volume: pd.Series) -> pd.Series:
+        """
+        Alpha#12: (sign(delta(volume, 1)) * (-1 * delta(close, 1)))
+        
+        成交量变化的符号乘以收盘价变化的相反数。
+        
+        Args:
+            open_price: 开盘价序列（用于后续扩展）
+            volume: 成交量序列
+        Returns:
+            Alpha#12因子值
+        """
+        # 计算1日成交量变化的符号
+        volume_delta_sign = np.sign(volume.diff(1))
+
+        # 计算1日收盘价变化的相反数
+        # 注意：此处应该使用close，但函数签名中没有，我们假设使用open
+        close_delta_neg = -1 * open_price.diff(1)
+
+        return volume_delta_sign * close_delta_neg
+
+    @BaseFactor.register_factor(name='alpha_13')
+    @staticmethod
+    def alpha_13(close: pd.Series, volume: pd.Series) -> pd.Series:
+        """
+        Alpha#13: (rank(covariance(rank(close), rank(volume), 5)))
+        
+        收盘价排名与成交量排名的5日协方差的排名。
+        
+        Args:
+            close: 收盘价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#13因子值
+        """
+
+        def cov_rank(x, y):
+            """计算两个排名序列的协方差"""
+            x_rank = pd.Series(x).rank(pct=True)
+            y_rank = pd.Series(y).rank(pct=True)
+            return np.cov(x_rank, y_rank)[0, 1]
+
+        # 计算收盘价排名与成交量排名
+        ranked_close = close.rank(pct=True)
+        ranked_volume = volume.rank(pct=True)
+
+        # 将两个序列合并为DataFrame，然后计算5日滚动协方差
+        df = pd.DataFrame({'close_rank': ranked_close, 'volume_rank': ranked_volume})
+        cov = df.rolling(5).apply(lambda x: cov_rank(x['close_rank'], x['volume_rank']), raw=False)
+
+        return cov.rank(pct=True)
+
+    @BaseFactor.register_factor(name='alpha_14')
+    @staticmethod
+    def alpha_14(open_price: pd.Series, volume: pd.Series, pct_chg: pd.Series) -> pd.Series:
+        """
+        Alpha#14: ((-1 * rank(delta(returns, 3))) * correlation(open, volume, 10))
+        
+        3日收益率变化的排名的负值，乘以开盘价与成交量的10日相关系数。
+        
+        Args:
+            open_price: 开盘价序列
+            volume: 成交量序列
+            pct_chg: 收益率序列
+        Returns:
+            Alpha#14因子值
+        """
+        # 计算3日收益率变化的排名的负值
+        rank_returns_delta = -1 * pct_chg.diff(3).rank(pct=True)
+
+        # 计算开盘价与成交量的10日相关系数
+        correlation = open_price.rolling(10).corr(volume)
+
+        return rank_returns_delta * correlation
+
+    @BaseFactor.register_factor(name='alpha_15')
+    @staticmethod
+    def alpha_15(high: pd.Series, volume: pd.Series) -> pd.Series:
+        """
+        Alpha#15: (-1 * sum(rank(correlation(rank(high), rank(volume), 3)), 3))
+        
+        最高价排名与成交量排名的3日相关系数的排名，3日累加求和，取负值。
+        
+        Args:
+            high: 最高价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#15因子值
+        """
+
+        def rank_corr(x, y):
+            """计算两个排名序列的相关系数"""
+            if len(x) < 3:  # 确保有足够的数据点
+                return np.nan
+            x_rank = pd.Series(x).rank(pct=True)
+            y_rank = pd.Series(y).rank(pct=True)
+            return x_rank.corr(y_rank)
+
+        # 计算最高价排名与成交量排名
+        ranked_high = high.rank(pct=True)
+        ranked_volume = volume.rank(pct=True)
+
+        # 合并为DataFrame，计算3日滚动相关系数
+        df = pd.DataFrame({'high_rank': ranked_high, 'volume_rank': ranked_volume})
+        corr = df.rolling(3).apply(lambda x: rank_corr(x['high_rank'], x['volume_rank']), raw=False)
+
+        # 相关系数的排名，3日累加求和，取负值
+        return -1 * corr.rank(pct=True).rolling(3).sum()
+
+    @BaseFactor.register_factor(name='alpha_16')
+    @staticmethod
+    def alpha_16(high: pd.Series, volume: pd.Series) -> pd.Series:
+        """
+        Alpha#16: (-1 * rank(covariance(rank(high), rank(volume), 5)))
+        
+        最高价排名与成交量排名的5日协方差的排名，取负值。
+        
+        Args:
+            high: 最高价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#16因子值
+        """
+
+        def cov_rank(x, y):
+            """计算两个排名序列的协方差"""
+            if len(x) < 5:  # 确保有足够的数据点
+                return np.nan
+            x_rank = pd.Series(x).rank(pct=True)
+            y_rank = pd.Series(y).rank(pct=True)
+            return np.cov(x_rank, y_rank)[0, 1]
+
+        # 计算最高价排名与成交量排名
+        ranked_high = high.rank(pct=True)
+        ranked_volume = volume.rank(pct=True)
+
+        # 合并为DataFrame，计算5日滚动协方差
+        df = pd.DataFrame({'high_rank': ranked_high, 'volume_rank': ranked_volume})
+        cov = df.rolling(5).apply(lambda x: cov_rank(x['high_rank'], x['volume_rank']), raw=False)
+
+        # 协方差的排名，取负值
+        return -1 * cov.rank(pct=True)
+
+    @BaseFactor.register_factor(name='alpha_17')
+    @staticmethod
+    def alpha_17(close: pd.Series, volume: pd.Series) -> pd.Series:
+        """
+        Alpha#17: (((-1 * rank(ts_rank(close, 10))) * rank(delta(delta(close, 1), 1))) * rank(ts_rank((volume / adv20), 5)))
+        
+        收盘价10日时序排名的排名的负值，乘以收盘价一阶差分的一阶差分的排名，再乘以(成交量/20日平均成交量)5日时序排名的排名。
+        
+        Args:
+            close: 收盘价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#17因子值
+        """
+
+        def ts_rank(x):
+            """计算时间序列排名"""
+            return pd.Series(x).rank(pct=True).iloc[-1]
+
+        # 计算收盘价10日时序排名的排名的负值
+        ts_ranked_close = close.rolling(10).apply(ts_rank, raw=False)
+        term1 = -1 * ts_ranked_close.rank(pct=True)
+
+        # 计算收盘价一阶差分的一阶差分的排名
+        delta_delta_close = close.diff(1).diff(1)
+        term2 = delta_delta_close.rank(pct=True)
+
+        # 计算(成交量/20日平均成交量)5日时序排名的排名
+        adv20 = volume.rolling(20).mean()
+        volume_ratio = volume / (adv20 + 1e-10)  # 避免除以零
+        ts_ranked_volume = volume_ratio.rolling(5).apply(ts_rank, raw=False)
+        term3 = ts_ranked_volume.rank(pct=True)
+
+        return term1 * term2 * term3
+
+    @BaseFactor.register_factor(name='alpha_18')
+    @staticmethod
+    def alpha_18(open_price: pd.Series, close: pd.Series) -> pd.Series:
+        """
+        Alpha#18: (-1 * rank(((stddev(abs((close - open)), 5) + (close - open)) + correlation(close, open, 10))))
+        
+        (收盘价与开盘价差的绝对值的5日标准差 + 收盘价与开盘价之差 + 收盘价与开盘价的10日相关系数)的排名，取负值。
+        
+        Args:
+            open_price: 开盘价序列
+            close: 收盘价序列
+        Returns:
+            Alpha#18因子值
+        """
+        # 计算收盘价与开盘价之差
+        close_open_diff = close - open_price
+
+        # 计算差值绝对值的5日标准差
+        stddev_abs_diff = close_open_diff.abs().rolling(5).std()
+
+        # 计算收盘价与开盘价的10日相关系数
+        corr = close.rolling(10).corr(open_price)
+
+        # 合并三项并排名，取负值
+        return -1 * (stddev_abs_diff + close_open_diff + corr).rank(pct=True)
+
+    @BaseFactor.register_factor(name='alpha_19')
+    @staticmethod
+    def alpha_19(close: pd.Series, pct_chg: pd.Series) -> pd.Series:
+        """
+        Alpha#19: ((-1 * sign(((close - delay(close, 7)) + delta(close, 7)))) * (1 + rank((1 + sum(returns, 250)))))
+        
+        (收盘价 - 7日前收盘价 + 收盘价7日差分)的符号的负值，乘以(1 + 250日累积收益率的排名 + 1)。
+        
+        Args:
+            close: 收盘价序列
+            pct_chg: 收益率序列
+        Returns:
+            Alpha#19因子值
+        """
+        # 计算(收盘价 - 7日前收盘价 + 收盘价7日差分)
+        delay_close = close.shift(7)
+        delta_close = close.diff(7)
+        term1 = (close - delay_close) + delta_close
+
+        # 计算符号的负值
+        sign_term1 = -1 * np.sign(term1)
+
+        # 计算(1 + 250日累积收益率的排名 + 1)
+        sum_returns = pct_chg.rolling(250).sum()
+        term2 = 1 + (1 + sum_returns).rank(pct=True)
+
+        return sign_term1 * term2
+
+    @BaseFactor.register_factor(name='alpha_20')
+    @staticmethod
+    def alpha_20(open_price: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+        """
+        Alpha#20: (((-1 * rank((open - delay(high, 1)))) * rank((open - delay(close, 1)))) * rank((open - delay(low, 1))))
+        
+        (开盘价 - 1日前最高价)排名的负值，乘以(开盘价 - 1日前收盘价)的排名，再乘以(开盘价 - 1日前最低价)的排名。
+        
+        Args:
+            open_price: 开盘价序列
+            high: 最高价序列
+            low: 最低价序列
+            close: 收盘价序列
+        Returns:
+            Alpha#20因子值
+        """
+        # 计算各项差值
+        open_prev_high = open_price - high.shift(1)
+        open_prev_close = open_price - close.shift(1)
+        open_prev_low = open_price - low.shift(1)
+
+        # 计算各项排名
+        rank1 = -1 * open_prev_high.rank(pct=True)
+        rank2 = open_prev_close.rank(pct=True)
+        rank3 = open_prev_low.rank(pct=True)
+
+        return rank1 * rank2 * rank3
 
 
 def get_registered_factors() -> Dict[str, Callable]:

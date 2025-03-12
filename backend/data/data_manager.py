@@ -88,11 +88,12 @@ class DataUpdateManager:
         """更新股票列表"""
         self._retry_operation(self.db.save_stock_basic, stock_basic=stock_list)
 
-    def update_all_stocks(self, force_full_update: bool = False, progress_callback=None):
+    def update_all_stocks(self, force_full_update: bool = False, frequency='daily', progress_callback=None):
         """更新所有股票数据
 
         Args:
             force_full_update (bool): 是否强制全量更新
+            frequency: 更新股票数据的频率，默认为 'daily'
             progress_callback (callable): 进度回调函数
 
         Returns:
@@ -127,17 +128,17 @@ class DataUpdateManager:
                 try:
                     # 获取不复权数据
                     df = self.__fetch_stock_data(code, trading_calendar, force_full_update, latest_dates.get(code),
-                                                 adjust='3')
+                                                 frequency=frequency, adjust='3')
                     if not df.empty:
-                        self.data_queue.put((code, df, '3'))
+                        self.data_queue.put((code, df, frequency, '3'))
                     elif progress_callback:
                         progress_callback()
                     # 获取后复权数据
                     df_back = self.__fetch_stock_data(code, trading_calendar, force_full_update,
-                                                      latest_dates_back.get(code),
+                                                      latest_dates_back.get(code), frequency=frequency,
                                                       adjust='1')
                     if not df_back.empty:
-                        self.data_queue.put((code, df_back, '1'))
+                        self.data_queue.put((code, df_back, frequency, '1'))
                     elif progress_callback:
                         progress_callback()
                 except Exception as e:
@@ -170,9 +171,25 @@ class DataUpdateManager:
         while not (self.producer_done.is_set() and self.data_queue.empty()):
             try:
                 # 等待5秒获取数据，如果超时则检查生产者是否完成
-                code, df, adjust = self.data_queue.get(timeout=self.QUEUE_TIMEOUT)
+                code, df, frequency, adjust = self.data_queue.get(timeout=self.QUEUE_TIMEOUT)
                 try:
-                    self.db.update_stock_daily(code, df, adjust)
+                    if frequency == 'daily':
+                        self.db.update_stock_daily(code, df, adjust)
+
+                    # TODO: 暂未实现除日线行情外的数据
+                    # elif frequency == 'weekly':
+                    #     self.db.update_stock_weekly(code, df, adjust)
+                    # elif frequency == 'monthly':
+                    #     self.db.update_stock_monthly(code, df, adjust)
+                    # elif frequency == '5':
+                    #     self.db.update_stock_5min(code, df, adjust)
+                    # elif frequency == '15':
+                    #     self.db.update_stock_15min(code, df, adjust)
+                    # elif frequency == '30':
+                    #     self.db.update_stock_30min(code, df, adjust)
+                    # elif frequency == '60':
+                    #     self.db.update_stock_60min(code, df, adjust)
+
                     with self.stats_lock:  # 使用线程锁保护统计信息的更新
                         update_stats["updated"] += 1
                 except Exception as e:
@@ -189,7 +206,7 @@ class DataUpdateManager:
                 continue
 
     def __fetch_stock_data(self, code: str, trading_calendar: pd.DataFrame, force_full_update: bool = False,
-                           latest_date: Optional[str] = None, adjust: str = '3') -> pd.DataFrame:
+                           latest_date: Optional[str] = None, frequency: str = 'daily', adjust: str = '3') -> pd.DataFrame:
         """获取单只股票的数据"""
         if isinstance(latest_date, str):
             latest_date = dt.datetime.strptime(latest_date, '%Y-%m-%d %H:%M:%S')
@@ -218,7 +235,7 @@ class DataUpdateManager:
             return pd.DataFrame()
 
         df = self._retry_operation(self.data_source.get_stock_data, code=code, start_date=start_date, end_date=end_date,
-                                   adjust=adjust)
+                                   frequency=frequency, adjust=adjust)
 
         if df.empty:
             logging.warning(f"股票 {code}_{adjust} 没有更新数据")

@@ -45,7 +45,9 @@ def update_database(args, logger):
 
         # 创建进度条，因为要更新不复权和后复权两个股票库，所以total * 2
         with tqdm(total=total_stocks * 2, desc="更新数据库", unit="份数据") as pbar:
+            # 目前只更新Daily数据
             result = data_manager.update_all_stocks(force_full_update=args.full,
+                                                    frequency='daily',
                                                     progress_callback=lambda: pbar.update(1))
 
         end_time = time.time()

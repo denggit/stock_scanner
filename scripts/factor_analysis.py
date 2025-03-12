@@ -313,16 +313,13 @@ if __name__ == "__main__":
     start_date = "2022-01-01"
     end_date = "2025-01-01"
     fetcher = StockDataFetcher()
-    # 股票在start_date前上市
-    # stock_codes = fetcher.get_stock_list_with_cond(pool_name="no_st", ipo_date=start_date, min_volume=10000000).code.to_list()
     # 股票至少已经上市1年
     stock_codes = fetcher.get_stock_list_with_cond(pool_name="no_st", ipo_date="2024-01-01", min_amount=10000000, end_date=datetime.datetime.strptime(end_date, "%Y-%m-%d").date()).code.to_list()
 
-    # from backend.quant.core.factor_engine.factor_generator import ShortTermFactors
     run_factor_analysis(
-        factor_name="",
+        factor_name="overnight_momentum",
         stock_codes=stock_codes,
         start_date=start_date,
         end_date=end_date,
-        factor_type="ShortTermFactors"
+        factor_type=""
     )
