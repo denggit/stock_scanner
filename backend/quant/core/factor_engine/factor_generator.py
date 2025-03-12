@@ -870,7 +870,8 @@ class WorldQuantFactors(BaseFactor):
 
     @BaseFactor.register_factor(name='alpha_21')
     @staticmethod
-    def alpha_21(open_price: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series) -> pd.Series:
+    def alpha_21(open_price: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series,
+                 volume: pd.Series) -> pd.Series:
         """
         Alpha#21: ((((close - open) / (high - low)) * volume) / adv20)
 
@@ -1010,6 +1011,7 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#26因子值
         """
+
         def ts_rank_func(x):
             """计算时间序列排名"""
             return pd.Series(x).rank(pct=True).iloc[-1]
@@ -1260,7 +1262,7 @@ class WorldQuantFactors(BaseFactor):
 
     @BaseFactor.register_factor(name='alpha_34')
     @staticmethod
-    def alpha_34(close: pd.Series) -> pd.Series:
+    def alpha_34(close: pd.Series, pct_chg: pd.Series) -> pd.Series:
         """
         Alpha#34: rank(((1 - rank((stddev(returns, 2) / stddev(returns, 5)))) + (1 - rank(delta(close, 1)))))
         
@@ -1271,12 +1273,9 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#34因子值
         """
-        # 计算收益率（使用收盘价的变化率代替）
-        returns = close.pct_change()
-
         # 计算收益率的2日和5日标准差之比的排名的倒数
-        std_2d = returns.rolling(2).std()
-        std_5d = returns.rolling(5).std()
+        std_2d = pct_chg.rolling(2).std()
+        std_5d = pct_chg.rolling(5).std()
         ratio_std = std_2d / (std_5d + 1e-12)
         term1 = 1 - ratio_std.rank(pct=True)
 
@@ -1289,7 +1288,7 @@ class WorldQuantFactors(BaseFactor):
 
     @BaseFactor.register_factor(name='alpha_35')
     @staticmethod
-    def alpha_35(close: pd.Series, volume: pd.Series, high: pd.Series, low: pd.Series) -> pd.Series:
+    def alpha_35(close: pd.Series, volume: pd.Series, high: pd.Series, low: pd.Series, pct_chg: pd.Series) -> pd.Series:
         """
         Alpha#35: ((Ts_Rank(volume, 32) * (1 - Ts_Rank(((close + high) - low), 16))) * (1 - Ts_Rank(returns, 32)))
         
@@ -1317,8 +1316,7 @@ class WorldQuantFactors(BaseFactor):
         term2 = 1 - ts_rank_price
 
         # 计算收益率的32日时序排名（使用收盘价变化率代替收益率）
-        returns = close.pct_change()
-        ts_rank_returns = returns.rolling(32).apply(ts_rank_func, raw=False)
+        ts_rank_returns = pct_chg.rolling(32).apply(ts_rank_func, raw=False)
         term3 = 1 - ts_rank_returns
 
         # 组合三项
@@ -1326,7 +1324,7 @@ class WorldQuantFactors(BaseFactor):
 
     # @BaseFactor.register_factor(name='alpha_36')
     # @staticmethod
-    # def alpha_36(open_price: pd.Series, close: pd.Series, volume: pd.Series, vwap: pd.Series) -> pd.Series:
+    # def alpha_36(open_price: pd.Series, close: pd.Series, volume: pd.Series, vwap: pd.Series, pct_chg: pd.Series) -> pd.Series:
     #     """
     #     Alpha#36: (((((2.21 * rank(correlation((close - open), delay(volume, 1), 15))) + (0.7 * rank((open - close)))) + (0.73 * rank(Ts_Rank(delay((-1 * returns), 6), 5)))) + rank(abs(correlation(vwap, adv20, 6)))) + (0.6 * rank((((sum(close, 200) / 200) - open) * (close - open)))))
     #
@@ -1353,8 +1351,7 @@ class WorldQuantFactors(BaseFactor):
     #     term2 = 0.7 * open_close_diff.rank(pct=True)
     #
     #     # 计算第三项：收益率负值的6日延迟的5日时序排名的排名
-    #     returns = close.pct_change()
-    #     neg_returns = -1 * returns
+    #     neg_returns = -1 * pct_chg
     #
     #     def ts_rank_func(x):
     #         return pd.Series(x).rank(pct=True).iloc[-1]
@@ -1412,6 +1409,7 @@ class WorldQuantFactors(BaseFactor):
         
         Args:
             close: 收盘价序列
+            open_price: 开盘价序列
         Returns:
             Alpha#38因子值
         """
@@ -1431,7 +1429,7 @@ class WorldQuantFactors(BaseFactor):
 
     @BaseFactor.register_factor(name='alpha_39')
     @staticmethod
-    def alpha_39(close: pd.Series, volume: pd.Series) -> pd.Series:
+    def alpha_39(close: pd.Series, volume: pd.Series, pct_chg: pd.Series) -> pd.Series:
         """
         Alpha#39: ((-1 * rank((delta(close, 7) * (1 - rank(decay_linear((volume / adv20), 9)))))) * (1 + rank(sum(returns, 250))))
         
@@ -1468,8 +1466,7 @@ class WorldQuantFactors(BaseFactor):
         term1 = -1 * (delta_close_7 * (1 - decayed_volume.rank(pct=True))).rank(pct=True)
 
         # 计算250日累积收益率的排名加1
-        returns = close.pct_change()
-        sum_returns = returns.rolling(250).sum()
+        sum_returns = pct_chg.rolling(250).sum()
         term2 = 1 + sum_returns.rank(pct=True)
 
         # 组合两项
@@ -1812,31 +1809,26 @@ class WorldQuantFactors(BaseFactor):
 
     @BaseFactor.register_factor(name='alpha_52')
     @staticmethod
-    def alpha_52(close: pd.Series, volume: pd.Series) -> pd.Series:
+    def alpha_52(volume: pd.Series, low: pd.Series, pct_chg: pd.Series) -> pd.Series:
         """
         Alpha#52: ((((-1 * ts_min(low, 5)) + delay(ts_min(low, 5), 5)) * rank(((sum(returns, 240) - sum(returns, 20)) / 220))) * ts_rank(volume, 5))
         
         5日最低价的5日变化，乘以240日累积收益与20日累积收益之差除以220的排名，再乘以成交量的5日时序排名。
         
         Args:
-            close: 收盘价序列
             volume: 成交量序列
+            low: 最低价序列
         Returns:
             Alpha#52因子值
         """
-        # 使用close模拟low
-        low = close * 0.995
 
         # 计算5日最低价的5日变化
         ts_min_low_5 = low.rolling(5).min()
         delta_min_low = -1 * ts_min_low_5 + ts_min_low_5.shift(5)
 
-        # 计算收益率
-        returns = close.pct_change()
-
         # 计算240日和20日累积收益之差除以220的排名
-        sum_returns_240 = returns.rolling(240).sum()
-        sum_returns_20 = returns.rolling(20).sum()
+        sum_returns_240 = pct_chg.rolling(240).sum()
+        sum_returns_20 = pct_chg.rolling(20).sum()
         diff_returns = (sum_returns_240 - sum_returns_20) / 220
         rank_diff_returns = diff_returns.rank(pct=True)
 
@@ -1858,6 +1850,8 @@ class WorldQuantFactors(BaseFactor):
         
         Args:
             close: 收盘价序列
+            high: 最高价序列
+            low: 最低价序列
         Returns:
             Alpha#53因子值
         """
@@ -1924,39 +1918,29 @@ class WorldQuantFactors(BaseFactor):
 
     @BaseFactor.register_factor(name='alpha_56')
     @staticmethod
-    def alpha_56(open_price: pd.Series, high: pd.Series, low: pd.Series, volume: pd.Series) -> pd.Series:
+    def alpha_56(pct_chg: pd.Series, volume: pd.Series) -> pd.Series:
         """
         Alpha#56: (0 - (1 * (rank((sum(returns, 10) / sum(sum(returns, 2), 3))) * rank((returns * cap)))))
         
         10日累积收益除以2日累积收益的3日累加值的排名，乘以收益乘以市值的排名，取负值。
         
         Args:
-            open_price: 开盘价序列
-            high: 最高价序列
-            low: 最低价序列
             volume: 成交量序列
         Returns:
             Alpha#56因子值
         """
-        # 由于缺少returns和cap数据，使用价格和成交量的替代计算
-        # 使用收盘价作为模拟
-        close = (open_price + high + low) / 3
-
-        # 计算收益率
-        returns = close.pct_change()
-
         # 计算10日累积收益
-        sum_returns_10 = returns.rolling(10).sum()
+        sum_returns_10 = pct_chg.rolling(10).sum()
 
         # 计算2日累积收益的3日累加值
-        sum_returns_2 = returns.rolling(2).sum()
+        sum_returns_2 = pct_chg.rolling(2).sum()
         sum_sum_returns = sum_returns_2.rolling(3).sum()
 
         # 计算第一个排名
         rank1 = (sum_returns_10 / (sum_sum_returns + 1e-12)).rank(pct=True)
 
         # 使用收益率乘以成交量作为市值的代理
-        cap_proxy = returns * volume
+        cap_proxy = pct_chg * volume
         rank2 = cap_proxy.rank(pct=True)
 
         # 计算最终结果，取负值
@@ -3004,29 +2988,30 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#80因子值
         """
+
         # 时序排名函数
         def ts_rank_func(x):
             return pd.Series(x).rank(pct=True).iloc[-1]
-        
+
         # 计算开盘价与最高价的加权和
         weighted_open_high = open_price * 0.868128 + high * (1 - 0.868128)
-        
+
         # 由于无法实现行业中性化，使用原始weighted_open_high
-        
+
         # 计算weighted_open_high的4日变化符号的排名
         delta_weighted = weighted_open_high.diff(4)
         sign_delta = np.sign(delta_weighted)
         rank_sign = sign_delta.rank(pct=True)
-        
+
         # 计算10日均量
         adv10 = volume.rolling(10).mean()
-        
+
         # 计算high与adv10的5日相关系数
         corr = high.rolling(5).corr(adv10)
-        
+
         # 计算相关系数的6日时序排名
         ts_rank_corr = corr.rolling(6).apply(ts_rank_func, raw=False)
-        
+
         # 计算rank_sign的ts_rank_corr次方，取负值
         return -1 * (rank_sign ** ts_rank_corr)
 
@@ -3092,41 +3077,42 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#82因子值
         """
+
         # 线性衰减函数
         def decay_linear(series, window):
             weights = np.arange(1, window + 1) / window
             weights = weights[::-1]  # 反转权重使最近的观测值权重最大
-            
+
             result = pd.Series(index=series.index)
-            for i in range(window-1, len(series)):
-                if i < window-1:
+            for i in range(window - 1, len(series)):
+                if i < window - 1:
                     continue
-                result.iloc[i] = np.nansum(series.iloc[i-window+1:i+1].values * weights)
+                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
             return result
-        
+
         # 时序排名函数
         def ts_rank_func(x):
             return pd.Series(x).rank(pct=True).iloc[-1]
-        
+
         # 计算开盘价的1日变化
         delta_open = open_price.diff(1)
-        
+
         # 计算delta_open的15日线性衰减的排名
         decayed_delta = decay_linear(delta_open, 15)
         rank_term1 = decayed_delta.rank(pct=True)
-        
+
         # 由于无法实现行业中性化，使用原始volume
-        
+
         # 计算volume与open的17日相关系数
         # 注意：(open * 0.634196) + (open * (1 - 0.634196)) 就等于open
         corr = volume.rolling(17).corr(open_price)
-        
+
         # 计算相关系数的7日线性衰减
         decayed_corr = decay_linear(corr, 7)
-        
+
         # 计算线性衰减的13日时序排名
         ts_rank_term2 = decayed_corr.rolling(13).apply(ts_rank_func, raw=False)
-        
+
         # 取两项的较小值，再取负值
         return -1 * np.minimum(rank_term1, ts_rank_term2)
 
@@ -3225,33 +3211,34 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#85因子值
         """
+
         # 时序排名函数
         def ts_rank_func(x):
             return pd.Series(x).rank(pct=True).iloc[-1]
-        
+
         # 计算最高价与收盘价的加权和
         weighted_high_close = high * 0.876703 + close * (1 - 0.876703)
-        
+
         # 计算30日均量
         adv30 = volume.rolling(30).mean()
-        
+
         # 计算weighted_high_close与adv30的10日相关系数的排名
         corr1 = weighted_high_close.rolling(10).corr(adv30)
         rank_corr1 = corr1.rank(pct=True)
-        
+
         # 计算(high + low) / 2
         price_avg = (high + low) / 2
-        
+
         # 计算price_avg的4日时序排名
         ts_rank_price = price_avg.rolling(4).apply(ts_rank_func, raw=False)
-        
+
         # 计算volume的10日时序排名
         ts_rank_volume = volume.rolling(10).apply(ts_rank_func, raw=False)
-        
+
         # 计算两个时序排名的7日相关系数的排名
         corr2 = ts_rank_price.rolling(7).corr(ts_rank_volume)
         rank_corr2 = corr2.rank(pct=True)
-        
+
         # 计算rank_corr1的rank_corr2次方
         return rank_corr1 ** rank_corr2
 
@@ -3374,7 +3361,8 @@ class WorldQuantFactors(BaseFactor):
 
     @BaseFactor.register_factor(name='alpha_88')
     @staticmethod
-    def alpha_88(open_price: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series) -> pd.Series:
+    def alpha_88(open_price: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series,
+                 volume: pd.Series) -> pd.Series:
         """
         Alpha#88: min(rank(decay_linear(((rank(open) + rank(low)) - (rank(high) + rank(close))), 8.06882)), Ts_Rank(decay_linear(correlation(Ts_Rank(close, 8.44728), Ts_Rank(adv60, 20.6966), 8.01266), 6.65053), 2.61957))
         
@@ -3389,52 +3377,53 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#88因子值
         """
+
         # 线性衰减函数
         def decay_linear(series, window):
             weights = np.arange(1, window + 1) / window
             weights = weights[::-1]  # 反转权重使最近的观测值权重最大
-            
+
             result = pd.Series(index=series.index)
-            for i in range(window-1, len(series)):
-                if i < window-1:
+            for i in range(window - 1, len(series)):
+                if i < window - 1:
                     continue
-                result.iloc[i] = np.nansum(series.iloc[i-window+1:i+1].values * weights)
+                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
             return result
-        
+
         # 时序排名函数
         def ts_rank_func(x):
             return pd.Series(x).rank(pct=True).iloc[-1]
-        
+
         # 计算价格因子
         rank_open = open_price.rank(pct=True)
         rank_low = low.rank(pct=True)
         rank_high = high.rank(pct=True)
         rank_close = close.rank(pct=True)
-        
+
         price_factor = (rank_open + rank_low) - (rank_high + rank_close)
-        
+
         # 计算price_factor的8日线性衰减的排名
         decayed_price = decay_linear(price_factor, 8)
         rank_term1 = decayed_price.rank(pct=True)
-        
+
         # 计算close的8日时序排名
         ts_rank_close = close.rolling(8).apply(ts_rank_func, raw=False)
-        
+
         # 计算60日均量
         adv60 = volume.rolling(60).mean()
-        
+
         # 计算adv60的21日时序排名
         ts_rank_adv60 = adv60.rolling(21).apply(ts_rank_func, raw=False)
-        
+
         # 计算两个时序排名的8日相关系数
         corr = ts_rank_close.rolling(8).corr(ts_rank_adv60)
-        
+
         # 计算相关系数的7日线性衰减
         decayed_corr = decay_linear(corr, 7)
-        
+
         # 计算线性衰减的3日时序排名
         ts_rank_term2 = decayed_corr.rolling(3).apply(ts_rank_func, raw=False)
-        
+
         # 取两项的较小值
         return np.minimum(rank_term1, ts_rank_term2)
 
@@ -3508,27 +3497,28 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#90因子值
         """
+
         # 时序排名函数
         def ts_rank_func(x):
             return pd.Series(x).rank(pct=True).iloc[-1]
-        
+
         # 计算close的5日最大值
         ts_max_close = close.rolling(5).max()
-        
+
         # 计算close与其最大值之差的排名
         rank_term1 = (close - ts_max_close).rank(pct=True)
-        
+
         # 计算40日均量
         adv40 = volume.rolling(40).mean()
-        
+
         # 由于无法实现行业中性化，使用原始adv40
-        
+
         # 计算adv40与low的5日相关系数
         corr = adv40.rolling(5).corr(low)
-        
+
         # 计算相关系数的3日时序排名
         ts_rank_term2 = corr.rolling(3).apply(ts_rank_func, raw=False)
-        
+
         # 计算rank_term1的ts_rank_term2次方，取负值
         return -1 * (rank_term1 ** ts_rank_term2)
 
@@ -3592,7 +3582,8 @@ class WorldQuantFactors(BaseFactor):
 
     @BaseFactor.register_factor(name='alpha_92')
     @staticmethod
-    def alpha_92(open_price: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series) -> pd.Series:
+    def alpha_92(open_price: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series,
+                 volume: pd.Series) -> pd.Series:
         """
         Alpha#92: min(Ts_Rank(decay_linear(((((high + low) / 2) + close) < (low + open)), 14.7221), 18.8683), Ts_Rank(decay_linear(correlation(rank(low), rank(adv30), 7.58555), 6.94024), 6.80584))
         
@@ -3607,43 +3598,44 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#92因子值
         """
+
         # 线性衰减函数
         def decay_linear(series, window):
             weights = np.arange(1, window + 1) / window
             weights = weights[::-1]  # 反转权重使最近的观测值权重最大
-            
+
             result = pd.Series(index=series.index)
-            for i in range(window-1, len(series)):
-                if i < window-1:
+            for i in range(window - 1, len(series)):
+                if i < window - 1:
                     continue
-                result.iloc[i] = np.nansum(series.iloc[i-window+1:i+1].values * weights)
+                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
             return result
-        
+
         # 时序排名函数
         def ts_rank_func(x):
             return pd.Series(x).rank(pct=True).iloc[-1]
-        
+
         # 计算价格条件
         condition = (((high + low) / 2) + close) < (low + open_price)
         condition = condition.astype(int)
-        
+
         # 计算condition的15日线性衰减的19日时序排名
         decayed_cond = decay_linear(condition, 15)
         ts_rank_term1 = decayed_cond.rolling(19).apply(ts_rank_func, raw=False)
-        
+
         # 计算30日均量
         adv30 = volume.rolling(30).mean()
-        
+
         # 计算low排名与adv30排名的8日相关系数
         rank_low = low.rank(pct=True)
         rank_adv30 = adv30.rank(pct=True)
-        
+
         corr = rank_low.rolling(8).corr(rank_adv30)
-        
+
         # 计算相关系数的7日线性衰减的7日时序排名
         decayed_corr = decay_linear(corr, 7)
         ts_rank_term2 = decayed_corr.rolling(7).apply(ts_rank_func, raw=False)
-        
+
         # 取两项的较小值
         return np.minimum(ts_rank_term1, ts_rank_term2)
 
@@ -3748,7 +3740,8 @@ class WorldQuantFactors(BaseFactor):
 
     @BaseFactor.register_factor(name='alpha_95')
     @staticmethod
-    def alpha_95(open_price: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series) -> pd.Series:
+    def alpha_95(open_price: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series,
+                 volume: pd.Series) -> pd.Series:
         """
         Alpha#95: (rank((open - ts_min(open, 12.4105))) < Ts_Rank(rank(correlation(sum(((high + low) / 2), 19.1351), sum(adv40, 19.1351), 12.8742)), 11.7584))
         
@@ -3763,35 +3756,36 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#95因子值
         """
+
         # 时序排名函数
         def ts_rank_func(x):
             return pd.Series(x).rank(pct=True).iloc[-1]
-        
+
         # 计算open的12日最小值
         ts_min_open = open_price.rolling(12).min()
-        
+
         # 计算open与其最小值之差的排名
         rank_term1 = (open_price - ts_min_open).rank(pct=True)
-        
+
         # 计算(high + low) / 2的19日累积
         price_avg = (high + low) / 2
         sum_price = price_avg.rolling(19).sum()
-        
+
         # 计算40日均量的19日累积
         adv40 = volume.rolling(40).mean()
         sum_adv40 = adv40.rolling(19).sum()
-        
+
         # 计算sum_price与sum_adv40的13日相关系数
         corr = sum_price.rolling(13).corr(sum_adv40)
-        
+
         # 计算相关系数的排名的12日时序排名
         rank_corr = corr.rank(pct=True)
         ts_rank_term2 = rank_corr.rolling(12).apply(ts_rank_func, raw=False)
-        
+
         # 比较两个排名，条件成立取1，否则取0
         result = pd.Series(0, index=close.index)
         result[rank_term1 < ts_rank_term2] = 1
-        
+
         return result
 
     # @BaseFactor.register_factor(name='alpha_96')
@@ -4014,25 +4008,25 @@ class WorldQuantFactors(BaseFactor):
         # 计算(high + low) / 2的20日累积
         price_avg = (high + low) / 2
         sum_price = price_avg.rolling(20).sum()
-        
+
         # 计算60日均量
         adv60 = volume.rolling(60).mean()
-        
+
         # 计算adv60的20日累积
         sum_adv60 = adv60.rolling(20).sum()
-        
+
         # 计算sum_price与sum_adv60的9日相关系数的排名
         corr1 = sum_price.rolling(9).corr(sum_adv60)
         rank_corr1 = corr1.rank(pct=True)
-        
+
         # 计算low与volume的6日相关系数的排名
         corr2 = low.rolling(6).corr(volume)
         rank_corr2 = corr2.rank(pct=True)
-        
+
         # 比较两个排名，条件成立取-1，否则取0
         result = pd.Series(0, index=close.index)
         result[rank_corr1 < rank_corr2] = -1
-        
+
         return result
 
     @BaseFactor.register_factor(name='alpha_100')
@@ -4051,46 +4045,47 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#100因子值
         """
+
         # 标准化函数
         def scale(x):
             return (x - x.mean()) / (x.std() + 1e-12)
-        
+
         # 时序最小值位置函数
         def ts_argmin(x):
             return np.argmin(x[-30:]) if len(x) >= 30 else np.nan
-        
+
         # 计算价格位置指标
         price_position = ((close - low) - (high - close)) / (high - low + 1e-12)
         price_vol = price_position * volume
-        
+
         # 计算price_vol的排名
         rank_price_vol = price_vol.rank(pct=True)
-        
+
         # 由于无法实现行业中性化，使用原始rank_price_vol并进行标准化
         scale_term1 = scale(rank_price_vol) * 1.5
-        
+
         # 计算20日均量
         adv20 = volume.rolling(20).mean()
-        
+
         # 计算adv20的排名
         rank_adv20 = adv20.rank(pct=True)
-        
+
         # 计算close与rank_adv20的5日相关系数
         corr = close.rolling(5).corr(rank_adv20)
-        
+
         # 计算close的30日最小值位置的排名
         argmin_close = close.rolling(30).apply(ts_argmin, raw=True)
         rank_argmin = argmin_close.rank(pct=True)
-        
+
         # 计算corr与rank_argmin的差
         diff = corr - rank_argmin
-        
+
         # 由于无法实现行业中性化，使用原始diff并进行标准化
         scale_term2 = scale(diff)
-        
+
         # 计算成交量与20日均量之比
         volume_ratio = volume / (adv20 + 1e-12)
-        
+
         # 计算最终结果
         return -1 * ((scale_term1 - scale_term2) * volume_ratio)
 

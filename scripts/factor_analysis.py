@@ -106,7 +106,7 @@ def run_factor_analysis(
     for code in stock_codes:
         try:
             # 获取股票数据
-            df = fetcher.fetch_stock_data(code=code, start_date=start_date, end_date=end_date)
+            df = fetcher.fetch_stock_data(code=code, start_date=start_date, end_date=end_date, adjust="1")
 
             if df is None or df.empty:
                 print(f"警告: 无法获取股票 {code} 的数据")
