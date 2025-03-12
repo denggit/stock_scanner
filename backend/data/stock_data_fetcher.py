@@ -7,6 +7,7 @@
 @Description: 
 """
 import datetime
+import logging
 from typing import Optional
 
 import pandas as pd
@@ -48,6 +49,9 @@ class StockDataFetcher:
         # 把数字型数据改为float
         numeric_columns = ['open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn', 'pct_chg', 'pe_ttm',
                            'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm']
+        if len(df) == 0:
+            logging.warning(f"No data found for code: {code}. Please Update Database")
+            return df
         for column in numeric_columns:
             df[column] = df[column].astype(float)
 
@@ -80,3 +84,36 @@ class StockDataFetcher:
             return rs
 
         return self.db.get_stock_list()
+
+    def get_stock_list_with_cond(self, pool_name: str = "full", ipo_date: Optional[str] = None,
+                                 min_amount: Optional[int] = None,
+                                 end_date: Optional[datetime] = datetime.date.today()) -> pd.DataFrame:
+        """
+        获取股票列表，带条件
+
+        Parameters:
+        pool_name: 股票池
+        ipo_date: 必须要在这个日期前上市的股票 (YYYY-MM-DD)
+        daily_volume: 5日日均成交额不低于该值
+
+        :return: 股票列表
+        """
+        stock_list = self.get_stock_list(pool_name=pool_name)
+        if ipo_date is not None:
+            if "ipo_date" not in stock_list.columns:
+                temp_stock_list = self.get_stock_list()
+                stock_list = temp_stock_list[temp_stock_list.code.isin(stock_list.code)]
+            stock_list = stock_list[stock_list['ipo_date'] <= datetime.datetime.strptime(ipo_date, "%Y-%m-%d").date()]
+
+        if min_amount is not None:
+            start_date = (end_date - datetime.timedelta(days=20)).strftime("%Y-%m-%d")
+            match_codes = []
+            for code in stock_list.code.to_list():
+                stock_data = self.fetch_stock_data(code, start_date=start_date).tail(5)
+                if stock_data.empty:
+                    continue
+                avg_amount = stock_data['amount'].mean()
+                if avg_amount > min_amount:
+                    match_codes.append(code)
+            stock_list = stock_list[stock_list['code'].isin(match_codes)]
+        return stock_list

@@ -98,6 +98,7 @@ def run_factor_analysis(
     # 获取股票数据
     print(f"分析周期: {start_date} 至 {end_date}")
     print(f"股票样本: {stock_codes}")
+    print(f"股票样本数量: {len(stock_codes)}")
 
     price_data = {}
     valid_stocks = 0
@@ -309,12 +310,13 @@ if __name__ == "__main__":
 
     # stock_codes = ["sh.605300", "sz.300490", "sh.603336", "sh.600519", "sz.000858",
     #                "sh.601398", "sz.000651", "sh.601318", "sz.000333", "sh.600036"]
-    start_date = "2024-01-01"
-    end_date = "2025-03-01"
+    start_date = "2022-01-01"
+    end_date = "2025-01-01"
     fetcher = StockDataFetcher()
-    all_stock_codes = fetcher.get_stock_list()
-    stock_codes = all_stock_codes[
-        all_stock_codes['ipo_date'] < datetime.datetime.strptime(start_date, "%Y-%m-%d").date()].code.to_list()
+    # 股票在start_date前上市
+    # stock_codes = fetcher.get_stock_list_with_cond(pool_name="no_st", ipo_date=start_date, min_volume=10000000).code.to_list()
+    # 股票至少已经上市1年
+    stock_codes = fetcher.get_stock_list_with_cond(pool_name="no_st", ipo_date="2024-01-01", min_amount=10000000, end_date=datetime.datetime.strptime(end_date, "%Y-%m-%d").date()).code.to_list()
 
     # from backend.quant.core.factor_engine.factor_generator import ShortTermFactors
     run_factor_analysis(
