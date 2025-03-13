@@ -33,6 +33,7 @@ IR 0.5-1.0	合格	需搭配其他因子分散风险
 IR < 0.5	不稳定	谨慎使用，需动态监控或淘汰
 """
 
+import logging
 from typing import Dict, List, Union
 
 import matplotlib.font_manager as fm
@@ -40,7 +41,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import logging
 
 # 查找系统中支持中文的字体
 chinese_fonts = [f.name for f in fm.fontManager.ttflist if '黑体' in f.name or 'Heiti' in f.name or 'SimHei' in f.name]
@@ -172,12 +172,6 @@ class FactorAnalyzer:
                         valid_dates += 1
                     except Exception as e:
                         logging.exception(f"计算{date}的IC值时出错: {e}")
-
-                # 输出统计信息
-                logging.info(f"周期 {period} 统计：")
-                logging.info(f"  - 有效交易日: {valid_dates}")
-                logging.info(f"  - 因子值为常数的交易日: {constant_dates}")
-                logging.info(f"  - 总交易日: {len(self.factor_data.index)}")
 
                 # 存储每日IC值
                 daily_ic[period] = ic_series.dropna()
@@ -667,40 +661,44 @@ class FactorAnalyzer:
         # 汇总报告
         if self.is_panel_data:
             # 多只股票数据的报告
-            
+
             # 更灵活地选择代表周期：优先使用20日，否则使用第一个可用周期
             available_periods = self.ic_series.index.tolist()
-            representative_period = 'return_20d' if 'return_20d' in available_periods else available_periods[0] if available_periods else None
-            
+            representative_period = 'return_20d' if 'return_20d' in available_periods else available_periods[
+                0] if available_periods else None
+
             # 计算所有周期的平均值作为备选
             ic_mean_all_periods = self.ic_series['ic'].mean() if not self.ic_series.empty else np.nan
             ic_ir_all_periods = self.ic_series['ic_ir'].mean() if not self.ic_series.empty else np.nan
-            
+
             report = {
                 'ic_data': self.ic_series,
                 'group_returns': self.group_returns,
                 'win_rates': win_rates,
                 'summary': {
                     # 主要指标：使用代表周期或所有周期均值
-                    'ic_mean': self.ic_series.loc[representative_period, 'ic'] if representative_period else ic_mean_all_periods,
+                    'ic_mean': self.ic_series.loc[
+                        representative_period, 'ic'] if representative_period else ic_mean_all_periods,
                     'ic_std': self.ic_series.loc[representative_period, 'ic_std'] if representative_period else np.nan,
-                    'ic_ir': self.ic_series.loc[representative_period, 'ic_ir'] if representative_period else ic_ir_all_periods,
-                    'ic_pos_rate': self.ic_series.loc[representative_period, 'pos_rate'] if representative_period else np.nan,
-                    
+                    'ic_ir': self.ic_series.loc[
+                        representative_period, 'ic_ir'] if representative_period else ic_ir_all_periods,
+                    'ic_pos_rate': self.ic_series.loc[
+                        representative_period, 'pos_rate'] if representative_period else np.nan,
+
                     # 收益相关指标
-                    'top_group_return': self.group_returns.loc[5, representative_period] 
-                                        if 5 in self.group_returns.index and representative_period in self.group_returns.columns 
-                                        else np.nan,
-                    'bottom_group_return': self.group_returns.loc[1, representative_period] 
-                                           if 1 in self.group_returns.index and representative_period in self.group_returns.columns 
-                                           else np.nan,
-                    'long_short_return': self.group_returns.loc['long_short', representative_period] 
-                                         if 'long_short' in self.group_returns.index and representative_period in self.group_returns.columns 
-                                         else np.nan,
-                    'top_group_win_rate': win_rates.loc[5, representative_period] 
-                                          if 5 in win_rates.index and representative_period in win_rates.columns 
-                                          else np.nan,
-                    
+                    'top_group_return': self.group_returns.loc[5, representative_period]
+                    if 5 in self.group_returns.index and representative_period in self.group_returns.columns
+                    else np.nan,
+                    'bottom_group_return': self.group_returns.loc[1, representative_period]
+                    if 1 in self.group_returns.index and representative_period in self.group_returns.columns
+                    else np.nan,
+                    'long_short_return': self.group_returns.loc['long_short', representative_period]
+                    if 'long_short' in self.group_returns.index and representative_period in self.group_returns.columns
+                    else np.nan,
+                    'top_group_win_rate': win_rates.loc[5, representative_period]
+                    if 5 in win_rates.index and representative_period in win_rates.columns
+                    else np.nan,
+
                     # 附加所有周期的均值指标
                     'all_periods_ic_mean': ic_mean_all_periods,
                     'all_periods_ic_ir': ic_ir_all_periods,
@@ -740,7 +738,7 @@ class FactorAnalyzer:
         report = self.generate_report()
         summary = report['summary']
 
-        logging.info("\n" + "=" * 50)
+        logging.info("=" * 50)
         logging.info("因子有效性分析摘要")
         logging.info("=" * 50)
 
@@ -790,14 +788,21 @@ class FactorAnalyzer:
                         f"{period:<{max_period_len}}",
                         f"{row['ic']:^{col_widths['ic']}.4f}",
                         f"{row['ic_std']:^{col_widths['ic_std']}.4f}",
-                        f"{row['ic_ir'] if not pd.isna(row['ic_ir']) else 'N/A':^{col_widths['ic_ir']}.2f}",
+                    ]
+                    ic_ir_value = row['ic_ir']
+                    if pd.isna(ic_ir_value):
+                        parts.append(f"{'N/A':^{col_widths['ic_ir']}}")
+                    else:
+                        parts.append(f"{ic_ir_value:^{col_widths['ic_ir']}.2f}")
+
+                    parts.extend([
                         f"{row['pos_rate']:^{col_widths['pos_rate']}.1%}",
                         f"{row['abs_ic']:^{col_widths['abs_ic']}.4f}"
-                    ]
+                    ])
                     logging.info("│".join(parts))
 
                 # 添加单位说明
-                logging.info("\n* 单位说明:")
+                logging.info("* 单位说明:")
                 logging.info("  - IC均值和标准差保留4位小数")
                 logging.info("  - IR(信息比率) = IC均值 / IC标准差")
                 logging.info("  - 正比例显示为百分比格式")
@@ -816,9 +821,9 @@ class FactorAnalyzer:
 
                 # 提取关键信息并解读
                 if 'long_short' in self.group_returns.index:
-                    logging.info("\n多空组合收益:", end=' ')
+                    logging.info("\n多空组合收益:")
                     for col in self.group_returns.columns:
-                        logging.info(f"{col}: {self.group_returns.loc['long_short', col]:.2%}", end='  ')
+                        logging.info(f"{col}: {self.group_returns.loc['long_short', col]:.2%}")
 
                 logging.info("\n\n* 分组解读: 若高分位组收益显著高于低分位组，表明因子有区分能力")
                 logging.info("* 多空组合: 顶层组减底层组的收益，越大表示区分能力越强")
@@ -875,11 +880,10 @@ class FactorAnalyzer:
         """
         import os
         import jinja2
-        from functools import reduce
         import matplotlib.pyplot as plt
         import base64
         from io import BytesIO
-        
+
         # 确保目标目录存在
         directory = os.path.dirname(filename)
         if directory and not os.path.exists(directory):
@@ -891,17 +895,17 @@ class FactorAnalyzer:
                 # 使用当前目录作为备选方案
                 filename = os.path.basename(filename)
                 logging.info(f"将在当前目录保存报告: {filename}")
-        
+
         # 确保生成报告前已计算所有必要指标
         if self.ic_series is None:
             self.calculate_ic()
-            
+
         if self.group_returns is None:
             self.calculate_quantile_returns()
-            
+
         win_rates = self.calculate_win_rate()
         report_data = self.generate_report()
-        
+
         # 纯函数：将DataFrame转换为HTML表格
         def df_to_html(df, float_format='{:.4f}', caption=''):
             if df is None or df.empty:
@@ -910,7 +914,7 @@ class FactorAnalyzer:
             if caption:
                 styled_df = styled_df.set_caption(caption)
             return styled_df.to_html()
-        
+
         # 修复图表生成函数，确保每个图表有新的图形对象并正确关闭
         def plot_to_base64(plot_func):
             try:
@@ -931,7 +935,7 @@ class FactorAnalyzer:
                 return f'<img src="data:image/png;base64,{img_str}" alt="图表" style="max-width:100%;" />'
             except Exception as e:
                 return f'<div class="error">生成图表时出错: {str(e)}</div>'
-        
+
         # 生成IC图表 - 修改为接受ax参数的版本
         def plot_ic(ax):
             if self.ic_series is not None and not self.ic_series.empty:
@@ -944,7 +948,7 @@ class FactorAnalyzer:
                 ax.axhline(y=0.05, color='g', linestyle='--', alpha=0.5)
                 ax.axhline(y=-0.05, color='g', linestyle='--', alpha=0.5)
                 ax.grid(True, alpha=0.3)
-        
+
         # 生成分位数收益图表
         def plot_quantile(ax):
             if self.group_returns is not None and not self.group_returns.empty:
@@ -956,7 +960,7 @@ class FactorAnalyzer:
                 ax.set_xlabel('收益周期')
                 ax.grid(True, alpha=0.3)
                 ax.legend(title='分位数')
-        
+
         # 生成累积收益图表
         def plot_cumulative(ax):
             if hasattr(self, 'cumulative_returns') and self.cumulative_returns is not None:
@@ -986,14 +990,14 @@ class FactorAnalyzer:
                             ax.set_ylabel('累积收益')
                             ax.grid(True, alpha=0.3)
                 except Exception as e:
-                    ax.text(0.5, 0.5, f"无法生成累积收益图表: {e}", 
+                    ax.text(0.5, 0.5, f"无法生成累积收益图表: {e}",
                             horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
-        
+
         # 生成图表
         ic_plot = plot_to_base64(plot_ic)
         quantile_plot = plot_to_base64(plot_quantile)
         cumulative_plot = plot_to_base64(plot_cumulative)
-        
+
         # 预先格式化数据，避免在模板中使用Python的格式化语法
         summary = {
             'ic_mean': f"{report_data['summary'].get('ic_mean', float('nan')):.4f}",
@@ -1071,12 +1075,12 @@ class FactorAnalyzer:
         </body>
         </html>
         """
-        
+
         # 格式化表格
         ic_table = df_to_html(self.ic_series, float_format='{:.4f}', caption='IC值统计表')
         group_returns_table = df_to_html(self.group_returns, float_format='{:.2%}', caption='分组收益表')
         win_rates_table = df_to_html(win_rates, float_format='{:.2%}', caption='胜率统计表')
-        
+
         # 准备报告数据
         from datetime import datetime
         context = {
@@ -1089,15 +1093,15 @@ class FactorAnalyzer:
             'cumulative_plot': cumulative_plot,
             'generation_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
-        
+
         # 渲染HTML
         template = jinja2.Template(html_template)
         html_content = template.render(**context)
-        
+
         # 保存到文件
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(html_content)
-            
+
         logging.info(f"分析报告已保存到: {os.path.abspath(filename)}")
 
 
@@ -1167,7 +1171,7 @@ def analyze_single_factor(factor_data: Union[pd.Series, pd.DataFrame, Dict[str, 
 
             # 第二步：合并因子数据到面板
             factor_data_dict = {}  # 收集所有股票的因子数据
-            
+
             for code, series in factor_data.items():
                 if date_col in price_data[code].columns:
                     # 获取日期映射
@@ -1188,13 +1192,13 @@ def analyze_single_factor(factor_data: Union[pd.Series, pd.DataFrame, Dict[str, 
 
                 # 添加到数据字典而不是直接添加到面板
                 factor_data_dict[code] = temp_series
-            
+
             # 一次性构建DataFrame，避免内存碎片化
             factor_panel = pd.DataFrame(factor_data_dict, index=date_index)
 
             # 第三步：合并价格数据到面板
             price_panel = {}
-            
+
             # 收集所有股票的收盘价数据
             close_data = {}
             for code, df in price_data.items():
@@ -1204,7 +1208,7 @@ def analyze_single_factor(factor_data: Union[pd.Series, pd.DataFrame, Dict[str, 
                     temp_df.set_index(pd.to_datetime(temp_df[date_col]), inplace=True)
                 # 添加到临时字典
                 close_data[code] = temp_df['close']
-            
+
             # 一次性构建DataFrame，避免内存碎片化
             price_panel['close'] = pd.DataFrame(close_data, index=date_index)
 

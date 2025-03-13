@@ -23,7 +23,8 @@ momentum_1m = factors['momentum_1m'](df['close'])
 print("1个月动量因子:")
 print(momentum_1m)
 """
-
+import logging
+import warnings
 from functools import wraps
 from typing import Callable, Dict
 
@@ -386,10 +387,10 @@ class WorldQuantFactors(BaseFactor):
         """
         # 将volume中的0或极小值替换为NaN以避免log(0)问题
         safe_volume = volume.replace(0, np.nan)
-        
+
         # 计算交易量对数的2阶差分
         delta_log_volume = np.log(safe_volume).diff(2)
-        
+
         # 处理可能的NaN值后进行排名
         rank_delta_log_volume = delta_log_volume.rank(pct=True)
 
@@ -399,8 +400,11 @@ class WorldQuantFactors(BaseFactor):
 
         # 计算6日滚动相关系数并取负值，处理可能的NaN结果
         correlation = rank_delta_log_volume.rolling(6).corr(returns_open)
-        
-        return -1 * correlation
+
+        result = -1 * correlation
+        result = result.clip(-1000000, 1000000)
+
+        return result
 
     @BaseFactor.register_factor(name='alpha_3')
     @staticmethod
@@ -663,9 +667,18 @@ class WorldQuantFactors(BaseFactor):
         ranked_close = close.rank(pct=True)
         ranked_volume = volume.rank(pct=True)
 
-        # 将两个序列合并为DataFrame，然后计算5日滚动协方差
-        df = pd.DataFrame({'close_rank': ranked_close, 'volume_rank': ranked_volume})
-        cov = df.rolling(5).apply(lambda x: cov_rank(x['close_rank'], x['volume_rank']), raw=False)
+        # 分别对排名后的收盘价和成交量进行滚动操作
+        close_rolling = ranked_close.rolling(5)
+        volume_rolling = ranked_volume.rolling(5)
+
+        # 自定义函数，对每个滚动窗口的数据进行计算
+        def custom_apply(close_window, volume_window):
+            if len(close_window) < 5 or len(volume_window) < 5:
+                return np.nan
+            return cov_rank(close_window, volume_window)
+
+        # 计算5日滚动协方差
+        cov = pd.Series([custom_apply(c, v) for c, v in zip(close_rolling, volume_rolling)])
 
         return cov.rank(pct=True)
 
@@ -696,9 +709,9 @@ class WorldQuantFactors(BaseFactor):
     @staticmethod
     def alpha_15(high: pd.Series, volume: pd.Series) -> pd.Series:
         """
-        Alpha#15: (-1 * sum(rank(correlation(rank(high), rank(volume), 3)), 3))
+        Alpha#15: -1 * sum(rank(correlation(rank(high), rank(volume), 5)), 3)
         
-        最高价排名与成交量排名的3日相关系数的排名，3日累加求和，取负值。
+        最高价排名与成交量排名的5日相关系数的排名的3日累和，取负值。
         
         Args:
             high: 最高价序列
@@ -706,25 +719,50 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#15因子值
         """
-
-        def rank_corr(x, y):
-            """计算两个排名序列的相关系数"""
-            if len(x) < 3:  # 确保有足够的数据点
-                return np.nan
-            x_rank = pd.Series(x).rank(pct=True)
-            y_rank = pd.Series(y).rank(pct=True)
-            return x_rank.corr(y_rank)
-
-        # 计算最高价排名与成交量排名
-        ranked_high = high.rank(pct=True)
-        ranked_volume = volume.rank(pct=True)
-
-        # 合并为DataFrame，计算3日滚动相关系数
-        df = pd.DataFrame({'high_rank': ranked_high, 'volume_rank': ranked_volume})
-        corr = df.rolling(3).apply(lambda x: rank_corr(x['high_rank'], x['volume_rank']), raw=False)
-
-        # 相关系数的排名，3日累加求和，取负值
-        return -1 * corr.rank(pct=True).rolling(3).sum()
+        # 计算排名
+        rank_high = high.rank(pct=True)
+        rank_volume = volume.rank(pct=True)
+        
+        # 安全计算相关系数
+        def safe_correlation(x, y, window=5):
+            result = pd.Series(index=x.index)
+            for i in range(window-1, len(x)):
+                if i < window-1:
+                    result.iloc[i] = np.nan
+                    continue
+                    
+                x_window = x.iloc[i-window+1:i+1]
+                y_window = y.iloc[i-window+1:i+1]
+                
+                # 检查是否有足够的非NaN值
+                valid_data = ~(np.isnan(x_window) | np.isnan(y_window))
+                if valid_data.sum() < 2:  # 至少需要2个点才能计算相关系数
+                    result.iloc[i] = np.nan
+                    continue
+                    
+                # 检查标准差是否为零
+                if np.std(x_window[valid_data]) == 0 or np.std(y_window[valid_data]) == 0:
+                    result.iloc[i] = np.nan
+                    continue
+                    
+                # 计算相关系数
+                try:
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings('ignore', category=RuntimeWarning)
+                        result.iloc[i] = x_window.corr(y_window)
+                except Exception:
+                    result.iloc[i] = np.nan
+                    
+            return result
+        
+        # 使用安全的相关系数计算
+        correlation = safe_correlation(rank_high, rank_volume, 5)
+        
+        # 计算相关系数的排名
+        rank_correlation = correlation.rank(pct=True)
+        
+        # 计算排名的3日累和，取负值
+        return -1 * rank_correlation.rolling(3).sum()
 
     @BaseFactor.register_factor(name='alpha_16')
     @staticmethod
@@ -753,9 +791,16 @@ class WorldQuantFactors(BaseFactor):
         ranked_high = high.rank(pct=True)
         ranked_volume = volume.rank(pct=True)
 
-        # 合并为DataFrame，计算5日滚动协方差
-        df = pd.DataFrame({'high_rank': ranked_high, 'volume_rank': ranked_volume})
-        cov = df.rolling(5).apply(lambda x: cov_rank(x['high_rank'], x['volume_rank']), raw=False)
+        # 分别对排名后的最高价和成交量进行滚动操作
+        high_rolling = ranked_high.rolling(5)
+        volume_rolling = ranked_volume.rolling(5)
+
+        # 自定义函数，对每个滚动窗口的数据进行计算
+        def custom_apply(high_window, volume_window):
+            return cov_rank(high_window, volume_window)
+
+        # 应用自定义函数
+        cov = pd.Series([custom_apply(h, v) for h, v in zip(high_rolling, volume_rolling)])
 
         # 协方差的排名，取负值
         return -1 * cov.rank(pct=True)
@@ -918,7 +963,11 @@ class WorldQuantFactors(BaseFactor):
         # 计算close的20日标准差的排名
         rank_stddev = close.rolling(20).std().rank(pct=True)
 
-        return -1 * delta_corr * rank_stddev
+        # 计算结果
+        results = -1 * delta_corr * rank_stddev
+        results = results.clip(lower=-1000000, upper=1000000)
+
+        return results
 
     @BaseFactor.register_factor(name='alpha_23')
     @staticmethod
@@ -933,18 +982,15 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#23因子值
         """
-        # 计算20日高点平均值
+        # 显式转换为浮点类型
+        result = pd.Series(0.0, index=high.index, dtype='float64')  # 初始化时指定float类型
         mean_high_20 = high.rolling(20).mean()
+        delta_high_2 = high.diff(2).astype('float64')  # 确保delta值为浮点
 
-        # 计算高点的2日变化
-        delta_high_2 = high.diff(2)
+        condition = (mean_high_20 < high) & (~delta_high_2.isna())
+        result.loc[condition] = (-1 * delta_high_2).loc[condition]
 
-        # 条件逻辑实现
-        result = pd.Series(0, index=high.index)
-        condition = mean_high_20 < high
-        result[condition] = -1 * delta_high_2[condition]
-
-        return result
+        return result.fillna(0)
 
     @BaseFactor.register_factor(name='alpha_24')
     @staticmethod
@@ -1015,7 +1061,7 @@ class WorldQuantFactors(BaseFactor):
         成交量的5日时序排名与最高价的5日时序排名的5日相关系数的3日最大值，取负值。
         
         Args:
-            close: 收盘价序列
+            high: 最高价序列
             volume: 成交量序列
         Returns:
             Alpha#26因子值
@@ -1200,7 +1246,17 @@ class WorldQuantFactors(BaseFactor):
             for i in range(window - 1, len(series)):
                 if i < window - 1:
                     continue
-                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
+                try:
+                    values = series.iloc[i - window + 1:i + 1].values
+                    # 检查是否所有值都是NaN
+                    if np.all(np.isnan(values)):
+                        result.iloc[i] = np.nan
+                    else:
+                        # 使用nansum安全处理NaN值
+                        result.iloc[i] = np.nansum(values * weights)
+                except Exception as e:
+                    print(f"错误在decay_linear: {e}")
+                    result.iloc[i] = np.nan
             return result
 
         # 计算线性衰减后的排名
@@ -1422,6 +1478,7 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#38因子值
         """
+
         # 计算收盘价10日时序排名的排名的负值
         def ts_rank_func(x):
             return pd.Series(x).rank(pct=True).iloc[-1]
@@ -1468,7 +1525,17 @@ class WorldQuantFactors(BaseFactor):
             for i in range(window - 1, len(series)):
                 if i < window - 1:
                     continue
-                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
+                try:
+                    values = series.iloc[i - window + 1:i + 1].values
+                    # 检查是否所有值都是NaN
+                    if np.all(np.isnan(values)):
+                        result.iloc[i] = np.nan
+                    else:
+                        # 使用nansum安全处理NaN值
+                        result.iloc[i] = np.nansum(values * weights)
+                except Exception as e:
+                    print(f"错误在decay_linear: {e}")
+                    result.iloc[i] = np.nan
             return result
 
         decayed_volume = decay_linear(volume_ratio, 9)
@@ -1503,7 +1570,7 @@ class WorldQuantFactors(BaseFactor):
         corr = high.rolling(10).corr(volume)
 
         # 组合两项
-        return term1 * corr
+        return (term1 * corr).clip(-1000000, 1000000)
 
     # @BaseFactor.register_factor(name='alpha_41')
     # @staticmethod
@@ -1596,7 +1663,10 @@ class WorldQuantFactors(BaseFactor):
         # 计算最高价与成交量排名的5日相关系数，取负值
         corr = high.rolling(5).corr(rank_volume)
 
-        return -1 * corr
+        results = -1 * corr
+        results = results.clip(-100000, 1000000)
+
+        return results
 
     @BaseFactor.register_factor(name='alpha_45')
     @staticmethod
@@ -1626,7 +1696,10 @@ class WorldQuantFactors(BaseFactor):
         corr_sum = sum_close_5.rolling(2).corr(sum_close_20)
         rank_corr_sum = corr_sum.rank(pct=True)
 
-        return -1 * (rank_mean * corr_close_volume * rank_corr_sum)
+        results = -1 * (rank_mean * corr_close_volume * rank_corr_sum)
+        results = results.clip(-1000000, 1000000)
+
+        return results
 
     @BaseFactor.register_factor(name='alpha_46')
     @staticmethod
@@ -1922,7 +1995,7 @@ class WorldQuantFactors(BaseFactor):
         rank_volume = volume.rank(pct=True)
 
         corr = rank_position.rolling(6).corr(rank_volume)
-
+        corr.clip(-1000000, 1000000)
         return -1 * corr * -1  # 双重负值相当于原值
 
     @BaseFactor.register_factor(name='alpha_56')
@@ -2991,8 +3064,6 @@ class WorldQuantFactors(BaseFactor):
         Args:
             open_price: 开盘价序列
             high: 最高价序列
-            low: 最低价序列
-            close: 收盘价序列
             volume: 成交量序列
         Returns:
             Alpha#80因子值
@@ -3096,7 +3167,17 @@ class WorldQuantFactors(BaseFactor):
             for i in range(window - 1, len(series)):
                 if i < window - 1:
                     continue
-                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
+                try:
+                    values = series.iloc[i - window + 1:i + 1].values
+                    # 检查是否所有值都是NaN
+                    if np.all(np.isnan(values)):
+                        result.iloc[i] = np.nan
+                    else:
+                        # 使用nansum安全处理NaN值
+                        result.iloc[i] = np.nansum(values * weights)
+                except Exception as e:
+                    print(f"错误在decay_linear: {e}")
+                    result.iloc[i] = np.nan
             return result
 
         # 时序排名函数
@@ -3386,55 +3467,78 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#88因子值
         """
+        # 临时抑制特定警告
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid value encountered in reduce')
 
-        # 线性衰减函数
-        def decay_linear(series, window):
-            weights = np.arange(1, window + 1) / window
-            weights = weights[::-1]  # 反转权重使最近的观测值权重最大
+            # 线性衰减函数
+            def decay_linear(series, window):
+                weights = np.arange(1, window + 1) / window
+                weights = weights[::-1]  # 反转权重使最近的观测值权重最大
 
-            result = pd.Series(index=series.index)
-            for i in range(window - 1, len(series)):
-                if i < window - 1:
-                    continue
-                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
+                result = pd.Series(index=series.index)
+                for i in range(window - 1, len(series)):
+                    if i < window - 1:
+                        continue
+                    try:
+                        values = series.iloc[i - window + 1:i + 1].values
+                        # 检查是否所有值都是NaN
+                        if np.all(np.isnan(values)):
+                            result.iloc[i] = np.nan
+                        else:
+                            # 使用nansum安全处理NaN值
+                            result.iloc[i] = np.nansum(values * weights)
+                    except Exception as e:
+                        logging.exception(f"错误在decay_linear: {e}")
+                        result.iloc[i] = np.nan
+                return result
+
+            # 时序排名函数
+            def ts_rank_func(x):
+                return pd.Series(x).rank(pct=True).iloc[-1]
+
+            # 计算价格因子
+            rank_open = open_price.rank(pct=True)
+            rank_low = low.rank(pct=True)
+            rank_high = high.rank(pct=True)
+            rank_close = close.rank(pct=True)
+
+            price_factor = (rank_open + rank_low) - (rank_high + rank_close)
+
+            # 计算price_factor的8日线性衰减的排名
+            decayed_price = decay_linear(price_factor, 8)
+            rank_term1 = decayed_price.rank(pct=True)
+
+            # 计算close的8日时序排名
+            ts_rank_close = close.rolling(8).apply(ts_rank_func, raw=False)
+
+            # 计算60日均量
+            adv60 = volume.rolling(60).mean()
+
+            # 计算adv60的21日时序排名
+            ts_rank_adv60 = adv60.rolling(21).apply(ts_rank_func, raw=False)
+
+            # 计算两个时序排名的8日相关系数
+            corr = ts_rank_close.rolling(8).corr(ts_rank_adv60)
+
+            # 计算相关系数的7日线性衰减
+            decayed_corr = decay_linear(corr, 7)
+
+            # 计算线性衰减的3日时序排名
+            ts_rank_term2 = decayed_corr.rolling(3).apply(ts_rank_func, raw=False)
+
+            # 取两项的较小值
+            # 处理两个数组都可能包含NaN的情况
+            result_array = np.where(
+                np.isnan(rank_term1) & np.isnan(ts_rank_term2),
+                np.nan,
+                np.where(np.isnan(rank_term1), ts_rank_term2,
+                         np.where(np.isnan(ts_rank_term2), rank_term1,
+                                  np.minimum(rank_term1, ts_rank_term2)))
+            )
+            # 转换回pandas Series以保持一致性
+            result = pd.Series(result_array, index=close.index)
             return result
-
-        # 时序排名函数
-        def ts_rank_func(x):
-            return pd.Series(x).rank(pct=True).iloc[-1]
-
-        # 计算价格因子
-        rank_open = open_price.rank(pct=True)
-        rank_low = low.rank(pct=True)
-        rank_high = high.rank(pct=True)
-        rank_close = close.rank(pct=True)
-
-        price_factor = (rank_open + rank_low) - (rank_high + rank_close)
-
-        # 计算price_factor的8日线性衰减的排名
-        decayed_price = decay_linear(price_factor, 8)
-        rank_term1 = decayed_price.rank(pct=True)
-
-        # 计算close的8日时序排名
-        ts_rank_close = close.rolling(8).apply(ts_rank_func, raw=False)
-
-        # 计算60日均量
-        adv60 = volume.rolling(60).mean()
-
-        # 计算adv60的21日时序排名
-        ts_rank_adv60 = adv60.rolling(21).apply(ts_rank_func, raw=False)
-
-        # 计算两个时序排名的8日相关系数
-        corr = ts_rank_close.rolling(8).corr(ts_rank_adv60)
-
-        # 计算相关系数的7日线性衰减
-        decayed_corr = decay_linear(corr, 7)
-
-        # 计算线性衰减的3日时序排名
-        ts_rank_term2 = decayed_corr.rolling(3).apply(ts_rank_func, raw=False)
-
-        # 取两项的较小值
-        return np.minimum(rank_term1, ts_rank_term2)
 
     # @BaseFactor.register_factor(name='alpha_89')
     # @staticmethod
@@ -3617,7 +3721,17 @@ class WorldQuantFactors(BaseFactor):
             for i in range(window - 1, len(series)):
                 if i < window - 1:
                     continue
-                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
+                try:
+                    values = series.iloc[i - window + 1:i + 1].values
+                    # 检查是否所有值都是NaN
+                    if np.all(np.isnan(values)):
+                        result.iloc[i] = np.nan
+                    else:
+                        # 使用nansum安全处理NaN值
+                        result.iloc[i] = np.nansum(values * weights)
+                except Exception as e:
+                    print(f"错误在decay_linear: {e}")
+                    result.iloc[i] = np.nan
             return result
 
         # 时序排名函数

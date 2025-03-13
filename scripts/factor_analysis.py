@@ -59,6 +59,12 @@ def run_factor_analysis(
         end_date: 结束日期
         factor_type: 因子类别名称(可选)
     """
+    # 初始化日志格式
+    logger.info("\n" + "=" * 80)
+    logger.info("开始单因子有效性分析")
+    logger.info(f"执行时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("-" * 80)
+
     # 创建股票数据获取器
     fetcher = StockDataFetcher()
 
@@ -66,7 +72,7 @@ def run_factor_analysis(
     factor_results = []
 
     # 确定要分析的因子
-    if factor_type is not None:
+    if not factor_name and factor_type is not None:
         # 如果指定了因子类型
         try:
             # 动态导入指定的因子类
@@ -80,30 +86,35 @@ def run_factor_analysis(
                        (hasattr(func, '__wrapped__') and func.__wrapped__.__qualname__.startswith(f"{factor_type}."))
                        for attr in dir(factor_class) if not attr.startswith('_') and attr != 'register_factor')
             }
-            logger.info(f"将分析{factor_type}类的所有因子: {list(factors_to_analyze.keys())}")
-            logger.info(f"因子数量: {len(factors_to_analyze)}")
+            logger.info(f"├─ 分析类型: {factor_type}")
+            logger.info(f"├─ 待分析因子: {list(factors_to_analyze.keys())}")
+            logger.info(f"└─ 因子总数: {len(factors_to_analyze)}")
         except (KeyError, AttributeError, ImportError) as e:
-            logger.exception(f"错误: 未找到因子类型 '{factor_type}': {e}")
+            logger.error(f"❌ 因子类型 '{factor_type}' 加载失败")
+            logger.error(f"错误详情: {str(e)}", exc_info=True)
             return
     elif factor_name.lower() == 'all':
         # 分析所有注册的因子
         factors_to_analyze = get_registered_factors()
-        logger.info(f"将分析所有注册的因子: {list(factors_to_analyze.keys())}")
-        logger.info(f"因子数量: {len(factors_to_analyze)}")
+        logger.info(f"├─ 分析模式: 全量因子分析")
+        logger.info(f"└─ 因子总数: {len(factors_to_analyze)}")
     else:
         # 分析特定的因子
         factors = get_registered_factors()
         if factor_name in factors:
             factors_to_analyze = {factor_name: factors[factor_name]}
-            logger.info(f"将分析因子: {factor_name}")
+            logger.info(f"├─ 分析模式: 单因子分析")
+            logger.info(f"└─ 目标因子: {factor_name}")
         else:
             logger.info(f"错误: 未找到因子 '{factor_name}'")
             return
 
     # 获取股票数据
-    logger.info(f"分析周期: {start_date} 至 {end_date}")
-    logger.info(f"股票样本: {stock_codes}")
-    logger.info(f"股票样本数量: {len(stock_codes)}")
+    logger.info("\n" + "=" * 80)
+    logger.info("开始获取股票数据")
+    logger.info(f"├─ 时间范围: {start_date} 至 {end_date}")
+    logger.info(f"├─ 股票列表: {', '.join(stock_codes[:3])}...等{len(stock_codes)}只")
+    logger.info(f"└─ 数据复权方式: 前复权")
 
     price_data = {}
     valid_stocks = 0
@@ -122,18 +133,20 @@ def run_factor_analysis(
         except Exception as e:
             logger.exception(f"处理股票 {code} 时出错: {e}")
 
-    logger.info(f"成功处理 {valid_stocks} 只股票数据")
+    logger.info(f"✅ 数据获取完成 - 成功加载 {valid_stocks}/{len(stock_codes)} 只股票数据")
 
     # 依次分析每个因子
+    logger.info("\n" + "=" * 80)
+    logger.info("开始因子分析流程")
     for factor_name, factor_func in factors_to_analyze.items():
-        logger.info(f"\n{'=' * 80}")
-        logger.info(f"开始分析因子: {factor_name}")
-        logger.info(f"{'=' * 80}")
-
-        # 计算因子值
-        factor_values = {}
-
+        logger.info("\n" + "-" * 80)
+        logger.info(f"▶️ 正在分析因子: {factor_name}")
+        logger.info(f"├─ 开始时间: {datetime.datetime.now().strftime('%H:%M:%S')}")
+        
         try:
+            # 计算因子值
+            factor_values = {}
+
             for code, df in price_data.items():
                 # 基于因子函数的参数名确定要传递的数据列
                 import inspect
@@ -158,8 +171,11 @@ def run_factor_analysis(
                 logger.info(f"错误: 无法为因子 {factor_name} 计算有效值，请检查所需数据列是否存在")
                 continue
 
+            logger.info(f"├─ 因子计算完成")
+            logger.info(f"├─ 有效股票数量: {len(factor_values)}")
+            logger.info(f"└─ 开始有效性分析...")
+
             # 对因子进行有效性分析
-            logger.info(f"\n开始 {factor_name} 因子有效性分析...")
             analyzer = analyze_single_factor(
                 factor_data=factor_values,
                 price_data=price_data,
@@ -187,18 +203,22 @@ def run_factor_analysis(
                                        f"factor_analysis_{factor_name}.html")
             try:
                 analyzer.save_report(report_name)
-                logger.info(f"分析报告已保存为: {report_name}")
+                logger.info(f"✅ 分析完成 - 保存报告至: {report_name}")
             except Exception as e:
                 logger.exception(f"保存报告时出错: {e}")
 
         except Exception as e:
-            logger.exception(f"分析因子 {factor_name} 时出错: {e}")
-            import traceback
-            traceback.logger.info_exc()
+            logger.error(f"❌ 分析失败 - {factor_name}")
+            logger.error(f"错误类型: {type(e).__name__}")
+            logger.error(f"错误详情: {str(e)}")
+            logger.exception(e)
+            logger.debug("完整堆栈:", exc_info=True)
 
     # 输出优秀因子汇总
     if factor_results:
-        logger.info_excellent_factors(factor_results)
+        logger.info("\n" + "=" * 80)
+        logger.info("分析结果汇总")
+        print_excellent_factors(factor_results)
 
 
 def print_excellent_factors(factor_results: List[dict]) -> None:
@@ -315,19 +335,19 @@ if __name__ == "__main__":
 
     # stock_codes = ["sh.605300", "sz.300490", "sh.603336", "sh.600519", "sz.000858",
     #                "sh.601398", "sz.000651", "sh.601318", "sz.000333", "sh.600036"]
-    start_date = "2022-01-01"
+    start_date = "2024-01-01"
     end_date = "2025-01-01"
     fetcher = StockDataFetcher()
     # 股票至少已经上市1年
-    # stock_codes = fetcher.get_stock_list_with_cond(pool_name="no_st", ipo_date="2024-01-01", min_amount=50000000, end_date=datetime.datetime.strptime(end_date, "%Y-%m-%d").date()).code.to_list()
+    stock_codes = fetcher.get_stock_list_with_cond(pool_name="no_st", ipo_date="2024-01-01", min_amount=50000000, end_date=datetime.datetime.strptime(end_date, "%Y-%m-%d").date()).code.to_list()
 
     # 测试
-    stock_codes = fetcher.get_stock_list_with_cond(pool_name="no_st", ipo_date="2024-01-01").code.to_list()
+    # stock_codes = fetcher.get_stock_list(pool_name="sz50").code.to_list()
 
     run_factor_analysis(
-        factor_name="alpha_2",
+        factor_name="",
         stock_codes=stock_codes,
         start_date=start_date,
         end_date=end_date,
-        factor_type=None
+        factor_type="WorldQuantFactors"
     )
