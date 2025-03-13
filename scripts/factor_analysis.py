@@ -229,6 +229,8 @@ def print_excellent_factors(factor_results: List[dict]) -> None:
         factor_results: 因子分析结果列表
     """
     import pandas as pd
+    import os
+    from datetime import datetime
 
     # 转换为DataFrame方便处理
     results_df = pd.DataFrame(factor_results)
@@ -273,7 +275,7 @@ def print_excellent_factors(factor_results: List[dict]) -> None:
 
     pd.set_option('display.max_rows', None)
     pd.set_option('display.width', 200)
-    logger.info(formatted_df)
+    logger.info(f"\n{formatted_df}")
 
     # 输出优秀因子 (优秀度 >= 3)
     excellent_factors = formatted_df[formatted_df['优秀度'] >= 3]
@@ -282,9 +284,40 @@ def print_excellent_factors(factor_results: List[dict]) -> None:
         logger.info("优秀因子汇总 (满足至少3项标准)")
         logger.info("=" * 100)
         logger.info(excellent_factors)
+        
+        # 创建results目录（如果不存在）
+        results_dir = os.path.join("results", datetime.now().strftime("%Y%m%d"))
+        os.makedirs(results_dir, exist_ok=True)
+        
+        # 导出优秀因子到Excel文件
+        excel_path = os.path.join(results_dir, "excellent_factors.xlsx")
+        
+        # 创建Excel写入器
+        with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+            # 写入优秀因子表
+            excellent_factors.to_excel(writer, sheet_name='优秀因子', index=False)
+            
+            # 写入所有因子表
+            formatted_df.to_excel(writer, sheet_name='所有因子', index=False)
+            
+            # 写入评价标准说明
+            criteria_df = pd.DataFrame({
+                '评价标准': ['强有效', '高IR值', '方向一致', '区分能力', '高胜率', '优秀度'],
+                '说明': [
+                    'IC均值 > 0.05', 
+                    'IR > 1.0', 
+                    'IC正比例 > 55%', 
+                    '多空组合收益 > 0.5%', 
+                    '顶层组胜率 > 55%',
+                    '满足上述标准的数量'
+                ]
+            })
+            criteria_df.to_excel(writer, sheet_name='评价标准', index=False)
+        
+        logger.info(f"✅ 已将优秀因子汇总导出至: {excel_path}")
 
     # 输出评价标准说明
-    logger.info("\n评价标准:")
+    logger.info("评价标准:")
     logger.info("- 强有效: IC均值 > 0.05")
     logger.info("- 高IR值: IR > 1.0")
     logger.info("- 方向一致: IC正比例 > 55%")
