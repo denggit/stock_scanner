@@ -83,15 +83,14 @@ class StrategyService:
     def scan_stocks_with_strategy(self, strategy, params: Dict[str, Any]) -> List[Dict[str, Any]]:
         """使用策略进行股票扫描"""
         # 转化stock_pool
-        stock_pool = params.get('stock_pool')
+        stock_pool = params.get('stock_pool', "full")
+        ipo_date = params.get('ipo_date', None)
+        min_amount = params.get('min_amount', None)
         if stock_pool in self.pool_trans.keys():
             stock_pool = self.pool_trans.get(stock_pool)
             params["stock_pool"] = stock_pool
         # 获取股票列表
-        if stock_pool:
-            stocks = self.data_fetcher.get_stock_list(pool_name=stock_pool)
-        else:
-            stocks = self.data_fetcher.get_stock_list()
+        stocks = self.data_fetcher.get_stock_list_with_cond(pool_name=stock_pool, ipo_date=ipo_date, min_amount=min_amount)
         results = []
 
         # 获取足量数据

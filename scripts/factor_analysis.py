@@ -78,6 +78,7 @@ def run_factor_analysis(
                        for attr in dir(factor_class) if not attr.startswith('_') and attr != 'register_factor')
             }
             print(f"将分析{factor_type}类的所有因子: {list(factors_to_analyze.keys())}")
+            print(f"因子数量: {len(factors_to_analyze)}")
         except (KeyError, AttributeError, ImportError) as e:
             print(f"错误: 未找到因子类型 '{factor_type}': {e}")
             return
@@ -85,6 +86,7 @@ def run_factor_analysis(
         # 分析所有注册的因子
         factors_to_analyze = get_registered_factors()
         print(f"将分析所有注册的因子: {list(factors_to_analyze.keys())}")
+        print(f"因子数量: {len(factors_to_analyze)}")
     else:
         # 分析特定的因子
         factors = get_registered_factors()
@@ -317,9 +319,9 @@ if __name__ == "__main__":
     stock_codes = fetcher.get_stock_list_with_cond(pool_name="no_st", ipo_date="2024-01-01", min_amount=10000000, end_date=datetime.datetime.strptime(end_date, "%Y-%m-%d").date()).code.to_list()
 
     run_factor_analysis(
-        factor_name="overnight_momentum",
+        factor_name="",
         stock_codes=stock_codes,
         start_date=start_date,
         end_date=end_date,
-        factor_type=""
+        factor_type="WorldQuantFactors"
     )

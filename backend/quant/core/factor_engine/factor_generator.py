@@ -384,14 +384,23 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#2因子值
         """
+        # 将volume中的0或极小值替换为NaN以避免log(0)问题
+        safe_volume = volume.replace(0, np.nan)
+        
         # 计算交易量对数的2阶差分
-        rank_delta_log_volume = np.log(volume).diff(2).rank(pct=True)
+        delta_log_volume = np.log(safe_volume).diff(2)
+        
+        # 处理可能的NaN值后进行排名
+        rank_delta_log_volume = delta_log_volume.rank(pct=True)
 
-        # 计算价格变化率的排名
-        returns_open = ((close - open_price) / open_price).rank(pct=True)
+        # 计算价格变化率并排名
+        price_change = (close - open_price) / open_price
+        returns_open = price_change.rank(pct=True)
 
-        # 计算6日滚动相关系数并取负值
-        return -1 * rank_delta_log_volume.rolling(6).corr(returns_open)
+        # 计算6日滚动相关系数并取负值，处理可能的NaN结果
+        correlation = rank_delta_log_volume.rolling(6).corr(returns_open)
+        
+        return -1 * correlation
 
     @BaseFactor.register_factor(name='alpha_3')
     @staticmethod

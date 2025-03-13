@@ -47,6 +47,7 @@ def main():
     # 计算日期范围
     today = datetime.today()
     two_years_ago = today - timedelta(days=365 * 2)  # 两年前的日期
+    one_year_ago = today - timedelta(days=366)  # 一年前的日期
 
     # 设置默认日期
     default_start_date = two_years_ago
@@ -60,14 +61,20 @@ def main():
             ["均线回踩策略", "突破策略", "波段交易策略", "扫描翻倍股", "长期上涨策略", "头肩底形态策略",
              "爆发式选股策略", "放量上涨策略"]
         )
+
         # 股票池选择
+        st.subheader("筛选股票条件")
         stock_pool = st.selectbox(
             "选择股票池",
             ["全量股票", "非ST股票", "上证50", "沪深300", "中证500"],
             index=1,  # 默认选择非ST股票
             help="选择要回测的股票池范围"
         )
-        params = {"stock_pool": stock_pool}
+        ipo_date = st.date_input("最晚上市日期", value=one_year_ago, help="默认一年前").strftime("%Y-%m-%d")
+        min_amount = st.number_input("5日最小成交额", min_value=0, value=100000000, help="排除五日平均交易额低于该值股票")
+        params = {"stock_pool": stock_pool, "ipo_date": ipo_date, "min_amount": min_amount}
+
+        # 策略参数设置
         if strategy == "均线回踩策略":
             st.subheader("均线回踩策略参数配置")
 

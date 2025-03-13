@@ -11,6 +11,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import datetime
 
 
 def convert_to_python_types(obj: Any) -> Any:
@@ -35,7 +36,17 @@ def convert_to_python_types(obj: Any) -> Any:
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
     elif isinstance(obj, pd.DataFrame):
-        return obj.to_dict('hrecords')
+        return obj.to_dict('records')
+    elif isinstance(obj, pd.Series):
+        return obj.to_dict()
+    elif isinstance(obj, np.generic):
+        return obj.item()
+    elif isinstance(obj, (np.ndarray, pd.Index)):
+        return obj.tolist()
+    elif isinstance(obj, datetime.datetime):
+        return obj.strftime("%Y-%m-%d %H:%M:%S")
+    elif isinstance(obj, datetime.date):
+        return obj.strftime("%Y-%m-%d")
     elif pd.isna(obj):
         return None
     return obj
