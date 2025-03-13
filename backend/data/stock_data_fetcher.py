@@ -27,7 +27,7 @@ class StockDataFetcher:
             period: str = 'daily',
             start_date: Optional[str] = (datetime.date.today() - datetime.timedelta(days=365)).strftime("%Y-%m-%d"),
             end_date: Optional[str] = datetime.date.today().strftime("%Y-%m-%d"),
-            tradestatus: str = '1',
+            tradestatus: int = 1,
             adjust: str = '3'
     ) -> pd.DataFrame:
         """
@@ -49,9 +49,6 @@ class StockDataFetcher:
         else:
             raise ValueError(f"Invalid period: {period}")
 
-        # 过滤交易状态
-        df = df[df.tradestatus == tradestatus]
-
         # 把数字型数据改为float
         numeric_columns = ['open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn', 'pct_chg', 'pe_ttm',
                            'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm']
@@ -60,6 +57,8 @@ class StockDataFetcher:
             return df
         for column in numeric_columns:
             df[column] = df[column].astype(float)
+        # 过滤交易状态
+        df = df[df.tradestatus == tradestatus]
 
         return df
 

@@ -623,7 +623,8 @@ class DatabaseManager:
                    'dividStocksPs', 'dividCashStock', 'dividReserveToStockPs']
         self._save_financial_data(df, 'stock_dividend', columns)
 
-    def __clean_data(self, stock_df):
+    @staticmethod
+    def __clean_data(stock_df):
         """清洁数据"""
         # 有的时候股票停牌，数据会为空
         stock_df['volume'] = stock_df['volume'].replace('', 0)
@@ -634,3 +635,5 @@ class DatabaseManager:
         stock_df['pb_mrq'] = stock_df['pb_mrq'].replace('', np.nan)
         stock_df['ps_ttm'] = stock_df['ps_ttm'].replace('', np.nan)
         stock_df['pcf_ncf_ttm'] = stock_df['pcf_ncf_ttm'].replace('', np.nan)
+
+        return stock_df

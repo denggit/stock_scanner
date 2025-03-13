@@ -37,6 +37,9 @@ from backend.quant.backtest.performance_analyzer import analyze_single_factor
 from backend.quant.core.factor_engine.factor_generator import (
     get_registered_factors, FACTOR_REGISTRY
 )
+from backend.utils.logger import setup_logger
+
+logger = setup_logger("factor_analysis", set_root_logger=True)
 
 
 def run_factor_analysis(
@@ -69,38 +72,38 @@ def run_factor_analysis(
             # 动态导入指定的因子类
             module = importlib.import_module('backend.quant.core.factor_engine.factor_generator')
             factor_class = getattr(module, factor_type)
-            
+
             # 获取该类的所有注册因子，而不是通过方法名匹配
             factors_to_analyze = {
                 name: func for name, func in FACTOR_REGISTRY.items()
-                if any(name == getattr(factor_class, attr).__name__ or 
+                if any(name == getattr(factor_class, attr).__name__ or
                        (hasattr(func, '__wrapped__') and func.__wrapped__.__qualname__.startswith(f"{factor_type}."))
                        for attr in dir(factor_class) if not attr.startswith('_') and attr != 'register_factor')
             }
-            print(f"将分析{factor_type}类的所有因子: {list(factors_to_analyze.keys())}")
-            print(f"因子数量: {len(factors_to_analyze)}")
+            logger.info(f"将分析{factor_type}类的所有因子: {list(factors_to_analyze.keys())}")
+            logger.info(f"因子数量: {len(factors_to_analyze)}")
         except (KeyError, AttributeError, ImportError) as e:
-            print(f"错误: 未找到因子类型 '{factor_type}': {e}")
+            logger.exception(f"错误: 未找到因子类型 '{factor_type}': {e}")
             return
     elif factor_name.lower() == 'all':
         # 分析所有注册的因子
         factors_to_analyze = get_registered_factors()
-        print(f"将分析所有注册的因子: {list(factors_to_analyze.keys())}")
-        print(f"因子数量: {len(factors_to_analyze)}")
+        logger.info(f"将分析所有注册的因子: {list(factors_to_analyze.keys())}")
+        logger.info(f"因子数量: {len(factors_to_analyze)}")
     else:
         # 分析特定的因子
         factors = get_registered_factors()
         if factor_name in factors:
             factors_to_analyze = {factor_name: factors[factor_name]}
-            print(f"将分析因子: {factor_name}")
+            logger.info(f"将分析因子: {factor_name}")
         else:
-            print(f"错误: 未找到因子 '{factor_name}'")
+            logger.info(f"错误: 未找到因子 '{factor_name}'")
             return
 
     # 获取股票数据
-    print(f"分析周期: {start_date} 至 {end_date}")
-    print(f"股票样本: {stock_codes}")
-    print(f"股票样本数量: {len(stock_codes)}")
+    logger.info(f"分析周期: {start_date} 至 {end_date}")
+    logger.info(f"股票样本: {stock_codes}")
+    logger.info(f"股票样本数量: {len(stock_codes)}")
 
     price_data = {}
     valid_stocks = 0
@@ -111,21 +114,21 @@ def run_factor_analysis(
             df = fetcher.fetch_stock_data(code=code, start_date=start_date, end_date=end_date, adjust="1")
 
             if df is None or df.empty:
-                print(f"警告: 无法获取股票 {code} 的数据")
+                logger.info(f"警告: 无法获取股票 {code} 的数据")
                 continue
 
             valid_stocks += 1
             price_data[code] = df
         except Exception as e:
-            print(f"处理股票 {code} 时出错: {e}")
+            logger.exception(f"处理股票 {code} 时出错: {e}")
 
-    print(f"成功处理 {valid_stocks} 只股票数据")
+    logger.info(f"成功处理 {valid_stocks} 只股票数据")
 
     # 依次分析每个因子
     for factor_name, factor_func in factors_to_analyze.items():
-        print(f"\n{'=' * 80}")
-        print(f"开始分析因子: {factor_name}")
-        print(f"{'=' * 80}")
+        logger.info(f"\n{'=' * 80}")
+        logger.info(f"开始分析因子: {factor_name}")
+        logger.info(f"{'=' * 80}")
 
         # 计算因子值
         factor_values = {}
@@ -152,11 +155,11 @@ def run_factor_analysis(
 
             # 判断是否成功计算了因子
             if not factor_values:
-                print(f"错误: 无法为因子 {factor_name} 计算有效值，请检查所需数据列是否存在")
+                logger.info(f"错误: 无法为因子 {factor_name} 计算有效值，请检查所需数据列是否存在")
                 continue
 
             # 对因子进行有效性分析
-            print(f"\n开始 {factor_name} 因子有效性分析...")
+            logger.info(f"\n开始 {factor_name} 因子有效性分析...")
             analyzer = analyze_single_factor(
                 factor_data=factor_values,
                 price_data=price_data,
@@ -184,18 +187,18 @@ def run_factor_analysis(
                                        f"factor_analysis_{factor_name}.html")
             try:
                 analyzer.save_report(report_name)
-                print(f"分析报告已保存为: {report_name}")
+                logger.info(f"分析报告已保存为: {report_name}")
             except Exception as e:
-                print(f"保存报告时出错: {e}")
+                logger.exception(f"保存报告时出错: {e}")
 
         except Exception as e:
-            print(f"分析因子 {factor_name} 时出错: {e}")
+            logger.exception(f"分析因子 {factor_name} 时出错: {e}")
             import traceback
-            traceback.print_exc()
+            traceback.logger.info_exc()
 
     # 输出优秀因子汇总
     if factor_results:
-        print_excellent_factors(factor_results)
+        logger.info_excellent_factors(factor_results)
 
 
 def print_excellent_factors(factor_results: List[dict]) -> None:
@@ -244,30 +247,30 @@ def print_excellent_factors(factor_results: List[dict]) -> None:
     # 重命名列
     formatted_df.columns = ['因子名称', 'IC均值', 'IR值', 'IC正比例', '多空收益', '顶层胜率', '优秀度']
 
-    print("\n\n" + "=" * 100)
-    print("因子有效性排名")
-    print("=" * 100)
+    logger.info("\n\n" + "=" * 100)
+    logger.info("因子有效性排名")
+    logger.info("=" * 100)
 
     pd.set_option('display.max_rows', None)
     pd.set_option('display.width', 200)
-    print(formatted_df)
+    logger.info(formatted_df)
 
     # 输出优秀因子 (优秀度 >= 3)
     excellent_factors = formatted_df[formatted_df['优秀度'] >= 3]
     if not excellent_factors.empty:
-        print("\n\n" + "=" * 100)
-        print("优秀因子汇总 (满足至少3项标准)")
-        print("=" * 100)
-        print(excellent_factors)
+        logger.info("\n\n" + "=" * 100)
+        logger.info("优秀因子汇总 (满足至少3项标准)")
+        logger.info("=" * 100)
+        logger.info(excellent_factors)
 
     # 输出评价标准说明
-    print("\n评价标准:")
-    print("- 强有效: IC均值 > 0.05")
-    print("- 高IR值: IR > 1.0")
-    print("- 方向一致: IC正比例 > 55%")
-    print("- 区分能力: 多空组合收益 > 0.5%")
-    print("- 高胜率: 顶层组胜率 > 55%")
-    print("- 优秀度: 满足上述标准的数量")
+    logger.info("\n评价标准:")
+    logger.info("- 强有效: IC均值 > 0.05")
+    logger.info("- 高IR值: IR > 1.0")
+    logger.info("- 方向一致: IC正比例 > 55%")
+    logger.info("- 区分能力: 多空组合收益 > 0.5%")
+    logger.info("- 高胜率: 顶层组胜率 > 55%")
+    logger.info("- 优秀度: 满足上述标准的数量")
 
 
 def main():
@@ -316,12 +319,15 @@ if __name__ == "__main__":
     end_date = "2025-01-01"
     fetcher = StockDataFetcher()
     # 股票至少已经上市1年
-    stock_codes = fetcher.get_stock_list_with_cond(pool_name="no_st", ipo_date="2024-01-01", min_amount=50000000, end_date=datetime.datetime.strptime(end_date, "%Y-%m-%d").date()).code.to_list()
+    # stock_codes = fetcher.get_stock_list_with_cond(pool_name="no_st", ipo_date="2024-01-01", min_amount=50000000, end_date=datetime.datetime.strptime(end_date, "%Y-%m-%d").date()).code.to_list()
+
+    # 测试
+    stock_codes = fetcher.get_stock_list_with_cond(pool_name="no_st", ipo_date="2024-01-01").code.to_list()
 
     run_factor_analysis(
         factor_name="alpha_2",
         stock_codes=stock_codes,
         start_date=start_date,
         end_date=end_date,
-        factor_type="WorldQuantFactors"
+        factor_type=None
     )

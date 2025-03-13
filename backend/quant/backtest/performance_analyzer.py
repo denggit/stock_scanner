@@ -40,6 +40,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import logging
 
 # 查找系统中支持中文的字体
 chinese_fonts = [f.name for f in fm.fontManager.ttflist if '黑体' in f.name or 'Heiti' in f.name or 'SimHei' in f.name]
@@ -130,8 +131,8 @@ class FactorAnalyzer:
             ic_summary = {}
 
             # 添加调试信息
-            print(f"因子数据形状: {self.factor_data.shape}")
-            print(f"收益率数据周期: {list(self.returns_data.keys())}")
+            logging.info(f"因子数据形状: {self.factor_data.shape}")
+            logging.info(f"收益率数据周期: {list(self.returns_data.keys())}")
 
             for period, returns_panel in self.returns_data.items():
                 # 计算每个交易日的IC值
@@ -170,13 +171,13 @@ class FactorAnalyzer:
                         ic_series[date] = ic
                         valid_dates += 1
                     except Exception as e:
-                        print(f"计算{date}的IC值时出错: {e}")
+                        logging.exception(f"计算{date}的IC值时出错: {e}")
 
                 # 输出统计信息
-                print(f"周期 {period} 统计：")
-                print(f"  - 有效交易日: {valid_dates}")
-                print(f"  - 因子值为常数的交易日: {constant_dates}")
-                print(f"  - 总交易日: {len(self.factor_data.index)}")
+                logging.info(f"周期 {period} 统计：")
+                logging.info(f"  - 有效交易日: {valid_dates}")
+                logging.info(f"  - 因子值为常数的交易日: {constant_dates}")
+                logging.info(f"  - 总交易日: {len(self.factor_data.index)}")
 
                 # 存储每日IC值
                 daily_ic[period] = ic_series.dropna()
@@ -196,7 +197,7 @@ class FactorAnalyzer:
                         'mean_monthly_ic': self._calculate_monthly_ic_panel(ic_series, method)
                     }
                 else:
-                    print(f"警告: {period} 周期无有效IC值")
+                    logging.info(f"警告: {period} 周期无有效IC值")
                     ic_summary[period] = {
                         'ic': float('nan'),
                         'ic_std': float('nan'),
@@ -560,7 +561,7 @@ class FactorAnalyzer:
         if self.is_panel_data:
             # 多只股票数据的累积收益曲线
             if period not in self.returns_data:
-                print(f"返回周期 {period} 不存在")
+                logging.info(f"返回周期 {period} 不存在")
                 return
 
             returns_panel = self.returns_data[period]
@@ -739,14 +740,14 @@ class FactorAnalyzer:
         report = self.generate_report()
         summary = report['summary']
 
-        print("\n" + "=" * 50)
-        print("因子有效性分析摘要")
-        print("=" * 50)
+        logging.info("\n" + "=" * 50)
+        logging.info("因子有效性分析摘要")
+        logging.info("=" * 50)
 
         try:
             # ====== IC分析结果解读 ======
-            print("\n【IC分析结果】(Information Coefficient，因子预测能力)")
-            print("-" * 50)
+            logging.info("\n【IC分析结果】(Information Coefficient，因子预测能力)")
+            logging.info("-" * 50)
 
             if self.ic_series is not None and not self.ic_series.empty:
                 # 计算各列最大宽度
@@ -779,9 +780,9 @@ class FactorAnalyzer:
                             "─" * col_widths['pos_rate'] + "┼" + \
                             "─" * col_widths['abs_ic']
 
-                print("\nIC统计表：")
-                print(header)
-                print(separator)
+                logging.info("\nIC统计表：")
+                logging.info(header)
+                logging.info(separator)
 
                 # 输出每行数据
                 for period, row in self.ic_series.iterrows():
@@ -793,74 +794,74 @@ class FactorAnalyzer:
                         f"{row['pos_rate']:^{col_widths['pos_rate']}.1%}",
                         f"{row['abs_ic']:^{col_widths['abs_ic']}.4f}"
                     ]
-                    print("│".join(parts))
+                    logging.info("│".join(parts))
 
                 # 添加单位说明
-                print("\n* 单位说明:")
-                print("  - IC均值和标准差保留4位小数")
-                print("  - IR(信息比率) = IC均值 / IC标准差")
-                print("  - 正比例显示为百分比格式")
+                logging.info("\n* 单位说明:")
+                logging.info("  - IC均值和标准差保留4位小数")
+                logging.info("  - IR(信息比率) = IC均值 / IC标准差")
+                logging.info("  - 正比例显示为百分比格式")
             else:
-                print("未能计算有效IC值，请检查数据")
+                logging.info("未能计算有效IC值，请检查数据")
 
             # ====== 分组收益结果解读 ======
-            print("\n\n【分组收益分析】(按因子值分组后各组平均收益)")
-            print("-" * 50)
+            logging.info("\n\n【分组收益分析】(按因子值分组后各组平均收益)")
+            logging.info("-" * 50)
 
             if self.group_returns is not None and not self.group_returns.empty:
                 # 打印格式化的分组收益表
                 pd.set_option('display.float_format', '{:.2%}'.format)
-                print(self.group_returns)
+                logging.info(self.group_returns)
                 pd.reset_option('display.float_format')
 
                 # 提取关键信息并解读
                 if 'long_short' in self.group_returns.index:
-                    print("\n多空组合收益:", end=' ')
+                    logging.info("\n多空组合收益:", end=' ')
                     for col in self.group_returns.columns:
-                        print(f"{col}: {self.group_returns.loc['long_short', col]:.2%}", end='  ')
+                        logging.info(f"{col}: {self.group_returns.loc['long_short', col]:.2%}", end='  ')
 
-                print("\n\n* 分组解读: 若高分位组收益显著高于低分位组，表明因子有区分能力")
-                print("* 多空组合: 顶层组减底层组的收益，越大表示区分能力越强")
+                logging.info("\n\n* 分组解读: 若高分位组收益显著高于低分位组，表明因子有区分能力")
+                logging.info("* 多空组合: 顶层组减底层组的收益，越大表示区分能力越强")
             else:
-                print("未能计算有效分组收益，请检查数据")
+                logging.info("未能计算有效分组收益，请检查数据")
 
             # ====== 胜率分析结果解读 ======
             win_rates = self.calculate_win_rate()
-            print("\n\n【胜率分析】(收益为正的比例)")
-            print("-" * 50)
+            logging.info("\n\n【胜率分析】(收益为正的比例)")
+            logging.info("-" * 50)
 
             if win_rates is not None and not win_rates.empty:
                 pd.set_option('display.float_format', '{:.2%}'.format)
-                print(win_rates)
+                logging.info(win_rates)
                 pd.reset_option('display.float_format')
 
-                print("\n* 胜率解读: 顶层组胜率>55%通常认为因子有效")
+                logging.info("\n* 胜率解读: 顶层组胜率>55%通常认为因子有效")
             else:
-                print("未能计算有效胜率，请检查数据")
+                logging.info("未能计算有效胜率，请检查数据")
 
         except Exception as e:
-            print(f"打印摘要时出错: {e}")
+            logging.exception(f"打印摘要时出错: {e}")
             import traceback
             traceback.print_exc()
 
-        print("\n" + "=" * 50)
+        logging.info("\n" + "=" * 50)
 
         if need_plot:
             # 绘图
             try:
                 self.plot_ic_series()
             except Exception as e:
-                print(f"绘制IC序列时出错: {e}")
+                logging.exception(f"绘制IC序列时出错: {e}")
 
             try:
                 self.plot_quantile_returns()
             except Exception as e:
-                print(f"绘制分位数收益时出错: {e}")
+                logging.info(f"绘制分位数收益时出错: {e}")
 
             try:
                 self.plot_cumulative_returns()
             except Exception as e:
-                print(f"绘制累积收益时出错: {e}")
+                logging.info(f"绘制累积收益时出错: {e}")
 
     def save_report(self, filename: str) -> None:
         """
@@ -884,12 +885,12 @@ class FactorAnalyzer:
         if directory and not os.path.exists(directory):
             try:
                 os.makedirs(directory, exist_ok=True)
-                print(f"已创建目录: {directory}")
+                logging.info(f"已创建目录: {directory}")
             except Exception as e:
-                print(f"无法创建目录: {e}")
+                logging.exception(f"无法创建目录: {e}")
                 # 使用当前目录作为备选方案
                 filename = os.path.basename(filename)
-                print(f"将在当前目录保存报告: {filename}")
+                logging.info(f"将在当前目录保存报告: {filename}")
         
         # 确保生成报告前已计算所有必要指标
         if self.ic_series is None:
@@ -1097,7 +1098,7 @@ class FactorAnalyzer:
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(html_content)
             
-        print(f"分析报告已保存到: {os.path.abspath(filename)}")
+        logging.info(f"分析报告已保存到: {os.path.abspath(filename)}")
 
 
 def analyze_single_factor(factor_data: Union[pd.Series, pd.DataFrame, Dict[str, pd.Series]],
@@ -1239,7 +1240,7 @@ def analyze_single_factor(factor_data: Union[pd.Series, pd.DataFrame, Dict[str, 
     analyzer.calculate_forward_returns()
 
     # 打印报告
-    print(f"\n{factor_name}因子分析报告" if factor_name else "\n因子分析报告")
+    logging.info(f"\n{factor_name}因子分析报告" if factor_name else "\n因子分析报告")
     analyzer.print_summary(need_plot=need_plot)
 
     return analyzer
@@ -1257,9 +1258,9 @@ if __name__ == "__main__":
     # 获取所有注册的因子
     try:
         factors = get_registered_factors()
-        print(f"获取到以下因子: {list(factors.keys())}")
+        logging.info(f"获取到以下因子: {list(factors.keys())}")
     except Exception as e:
-        print(f"获取因子时出错: {e}")
+        logging.exception(f"获取因子时出错: {e}")
         # 使用备用方案
         factors = {}
 
@@ -1269,8 +1270,8 @@ if __name__ == "__main__":
     start_date = "2022-01-01"
     end_date = "2023-03-01"
 
-    print(f"分析周期: {start_date} 至 {end_date}")
-    print(f"股票样本: {stock_codes}")
+    logging.info(f"分析周期: {start_date} 至 {end_date}")
+    logging.info(f"股票样本: {stock_codes}")
 
     # 获取股票数据并计算因子
     price_data = {}
@@ -1283,7 +1284,7 @@ if __name__ == "__main__":
             df = fetcher.fetch_stock_data(code=code, start_date=start_date, end_date=end_date)
 
             if df is None or df.empty:
-                print(f"警告: 无法获取股票 {code} 的数据")
+                logging.info(f"警告: 无法获取股票 {code} 的数据")
                 continue
 
             valid_stocks += 1
@@ -1292,13 +1293,13 @@ if __name__ == "__main__":
             # 计算因子
             factor_values[code] = factors['macd'](close=df.close)
         except Exception as e:
-            print(f"处理股票 {code} 时出错: {e}")
+            logging.exception(f"处理股票 {code} 时出错: {e}")
 
-    print(f"成功处理 {valid_stocks} 只股票数据")
+    logging.info(f"成功处理 {valid_stocks} 只股票数据")
 
     # 对因子进行有效性分析
     try:
-        print("\n开始因子有效性分析...")
+        logging.info("\n开始因子有效性分析...")
         analyzer = analyze_single_factor(
             factor_data=factor_values,
             price_data=price_data,
@@ -1307,7 +1308,7 @@ if __name__ == "__main__":
         )
 
     except Exception as e:
-        print(f"因子分析过程中出错: {e}")
+        logging.exception(f"因子分析过程中出错: {e}")
         import traceback
 
         traceback.print_exc()
