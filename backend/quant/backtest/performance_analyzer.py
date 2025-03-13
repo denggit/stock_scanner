@@ -868,12 +868,13 @@ class FactorAnalyzer:
             except Exception as e:
                 logging.info(f"绘制累积收益时出错: {e}")
 
-    def save_report(self, filename: str) -> None:
+    def save_report(self, filename: str, factor_name: str) -> None:
         """
         将因子分析结果保存为HTML报告
         
         Args:
             filename: 报告文件名，应以.html结尾
+            factor_name: 因子名称，将显示在报告标题中
         
         Returns:
             None，但会在指定目录生成HTML报告文件
@@ -1013,7 +1014,7 @@ class FactorAnalyzer:
         <html>
         <head>
             <meta charset="utf-8">
-            <title>因子分析报告</title>
+            <title>因子分析报告 - {{factor_name}}</title>
             <style>
                 body { font-family: SimHei, Arial, sans-serif; margin: 20px; }
                 h1 { color: #2c3e50; text-align: center; }
@@ -1030,7 +1031,7 @@ class FactorAnalyzer:
             </style>
         </head>
         <body>
-            <h1>因子分析报告</h1>
+            <h1>因子分析报告 - {{factor_name}}</h1>
             
             <div class="summary">
                 <h2>摘要</h2>
@@ -1084,6 +1085,7 @@ class FactorAnalyzer:
         # 准备报告数据
         from datetime import datetime
         context = {
+            'factor_name': factor_name,  # 添加因子名称到上下文
             'summary': summary,
             'ic_table': ic_table,
             'group_returns_table': group_returns_table,

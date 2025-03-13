@@ -722,29 +722,29 @@ class WorldQuantFactors(BaseFactor):
         # 计算排名
         rank_high = high.rank(pct=True)
         rank_volume = volume.rank(pct=True)
-        
+
         # 安全计算相关系数
         def safe_correlation(x, y, window=5):
             result = pd.Series(index=x.index)
-            for i in range(window-1, len(x)):
-                if i < window-1:
+            for i in range(window - 1, len(x)):
+                if i < window - 1:
                     result.iloc[i] = np.nan
                     continue
-                    
-                x_window = x.iloc[i-window+1:i+1]
-                y_window = y.iloc[i-window+1:i+1]
-                
+
+                x_window = x.iloc[i - window + 1:i + 1]
+                y_window = y.iloc[i - window + 1:i + 1]
+
                 # 检查是否有足够的非NaN值
                 valid_data = ~(np.isnan(x_window) | np.isnan(y_window))
                 if valid_data.sum() < 2:  # 至少需要2个点才能计算相关系数
                     result.iloc[i] = np.nan
                     continue
-                    
+
                 # 检查标准差是否为零
                 if np.std(x_window[valid_data]) == 0 or np.std(y_window[valid_data]) == 0:
                     result.iloc[i] = np.nan
                     continue
-                    
+
                 # 计算相关系数
                 try:
                     with warnings.catch_warnings():
@@ -752,15 +752,15 @@ class WorldQuantFactors(BaseFactor):
                         result.iloc[i] = x_window.corr(y_window)
                 except Exception:
                     result.iloc[i] = np.nan
-                    
+
             return result
-        
+
         # 使用安全的相关系数计算
         correlation = safe_correlation(rank_high, rank_volume, 5)
-        
+
         # 计算相关系数的排名
         rank_correlation = correlation.rank(pct=True)
-        
+
         # 计算排名的3日累和，取负值
         return -1 * rank_correlation.rolling(3).sum()
 

@@ -202,7 +202,7 @@ def run_factor_analysis(
             report_name = os.path.join("results", datetime.date.today().strftime("%Y%m%d"),
                                        f"factor_analysis_{factor_name}.html")
             try:
-                analyzer.save_report(report_name)
+                analyzer.save_report(report_name, factor_name)
                 logger.info(f"✅ 分析完成 - 保存报告至: {report_name}")
             except Exception as e:
                 logger.exception(f"保存报告时出错: {e}")

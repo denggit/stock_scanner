@@ -91,7 +91,7 @@ class StockDataFetcher:
         return self.db.get_stock_list()
 
     def get_stock_list_with_cond(self, pool_name: str = "full", ipo_date: Optional[str] = None,
-                                 min_amount: Optional[int] = None,
+                                 min_amount: Optional[float] = None,
                                  end_date: Optional[datetime] = datetime.date.today()) -> pd.DataFrame:
         """
         获取股票列表，带条件
