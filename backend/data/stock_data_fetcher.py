@@ -27,6 +27,7 @@ class StockDataFetcher:
             period: str = 'daily',
             start_date: Optional[str] = (datetime.date.today() - datetime.timedelta(days=365)).strftime("%Y-%m-%d"),
             end_date: Optional[str] = datetime.date.today().strftime("%Y-%m-%d"),
+            tradestatus: str = '1',
             adjust: str = '3'
     ) -> pd.DataFrame:
         """
@@ -36,6 +37,8 @@ class StockDataFetcher:
         :param start_date: 开始日期，格式为YYYY-MM-DD
         :param end_date: YYYY-MM-DD
         :param adjust: 复权类型，1:后复权，2:前复权，3:不复权
+        :param tradestatus: 1: 正常交易 0: 停牌
+
         """
         if period.lower().startswith('d'):
             df = self.db.get_stock_daily(code=code, start_date=start_date, end_date=end_date, adjust=adjust)
@@ -45,6 +48,9 @@ class StockDataFetcher:
         #     df = self.db.get_stock_monthly(code=code, start_date=start_date, end_date=end_date)
         else:
             raise ValueError(f"Invalid period: {period}")
+
+        # 过滤交易状态
+        df = df[df.tradestatus == tradestatus]
 
         # 把数字型数据改为float
         numeric_columns = ['open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn', 'pct_chg', 'pe_ttm',

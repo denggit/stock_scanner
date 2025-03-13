@@ -10,9 +10,9 @@ import logging
 import time
 from datetime import datetime
 
+import numpy as np
 import pandas as pd
 import pymysql as mysql
-import numpy as np
 
 from backend.configs.database.database import config
 
@@ -311,6 +311,8 @@ class DatabaseManager:
         if missing_columns:
             raise ValueError(f"Missing required columns in stock_df for code: {code}. Columns: {missing_columns}")
 
+        stock_df = self.__clean_data(stock_df)
+
         # 检查NaN值
         for col in required_columns:
             nan_count = stock_df[col].isna().sum()
@@ -463,7 +465,7 @@ class DatabaseManager:
         """通用的财务数据保存方法"""
         if df.empty:
             return
-        
+
         # 定义各字段合理范围
         range_limits = {
             'NRTurnRatio': (-1e10, 1e10),
@@ -483,7 +485,7 @@ class DatabaseManager:
             'totalShare': (-1e15, 1e15),
             'liqaShare': (-1e15, 1e15),
             'currentRatio': (-1e10, 1e10),
-            'quickRatio': (-1e10, 1e10), 
+            'quickRatio': (-1e10, 1e10),
             'cashRatio': (-1e10, 1e10),
             'YOYLiability': (-1e10, 1e10),
             'liabilityToAsset': (-1e10, 1e10),
@@ -502,45 +504,45 @@ class DatabaseManager:
             'dividCashStock': (-1e10, 1e10),
             'dividReserveToStockPs': (-1e10, 1e10)
         }
-        
+
         # 清洗数据
         for col in df.columns:
             if col in range_limits:
                 min_val, max_val = range_limits[col]
                 # 确保列是浮点数类型
                 df[col] = df[col].astype('float64', errors='ignore')
-                
+
                 # 先处理无穷大值
                 mask = np.isinf(df[col])
                 df.loc[mask, col] = np.nan
-                
+
                 # 检查异常值并记录
                 outliers = df[(df[col] < min_val) | (df[col] > max_val)]
                 if not outliers.empty:
                     logging.warning(f"在 {table_name} 表中发现 {len(outliers)} 条 {col} 异常数据：")
                     for _, row in outliers.iterrows():
                         logging.warning(f"代码：{row['code']}, 日期：{row.get('statDate', 'N/A')}, {col}：{row[col]}")
-                
+
                 # 限制数值范围
                 df[col] = df[col].clip(lower=min_val, upper=max_val)
-            
+
         # 记录 NaN 值的数量
         nan_count = df.isna().sum()
         if nan_count.any():
             logging.debug(f"在 {table_name} 表中发现 NaN 值:\n{nan_count[nan_count > 0]}")
-        
+
         # 将所有数值列的 NaN 转换为 None
         numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
         for col in numeric_cols:
             df[col] = df[col].astype('float64', errors='ignore')  # 确保类型一致
             df[col] = df[col].where(pd.notnull(df[col]), None)
-        
+
         # 过滤无效数据
         if 'statDate' in df.columns:
             df = df.dropna(subset=['code', 'statDate'], how='any')
         else:
             df = df.dropna(subset=['code'], how='any')
-        
+
         # 准备 SQL 语句
         placeholders = ','.join(['%s'] * len(columns))
         columns_str = ','.join(columns)
@@ -562,7 +564,7 @@ class DatabaseManager:
                 else:
                     value.append(v)
             values.append(tuple(value))
-        
+
         # 执行更新
         try:
             with self.conn.cursor() as cursor:
@@ -621,3 +623,14 @@ class DatabaseManager:
                    'dividStocksPs', 'dividCashStock', 'dividReserveToStockPs']
         self._save_financial_data(df, 'stock_dividend', columns)
 
+    def __clean_data(self, stock_df):
+        """清洁数据"""
+        # 有的时候股票停牌，数据会为空
+        stock_df['volume'] = stock_df['volume'].replace('', 0)
+        stock_df['amount'] = stock_df['amount'].replace('', 0)
+        stock_df['turn'] = stock_df['turn'].replace('', 0)
+        stock_df['pct_chg'] = stock_df['pct_chg'].replace('', 0)
+        stock_df['pe_ttm'] = stock_df['pe_ttm'].replace('', np.nan)
+        stock_df['pb_mrq'] = stock_df['pb_mrq'].replace('', np.nan)
+        stock_df['ps_ttm'] = stock_df['ps_ttm'].replace('', np.nan)
+        stock_df['pcf_ncf_ttm'] = stock_df['pcf_ncf_ttm'].replace('', np.nan)

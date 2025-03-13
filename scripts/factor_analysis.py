@@ -316,10 +316,10 @@ if __name__ == "__main__":
     end_date = "2025-01-01"
     fetcher = StockDataFetcher()
     # 股票至少已经上市1年
-    stock_codes = fetcher.get_stock_list_with_cond(pool_name="no_st", ipo_date="2024-01-01", min_amount=10000000, end_date=datetime.datetime.strptime(end_date, "%Y-%m-%d").date()).code.to_list()
+    stock_codes = fetcher.get_stock_list_with_cond(pool_name="no_st", ipo_date="2024-01-01", min_amount=50000000, end_date=datetime.datetime.strptime(end_date, "%Y-%m-%d").date()).code.to_list()
 
     run_factor_analysis(
-        factor_name="",
+        factor_name="alpha_2",
         stock_codes=stock_codes,
         start_date=start_date,
         end_date=end_date,
