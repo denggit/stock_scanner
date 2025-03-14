@@ -7,6 +7,7 @@
 @Description: 
 """
 import logging
+import re
 import time
 
 import baostock as bs
@@ -131,10 +132,42 @@ class BaostockSource(DataSource):
             fields = 'date,code,open,high,low,close,preclose,volume,amount,turn,tradestatus,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,isST'
             rs = bs.query_history_k_data_plus(code, fields=fields, start_date=start_date, end_date=end_date,
                                               frequency=frequency[0], adjustflag=adjust)
+            columns = ['date', 'code', 'open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn',
+                       'tradestatus', 'pctChg', 'peTTM', 'pbMRQ', 'psTTM', 'pcfNcfTTM', 'isST']
+            # 重命名列以匹配数据库字段
+            column_mapping = {
+                'date': 'trade_date',
+                'pctChg': 'pct_chg',
+                'peTTM': 'pe_ttm',
+                'pbMRQ': 'pb_mrq',
+                'psTTM': 'ps_ttm',
+                'pcfNcfTTM': 'pcf_ncf_ttm',
+                'isST': 'is_st',
+            }
+            # 确保所有必须的列都存在
+            required_columns = ['code', 'trade_date', 'open', 'high', 'low', 'close', 'preclose', 'volume', 'amount',
+                                'turn', 'tradestatus', 'pct_chg', 'pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm', 'is_st']
+            numeric_columns = ['open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn', 'pct_chg',
+                               'pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm']
         else:
+            # 分钟线
+            match = re.match(r'^\d+', frequency)
+            if match:
+                frequency = match.group()
+            else:
+                raise ValueError(f"无效的频率参数: {frequency}")
             fields = "date,time,code,open,high,low,close,volume,amount,adjustflag"
             rs = bs.query_history_k_data_plus(code, fields=fields, start_date=start_date, end_date=end_date,
                                               frequency=frequency, adjustflag=adjust)
+            columns = ['date', 'time', 'code', 'open', 'high', 'low', 'close', 'volume', 'amount', 'adjustflag']
+            # 重命名列以匹配数据库字段
+            column_mapping = {
+                'date': 'trade_date',
+            }
+            # 确保所有必须的列都存在
+            required_columns = ['code', 'trade_date', 'time', 'open', 'high', 'low', 'close', 'volume', 'amount']
+            numeric_columns = ['open', 'high', 'low', 'close', 'volume', 'amount']
+
         if rs.error_code != self.SUCCESS_CODE:
             if rs.error_code in self.NETWORK_ERROR_CODES + self.LOGIN_ERROR_CODES:
                 self.connect()
@@ -149,40 +182,24 @@ class BaostockSource(DataSource):
         if not data_list:
             return pd.DataFrame()
 
-        # 创建DataFrame并重命名列
-        columns = ['date', 'code', 'open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn',
-                   'tradestatus', 'pctChg', 'peTTM', 'pbMRQ', 'psTTM', 'pcfNcfTTM', 'isST']
+        # 创建DataFrame
         df = pd.DataFrame(data_list, columns=columns)
 
-        # 删除非交易状态的数据（tradestatus=0）
-        df = df[df['tradestatus'] != '0'].copy()
-
-        # 重命名列以匹配数据库字段
-        column_mapping = {
-            'date': 'trade_date',
-            'pctChg': 'pct_chg',
-            'peTTM': 'pe_ttm',
-            'pbMRQ': 'pb_mrq',
-            'psTTM': 'ps_ttm',
-            'pcfNcfTTM': 'pcf_ncf_ttm',
-            'isST': 'is_st',
-        }
+        # 重命名列
         df = df.rename(columns=column_mapping)
 
         # 转换数据类型
         df['trade_date'] = pd.to_datetime(df['trade_date'])
-        df['tradestatus'] = df['tradestatus'].astype(int)
-        df['is_st'] = df['is_st'].astype(int)
-
-        numeric_columns = ['open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn', 'pct_chg', 'pe_ttm',
-                           'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm']
+        if frequency in ['daily', 'weekly', 'monthly', 'd', 'w', 'm']:
+            df['tradestatus'] = df['tradestatus'].astype(int)
+            df['is_st'] = df['is_st'].astype(int)
+        else:
+            # 分钟级别数据
+            df['time'] = df['time'].str[8:14].apply(lambda x: f"{x[0:2]}:{x[2:4]}:{x[4:6]}")
 
         for col in numeric_columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
-        # 确保所有必须的列都存在
-        required_columns = ['code', 'trade_date', 'open', 'high', 'low', 'close', 'preclose', 'volume', 'amount',
-                            'turn', 'tradestatus', 'pct_chg', 'pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm', 'is_st']
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
             raise ValueError(f"数据源返回的数据缺少必须的列：{missing_columns}")

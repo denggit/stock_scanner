@@ -34,20 +34,22 @@ def update_database(args, logger):
     """更新数据库"""
 
     try:
-        logger.info("更新数据库")
+        logger.info(f"更新数据库: {args.frequency}")
         start_time = time.time()
 
         data_manager = DataUpdateManager()
         stock_list = data_manager.get_stock_list()
-        data_manager.update_stock_list(stock_list)
-        logger.info("更新股票列表完成")
+        if args.frequency in ('daily', 'd'):
+            # 日线数据需要更新股票列表，其他数据避免重复更新股票列表
+            data_manager.update_stock_list(stock_list)
+            logger.info("更新股票列表完成")
         total_stocks = len(stock_list)
 
         # 创建进度条，因为要更新不复权和后复权两个股票库，所以total * 2
         with tqdm(total=total_stocks * 2, desc="更新数据库", unit="份数据") as pbar:
-            # 目前只更新Daily数据
+            # 更新数据
             result = data_manager.update_all_stocks(force_full_update=args.full,
-                                                    frequency='daily',
+                                                    frequency=args.frequency,
                                                     progress_callback=lambda: pbar.update(1))
 
         end_time = time.time()
@@ -73,13 +75,14 @@ def main():
     parser = argparse.ArgumentParser(description="更新股票数据库")
     parser.add_argument("--full", action="store_true", help="强制全量更新(默认增量更新)")
     parser.add_argument("--silent", action="store_true", help="静默模式，减少输出信息")
+    parser.add_argument("--frequency", default="daily", help="更新频率，默认为日频(daily)")
     args = parser.parse_args()
 
     # 设置日志
     if args.silent:
-        logger = setup_logger("update_database", log_level=logging.WARNING, set_root_logger=True)
+        logger = setup_logger(f"update_stock_data_{args.frequency}", log_level=logging.WARNING, set_root_logger=True)
     else:
-        logger = setup_logger("update_database", log_level=logging.INFO, set_root_logger=True)
+        logger = setup_logger(f"update_stock_data_{args.frequency}", log_level=logging.INFO, set_root_logger=True)
 
     try:
         update_database(args, logger=logger)

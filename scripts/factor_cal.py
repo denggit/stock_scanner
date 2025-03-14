@@ -224,7 +224,7 @@ if __name__ == "__main__":
 
     factor_name = "alpha_37"
     start_date = "2024-01-01"
-    end_date = "2025-03-13"
+    end_date = datetime.date.today().strftime("%Y-%m-%d")
     pool_name = "no_st"
     ipo_days = 365
     min_amount = 5000000

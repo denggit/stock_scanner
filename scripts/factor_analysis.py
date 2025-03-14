@@ -114,7 +114,7 @@ def run_factor_analysis(
     logger.info("开始获取股票数据")
     logger.info(f"├─ 时间范围: {start_date} 至 {end_date}")
     logger.info(f"├─ 股票列表: {', '.join(stock_codes[:3])}...等{len(stock_codes)}只")
-    logger.info(f"└─ 数据复权方式: 前复权")
+    logger.info(f"└─ 数据复权方式: 后复权")
 
     price_data = {}
     valid_stocks = 0
@@ -364,12 +364,13 @@ def main():
 
 
 if __name__ == "__main__":
+    import datetime
     # main()
 
     # stock_codes = ["sh.605300", "sz.300490", "sh.603336", "sh.600519", "sz.000858",
     #                "sh.601398", "sz.000651", "sh.601318", "sz.000333", "sh.600036"]
-    start_date = "2024-01-01"
-    end_date = "2025-01-01"
+    start_date = (datetime.date.today() - datetime.timedelta(days=730)).strftime('%Y-%m-%d')
+    end_date = datetime.date.today().strftime("%Y-%m-%d")
     fetcher = StockDataFetcher()
     # 股票至少已经上市1年
     stock_codes = fetcher.get_stock_list_with_cond(pool_name="no_st", ipo_date="2024-01-01", min_amount=50000000, end_date=datetime.datetime.strptime(end_date, "%Y-%m-%d").date()).code.to_list()
@@ -378,7 +379,7 @@ if __name__ == "__main__":
     # stock_codes = fetcher.get_stock_list(pool_name="sz50").code.to_list()
 
     run_factor_analysis(
-        factor_name="",
+        factor_name="alpha_37",
         stock_codes=stock_codes,
         start_date=start_date,
         end_date=end_date,
