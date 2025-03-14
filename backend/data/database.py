@@ -379,7 +379,8 @@ class DatabaseManager:
         logging.info(f"Total records updated for {code}_{adjust}: {total_records}")
 
         # 更新股票列表中的更新时间
-        self.update_stock_update_time(pd.DataFrame({'code': [code], 'update_time': [datetime.now()]}), adjust)
+        update_time = stock_df['trade_date'].max()
+        self.update_stock_update_time(pd.DataFrame({'code': [code], 'update_time': [update_time]}), adjust)
 
     def get_all_update_time(self, adjust: str = '3') -> dict:
         """获取所有股票更新时间

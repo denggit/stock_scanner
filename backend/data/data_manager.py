@@ -121,20 +121,19 @@ class DataUpdateManager:
         )
         consumer.start()
 
-        trading_calendar = self.data_source.get_trading_calendar(start_date=self.DEFAULT_CALENDAR_START)
         # 生产者：获取股票数据
         try:
             for code in stock_list['code']:
                 try:
                     # 获取不复权数据
-                    df = self.__fetch_stock_data(code, trading_calendar, force_full_update, latest_dates.get(code),
+                    df = self.__fetch_stock_data(code, force_full_update, latest_dates.get(code),
                                                  frequency=frequency, adjust='3')
                     if not df.empty:
                         self.data_queue.put((code, df, frequency, '3'))
                     elif progress_callback:
                         progress_callback()
                     # 获取后复权数据
-                    df_back = self.__fetch_stock_data(code, trading_calendar, force_full_update,
+                    df_back = self.__fetch_stock_data(code, force_full_update,
                                                       latest_dates_back.get(code), frequency=frequency,
                                                       adjust='1')
                     if not df_back.empty:
@@ -205,29 +204,22 @@ class DataUpdateManager:
                 logging.debug("队列为空，等待数据...")
                 continue
 
-    def __fetch_stock_data(self, code: str, trading_calendar: pd.DataFrame, force_full_update: bool = False,
+    def __fetch_stock_data(self, code: str, force_full_update: bool = False,
                            latest_date: Optional[str] = None, frequency: str = 'daily', adjust: str = '3') -> pd.DataFrame:
         """获取单只股票的数据"""
         if isinstance(latest_date, str):
             latest_date = dt.datetime.strptime(latest_date, '%Y-%m-%d %H:%M:%S')
-        today_6pm = dt.datetime.combine(dt.datetime.today(), dt.time(18, 0))
         if force_full_update or latest_date is None:
             # 如果强制全量更新或者是新股票（没有历史数据），则从5年前开始更新
             start_date = (dt.datetime.now() - dt.timedelta(days=5 * 365)).strftime('%Y-%m-%d')
-        elif latest_date > today_6pm:
-            # 如果是今天下午六点后更新的，无需更新
-            logging.warning(f"股票 {code}_{adjust} 今天已经更新，无需重复更新")
+        elif latest_date.date() == dt.date.today():
+            # 今日数据已更新，不许更新
+            logging.warning(f"股票 {code}_{adjust} 今日已经更新，无需重复更新")
             return pd.DataFrame()
         else:
-            # 如果最新更新日期为交易日，则选择start_date该日期，否则选择前一个交易日为start_date，避免出现跨0点运行代码导致的数据缺失
-            days = (dt.datetime.today() - latest_date).days + 1
-            start_date = '2025-01-01'
-            for i in range(days, len(trading_calendar) + 1):
-                if trading_calendar.is_trading_day.iloc[-i] == "1":
-                    start_date = trading_calendar.calendar_date.iloc[-i]
-                    break
+            start_date = (latest_date + dt.timedelta(days=1)).strftime('%Y-%m-%d')
 
-        end_date = dt.datetime.now().strftime('%Y-%m-%d')
+        end_date = dt.date.today().strftime('%Y-%m-%d')
 
         # 如果开始日期晚于结束日期，则不更新
         if start_date > end_date:
