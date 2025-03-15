@@ -108,8 +108,10 @@ class DataUpdateManager:
         }
 
         # 获取最新日期
-        latest_dates = {} if force_full_update else self._retry_operation(self.db.get_all_update_time, frequency=frequency, adjust='3')
-        latest_dates_back = {} if force_full_update else self._retry_operation(self.db.get_all_update_time, frequency=frequency, adjust='1')
+        latest_dates = {} if force_full_update else self._retry_operation(self.db.get_all_update_time,
+                                                                          frequency=frequency, adjust='3')
+        latest_dates_back = {} if force_full_update else self._retry_operation(self.db.get_all_update_time,
+                                                                               frequency=frequency, adjust='1')
 
         # 启动消费者线程
         consumer = threading.Thread(
@@ -121,16 +123,18 @@ class DataUpdateManager:
         )
         consumer.start()
 
+        trading_calendar = self.data_source.get_trading_calendar(start_date=self.DEFAULT_CALENDAR_START)
+
         # 生产者：获取股票数据
         try:
             for code in stock_list['code']:
                 try:
                     # 获取不复权数据
-                    df = self.__fetch_stock_data(code, force_full_update, latest_dates.get(code),
+                    df = self.__fetch_stock_data(code, force_full_update, trading_calendar, latest_dates.get(code),
                                                  frequency=frequency, adjust='3')
                     self.__queue_stock_data(code, df, frequency, '3', progress_callback)
                     # 获取后复权数据
-                    df_back = self.__fetch_stock_data(code, force_full_update, latest_dates_back.get(code),
+                    df_back = self.__fetch_stock_data(code, force_full_update, trading_calendar, latest_dates_back.get(code),
                                                       frequency=frequency, adjust='1')
                     self.__queue_stock_data(code, df_back, frequency, '1', progress_callback)
                 except Exception as e:
@@ -175,12 +179,12 @@ class DataUpdateManager:
                     #     self.db.update_stock_monthly(code, df, adjust)
                     elif frequency == '5min':
                         self.db.update_stock_5min(code, df, adjust)
-                    # elif frequency == '15min':
-                    #     self.db.update_stock_15min(code, df, adjust)
-                    # elif frequency == '30min':
-                    #     self.db.update_stock_30min(code, df, adjust)
-                    # elif frequency == '60min':
-                    #     self.db.update_stock_60min(code, df, adjust)
+                    elif frequency == '15min':
+                        self.db.update_stock_15min(code, df, adjust)
+                    elif frequency == '30min':
+                        self.db.update_stock_30min(code, df, adjust)
+                    elif frequency == '60min':
+                        self.db.update_stock_60min(code, df, adjust)
 
                     with self.stats_lock:  # 使用线程锁保护统计信息的更新
                         update_stats["updated"] += 1
@@ -203,31 +207,47 @@ class DataUpdateManager:
             self.data_queue.put((code, df, frequency, adjust))
         elif progress_callback:
             # 如果数据为空，也回复进度
-            logging.warning(f"股票 {code} 没有新数据")
             progress_callback()
 
     def __fetch_stock_data(self, code: str, force_full_update: bool = False,
-                           latest_date: Optional[str] = None, frequency: str = 'daily', adjust: str = '3') -> pd.DataFrame:
+                           trading_calendar: pd.DataFrame = pd.DataFrame(),
+                           latest_date: Optional[str] = None, frequency: str = 'daily',
+                           adjust: str = '3') -> pd.DataFrame:
         """获取单只股票的数据"""
         if isinstance(latest_date, str):
             latest_date = dt.datetime.strptime(latest_date, '%Y-%m-%d %H:%M:%S')
+        latest_date = latest_date.date()
         if force_full_update or latest_date is None:
             # 如果强制全量更新或者是新股票（没有历史数据），则从5年前开始更新
-            start_date = (dt.datetime.now() - dt.timedelta(days=5 * 365)).strftime('%Y-%m-%d')
-        elif latest_date.date() == dt.date.today():
+            start_date = dt.date.today() - dt.timedelta(days=5 * 365)
+        elif latest_date == dt.date.today():
             # 今日数据已更新，不许更新
             logging.warning(f"股票 {code}_{adjust} 今日已经更新，无需重复更新")
             return pd.DataFrame()
         else:
-            start_date = (latest_date + dt.timedelta(days=1)).strftime('%Y-%m-%d')
+            start_date = latest_date + dt.timedelta(days=1)
 
-        end_date = dt.date.today().strftime('%Y-%m-%d')
+        end_date = dt.date.today()
+
+        total_days = (end_date - start_date).days + 1
+        # 如果所有交易日都是非交易日，那就没必要获取数据
+        if total_days < 10:
+            for i in range(total_days):
+                date = (start_date + dt.timedelta(days=i)).strftime("%Y-%m-%d")
+                if trading_calendar[trading_calendar['calendar_date'] == date].is_trading_day.values[0] == '0':
+                    # 如果不是交易日，则跳过
+                    start_date = start_date + dt.timedelta(days=1)
+                else:
+                    # 如果是交易日，则更新
+                    break
 
         # 如果开始日期晚于结束日期，则不更新
         if start_date > end_date:
-            logging.warning(f"股票 {code}_{adjust} 的开始日期晚于结束日期，不更新")
+            logging.warning(f"股票 {code}_{adjust} 的开始日期 {start_date} 晚于结束日期 {end_date}，不更新。可能源于起始start_date为非交易日")
             return pd.DataFrame()
 
+        start_date = start_date.strftime('%Y-%m-%d')
+        end_date = end_date.strftime('%Y-%m-%d')
         df = self._retry_operation(self.data_source.get_stock_data, code=code, start_date=start_date, end_date=end_date,
                                    frequency=frequency, adjust=adjust)
 

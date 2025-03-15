@@ -8,7 +8,6 @@
 """
 import logging
 import time
-from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -18,6 +17,7 @@ from backend.configs.database.database import config
 
 
 class DatabaseManager:
+    BIG_PERIODS = ('daily', 'monthly', 'weekly', 'd', 'w', 'm')
 
     def __init__(self):
         self.config = config
@@ -198,82 +198,300 @@ class DatabaseManager:
         cursor.close()
         return cursor.fetchone()[0] > 0
 
-    def _ensure_daily_table(self, year: int, adjust: str = '3'):
-        """确保特定年份的日线数据表存在
+    def _ensure_kline_table(self, period: str, year: int, adjust: str = '3'):
+        """确保特定周期和年份的K线数据表存在
         
         Args:
+            period: 周期，如 '5min', '15min', '30min', '60min', 'daily'
             year: 年份
-            adjust: 复权类型，1:后复权，2:前复权，3:不复权
+            adjust: 复权类型，'1':后复权，'2':前复权，'3':不复权
         """
+        # 确定表名
         table_suffix = f"back_{year}" if adjust == '1' else str(year)
-        table_name = f"stock_daily_{table_suffix}"
+        table_name = f"stock_{period}_{table_suffix}"
 
+        # 检查表是否已存在
         if not self._table_exists(table_name):
             cursor = self.conn.cursor()
-            cursor.execute(f"""
-            CREATE TABLE IF NOT EXISTS {table_name}(
-                code VARCHAR(10),
-                trade_date DATE,
-                open DECIMAL(10, 2),
-                high DECIMAL(10, 2),
-                low DECIMAL(10, 2),
-                close DECIMAL(10, 2),
-                preclose DECIMAL(10, 2),
-                volume BIGINT,
-                amount DECIMAL(16, 2),
-                turn DECIMAL(10, 2),
-                tradestatus TINYINT(1),
-                pct_chg DECIMAL(10, 2),
-                pe_ttm DECIMAL(20, 4),
-                pb_mrq DECIMAL(20, 4),
-                ps_ttm DECIMAL(20, 4),
-                pcf_ncf_ttm DECIMAL(20, 4),
-                is_st TINYINT(1),
-                PRIMARY KEY (code, trade_date)
-            ) PARTITION BY RANGE (MONTH(trade_date)) (
-                PARTITION p1 VALUES LESS THAN (4),
-                PARTITION p2 VALUES LESS THAN (7),
-                PARTITION p3 VALUES LESS THAN (10),
-                PARTITION p4 VALUES LESS THAN (13)
-            )
-            """)
+
+            if period == 'daily':
+                # 日线表有额外的字段
+                cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {table_name}(
+                    code VARCHAR(10),
+                    trade_date DATE,
+                    open DECIMAL(10, 2),
+                    high DECIMAL(10, 2),
+                    low DECIMAL(10, 2),
+                    close DECIMAL(10, 2),
+                    preclose DECIMAL(10, 2),
+                    volume BIGINT,
+                    amount DECIMAL(16, 2),
+                    turn DECIMAL(10, 2),
+                    tradestatus SMALLINT,
+                    pct_chg DECIMAL(10, 2),
+                    pe_ttm DECIMAL(10, 2),
+                    pb_mrq DECIMAL(10, 2),
+                    ps_ttm DECIMAL(10, 2),
+                    pcf_ncf_ttm DECIMAL(10, 2),
+                    is_st SMALLINT,
+                    PRIMARY KEY (code, trade_date)
+                ) PARTITION BY RANGE (MONTH(trade_date)) (
+                    PARTITION p1 VALUES LESS THAN (4),
+                    PARTITION p2 VALUES LESS THAN (7),
+                    PARTITION p3 VALUES LESS THAN (10),
+                    PARTITION p4 VALUES LESS THAN (13)
+                )
+                """)
+            else:
+                # 分钟级别的表结构相同
+                cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {table_name}(
+                    code VARCHAR(10),
+                    trade_date DATE,
+                    time TIME,
+                    open DECIMAL(10, 2),
+                    high DECIMAL(10, 2),
+                    low DECIMAL(10, 2),
+                    close DECIMAL(10, 2),
+                    volume BIGINT,
+                    amount DECIMAL(16, 2),
+                    vwap DECIMAL(10, 2),
+                    PRIMARY KEY (code, trade_date, time)
+                ) PARTITION BY RANGE (MONTH(trade_date)) (
+                    PARTITION p1 VALUES LESS THAN (4),
+                    PARTITION p2 VALUES LESS THAN (7),
+                    PARTITION p3 VALUES LESS THAN (10),
+                    PARTITION p4 VALUES LESS THAN (13)
+                )
+                """)
+
             self.conn.commit()
             cursor.close()
+
+        return table_name
+
+    def _calculate_vwap(self, stock_df: pd.DataFrame) -> pd.DataFrame:
+        """计算标准VWAP: 累计(价格×成交量)/累计成交量
+        
+        Args:
+            stock_df: 包含OHLCV数据的DataFrame
+            
+        Returns:
+            添加了vwap列的DataFrame
+        """
+        # 初始化vwap列
+        stock_df['vwap'] = 0.0
+
+        # 按交易日期排序
+        stock_df = stock_df.sort_values(['trade_date', 'time'] if 'time' in stock_df.columns else ['trade_date'])
+
+        # 按日期分组计算VWAP
+        for date, group in stock_df.groupby('trade_date'):
+            # 计算价格×成交量 (使用收盘价)
+            price_volume = group['close'] * group['volume']
+
+            # 计算累计值
+            cum_price_volume = price_volume.cumsum()
+            cum_volume = group['volume'].cumsum()
+
+            # 计算VWAP，避免除零错误
+            vwap = np.where(cum_volume > 0, cum_price_volume / cum_volume, 0)
+
+            # 更新回原始DataFrame
+            stock_df.loc[group.index, 'vwap'] = vwap
+
+        return stock_df
+
+    def update_stock_kline(self, period: str, code: str, stock_df: pd.DataFrame, adjust: str = '3'):
+        """通用的K线数据更新方法
+        
+        Args:
+            period: 周期，如 '5min', '15min', '30min', '60min', 'daily'
+            code: 股票代码
+            stock_df: 股票数据
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
+        """
+        if stock_df.empty:
+            return
+
+        # 根据周期确定所需列和清洁函数
+        if period in self.BIG_PERIODS:
+            required_columns = ['code', 'trade_date', 'open', 'high', 'low', 'close', 'preclose', 'volume', 'amount',
+                                'turn', 'tradestatus', 'pct_chg', 'pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm', 'is_st']
+            # 清洁日线数据
+            stock_df = self.__clean_data(stock_df)
+        else:
+            required_columns = ['code', 'trade_date', 'time', 'open', 'high', 'low', 'close', 'volume', 'amount']
+            # 清洁分钟线数据
+            stock_df = self.__clean_min_data(stock_df)
+
+        # 检查缺失列
+        missing_columns = [col for col in required_columns if col not in stock_df.columns]
+        if missing_columns:
+            raise ValueError(f"Missing required columns in stock_df for code: {code}. Columns: {missing_columns}")
+
+        # 检查NaN值并填充
+        for col in required_columns:
+            nan_count = stock_df[col].isna().sum()
+            if nan_count > 0:
+                logging.debug(f"NaN values found in {col} for code: {code}")
+                # 根据列类型进行填充
+                if period == 'daily':
+                    # 日线数据的NaN处理
+                    if col in ["volume", "amount", "turn", "tradestatus", "is_st"]:
+                        stock_df[col] = stock_df[col].fillna(0)
+                    elif col in ['pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm']:
+                        stock_df[col] = stock_df[col].fillna(0)
+                    elif col == 'pct_chg':
+                        # 使用向量化操作计算涨跌幅
+                        mask = stock_df[col].isna() & stock_df['close'].notna() & stock_df['preclose'].notna()
+                        stock_df.loc[mask, col] = (stock_df.loc[mask, 'close'] - stock_df.loc[mask, 'preclose']) / \
+                                                  stock_df.loc[mask, 'preclose'] * 100
+                        stock_df[col] = stock_df[col].fillna(0)
+                    elif col in ['open', 'high', 'low', 'close', 'preclose']:
+                        stock_df[col] = stock_df[col].fillna(method='ffill')
+                        stock_df[col] = stock_df[col].fillna(method='bfill')
+                        stock_df[col] = stock_df[col].fillna(0)
+                else:
+                    # 分钟级数据的NaN处理
+                    if col in ["volume", "amount"]:
+                        stock_df[col] = stock_df[col].fillna(0)
+                    elif col in ['open', 'high', 'low', 'close']:
+                        stock_df[col] = stock_df[col].fillna(method='ffill')
+                        stock_df[col] = stock_df[col].fillna(method='bfill')
+                        stock_df[col] = stock_df[col].fillna(0)
+
+        # 对分钟级别数据计算VWAP
+        if period not in self.BIG_PERIODS:
+            stock_df = self._calculate_vwap(stock_df)
+            required_columns.append('vwap')
+
+        # 按年份分组处理数据
+        stock_df['year'] = pd.to_datetime(stock_df['trade_date']).dt.year
+        total_records = 0
+
+        for year, group in stock_df.groupby('year'):
+            try:
+                # 根据周期和调整类型确定表名
+                if adjust == '1':
+                    table_name = f"stock_{period}_back_{year}"
+                else:
+                    table_name = f"stock_{period}_{year}"
+
+                # 确保表存在
+                self._ensure_kline_table(period, year, adjust)
+
+                # 准备SQL语句
+                columns = ','.join(required_columns)
+                placeholders = ','.join(['%s'] * len(required_columns))
+
+                # 确定不包含在UPDATE中的主键列
+                pk_columns = ['code', 'trade_date']
+                if period not in self.BIG_PERIODS:
+                    # 分钟级别时间带time
+                    pk_columns.append('time')
+
+                # 构建UPDATE部分
+                update_cols = [f'{col} = VALUES({col})' for col in required_columns if col not in pk_columns]
+                update_part = ', '.join(update_cols)
+
+                insert_sql = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders}) ON DUPLICATE KEY UPDATE {update_part}"
+
+                # 准备数据
+                values = []
+                for _, row in group.iterrows():
+                    value = tuple(row[col] for col in required_columns)
+                    values.append(value)
+
+                # 执行更新
+                with self.conn.cursor() as cursor:
+                    cursor.executemany(insert_sql, values)
+
+                self.conn.commit()
+                total_records += len(values)
+                logging.debug(f"Updated {len(values)} records for {code} in {year}")
+            except Exception as e:
+                logging.error(f"Failed to update {code}_{adjust} in {year}: {e}")
+                logging.error(f"问题数据实例：{group.head().to_dict('records')}")
+                raise
+
+        logging.info(f"Total records updated for {code}_{adjust}: {total_records}")
+
+        # 更新股票列表中的更新时间
+        update_time = stock_df['trade_date'].max()
+        self.update_stock_update_time(pd.DataFrame({'code': [code], 'update_time': [update_time]}), frequency=period,
+                                      adjust=adjust)
 
     def _ensure_5min_table(self, year: int, adjust: str = '3'):
-        """确保特定年份的5分钟数据表存在
+        """确保特定年份的5分钟数据表存在"""
+        return self._ensure_kline_table('5min', year, adjust)
+
+    def _ensure_15min_table(self, year: int, adjust: str = '3'):
+        """确保特定年份的15分钟数据表存在"""
+        return self._ensure_kline_table('15min', year, adjust)
+
+    def _ensure_30min_table(self, year: int, adjust: str = '3'):
+        """确保特定年份的30分钟数据表存在"""
+        return self._ensure_kline_table('30min', year, adjust)
+
+    def _ensure_60min_table(self, year: int, adjust: str = '3'):
+        """确保特定年份的60分钟数据表存在"""
+        return self._ensure_kline_table('60min', year, adjust)
+
+    def _ensure_daily_table(self, year: int, adjust: str = '3'):
+        """确保特定年份的日线数据表存在"""
+        return self._ensure_kline_table('daily', year, adjust)
+
+    def update_stock_daily(self, code: str, stock_df: pd.DataFrame, adjust: str = '3'):
+        """更新股票日线数据
         
         Args:
-            year: 年份
-            adjust: 复权类型，1:后复权，2:前复权，3:不复权
+            code: 股票代码
+            stock_df: 股票数据
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
         """
-        table_suffix = f"back_{year}" if adjust == '1' else str(year)
-        table_name = f"stock_5min_{table_suffix}"
+        return self.update_stock_kline('daily', code, stock_df, adjust)
 
-        if not self._table_exists(table_name):
-            cursor = self.conn.cursor()
-            cursor.execute(f"""
-            CREATE TABLE IF NOT EXISTS {table_name}(
-                code VARCHAR(10),
-                trade_date DATE,
-                time TIME,
-                open DECIMAL(10, 2),
-                high DECIMAL(10, 2),
-                low DECIMAL(10, 2),
-                close DECIMAL(10, 2),
-                volume BIGINT,
-                amount DECIMAL(16, 2),
-                vwap DECIMAL(10, 2),
-                PRIMARY KEY (code, trade_date, time)
-            ) PARTITION BY RANGE (MONTH(trade_date)) (
-                PARTITION p1 VALUES LESS THAN (4),
-                PARTITION p2 VALUES LESS THAN (7),
-                PARTITION p3 VALUES LESS THAN (10),
-                PARTITION p4 VALUES LESS THAN (13)
-            )
-            """)
-            self.conn.commit()
-            cursor.close()
+    def update_stock_5min(self, code: str, stock_df: pd.DataFrame, adjust: str = '3'):
+        """更新股票5分钟数据
+        
+        Args:
+            code: 股票代码
+            stock_df: 股票数据
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
+        """
+        return self.update_stock_kline('5min', code, stock_df, adjust)
+
+    def update_stock_15min(self, code: str, stock_df: pd.DataFrame, adjust: str = '3'):
+        """更新股票15分钟数据
+        
+        Args:
+            code: 股票代码
+            stock_df: 股票数据
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
+        """
+        return self.update_stock_kline('15min', code, stock_df, adjust)
+
+    def update_stock_30min(self, code: str, stock_df: pd.DataFrame, adjust: str = '3'):
+        """更新股票30分钟数据
+        
+        Args:
+            code: 股票代码
+            stock_df: 股票数据
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
+        """
+        return self.update_stock_kline('30min', code, stock_df, adjust)
+
+    def update_stock_60min(self, code: str, stock_df: pd.DataFrame, adjust: str = '3'):
+        """更新股票60分钟数据
+        
+        Args:
+            code: 股票代码
+            stock_df: 股票数据
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
+        """
+        return self.update_stock_kline('60min', code, stock_df, adjust)
 
     def update_stock_update_time(self, df: pd.DataFrame, frequency: str = 'daily', adjust: str = '3'):
         """保存股票行情数据更新时间
@@ -330,199 +548,6 @@ class DatabaseManager:
             logging.debug(f"Saved stock basic info for {row['code']}")
         self.conn.commit()
         cursor.close()
-
-    def update_stock_daily(self, code: str, stock_df: pd.DataFrame, adjust: str = '3'):
-        """更新股票日线数据
-        
-        Args:
-            code: 股票代码
-            stock_df: 股票数据
-            adjust: 复权类型，'1'表示后复权，'3'表示不复权
-        """
-        if stock_df.empty:
-            return
-
-        # 确保所有必须的列存在
-        required_columns = ['code', 'trade_date', 'open', 'high', 'low', 'close', 'preclose', 'volume', 'amount',
-                            'turn', 'tradestatus', 'pct_chg', 'pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm', 'is_st']
-        missing_columns = [col for col in required_columns if col not in stock_df.columns]
-        if missing_columns:
-            raise ValueError(f"Missing required columns in stock_df for code: {code}. Columns: {missing_columns}")
-
-        stock_df = self.__clean_data(stock_df)
-
-        # 检查NaN值
-        for col in required_columns:
-            nan_count = stock_df[col].isna().sum()
-            if nan_count > 0:
-                logging.debug(f"NaN values found in {col} for code: {code}")
-                # 对不同类型的列使用不同的填充策略
-                if col in ["volume", "amount", "turn", "tradestatus", "is_st"]:
-                    stock_df[col] = stock_df[col].fillna(0)
-                elif col in ['pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm']:
-                    stock_df[col] = stock_df[col].fillna(0)
-                elif col == 'pct_chg':
-                    # 使用向量化操作计算涨跌幅
-                    mask = stock_df[col].isna() & stock_df['close'].notna() & stock_df['preclose'].notna()
-                    stock_df.loc[mask, col] = (stock_df.loc[mask, 'close'] - stock_df.loc[mask, 'preclose']) / \
-                                              stock_df.loc[mask, 'preclose'] * 100
-                    # 如果还有NaN值，填充0
-                    stock_df[col] = stock_df[col].fillna(0)
-                elif col in ['open', 'high', 'low', 'close', 'preclose']:
-                    # 使用前一个有效值填充
-                    stock_df[col] = stock_df[col].fillna(method='ffill')
-                    # 如果还有NaN（比如第一行就是NaN），使用后一个有效值填充
-                    stock_df[col] = stock_df[col].fillna(method='bfill')
-                    # 如果仍然有NaN，填充0
-                    stock_df[col] = stock_df[col].fillna(0)
-
-        total_records = 0
-        # 按年份分组处理数据
-        stock_df['year'] = pd.to_datetime(stock_df['trade_date']).dt.year
-
-        for year, group in stock_df.groupby('year'):
-            try:
-                # 根据adjust参数决定使用哪个表
-                if adjust == '1':
-                    self._ensure_daily_table(year, adjust='1')
-                    table_name = f"stock_daily_back_{year}"
-                else:
-                    self._ensure_daily_table(year, adjust='3')
-                    table_name = f"stock_daily_{year}"
-
-                # 准备SQL语句
-                columns = ','.join(required_columns)
-                placeholders = ','.join(['%s'] * len(required_columns))
-
-                insert_sql = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders}) ON DUPLICATE KEY UPDATE {', '.join([f'{col} = VALUES({col})' for col in required_columns if col not in ('code', 'trade_date')])}"
-
-                # 准备数据
-                values = []
-                for _, row in group.iterrows():
-                    value = tuple(row[col] for col in required_columns)
-                    values.append(value)
-
-                # 执行更新
-                with self.conn.cursor() as cursor:
-                    cursor.executemany(insert_sql, values)
-
-                self.conn.commit()
-                total_records += len(values)
-                logging.debug(f"Updated {len(values)} records for {code} in {year}")
-            except Exception as e:
-                logging.error(f"Failed to update {code}_{adjust} in {year}: {e}")
-                logging.error(f"问题数据实例：{group.head().to_dict('records')}")
-                raise
-
-        logging.info(f"Total records updated for {code}_{adjust}: {total_records}")
-
-        # 更新股票列表中的更新时间
-        update_time = stock_df['trade_date'].max()
-        self.update_stock_update_time(pd.DataFrame({'code': [code], 'update_time': [update_time]}), frequency='daily', adjust=adjust)
-
-    def update_stock_5min(self, code: str, stock_df: pd.DataFrame, adjust: str = '3'):
-        """更新股票5分钟数据
-
-        Args:
-            code: 股票代码
-            stock_df: 股票数据
-            adjust: 复权类型，'1'表示后复权，'3'表示不复权
-        """
-        if stock_df.empty:
-            return
-
-        # 确保所有必须的列存在
-        required_columns = ['code', 'trade_date', 'time', 'open', 'high', 'low', 'close', 'volume', 'amount']
-        missing_columns = [col for col in required_columns if col not in stock_df.columns]
-        if missing_columns:
-            raise ValueError(f"Missing required columns in stock_df for code: {code}. Columns: {missing_columns}")
-
-        stock_df = self.__clean_5min_data(stock_df)
-
-        # 检查NaN值
-        for col in required_columns:
-            nan_count = stock_df[col].isna().sum()
-            if nan_count > 0:
-                logging.debug(f"NaN values found in {col} for code: {code}")
-                # 对不同类型的列使用不同的填充策略
-                if col in ["volume", "amount"]:
-                    stock_df[col] = stock_df[col].fillna(0)
-                elif col in ['open', 'high', 'low', 'close']:
-                    # 使用前一个有效值填充
-                    stock_df[col] = stock_df[col].fillna(method='ffill')
-                    # 如果还有NaN（比如第一行就是NaN），使用后一个有效值填充
-                    stock_df[col] = stock_df[col].fillna(method='bfill')
-                    # 如果仍然有NaN，填充0
-                    stock_df[col] = stock_df[col].fillna(0)
-        
-        # 计算标准VWAP: 累计(价格×成交量)/累计成交量
-        # 初始化vwap列
-        stock_df['vwap'] = 0.0
-        
-        # 按交易日期排序
-        stock_df = stock_df.sort_values(['trade_date', 'time'])
-        
-        # 按日期分组计算VWAP
-        for date, group in stock_df.groupby('trade_date'):
-            # 计算价格×成交量 (使用收盘价)
-            price_volume = group['close'] * group['volume']
-            
-            # 计算累计值
-            cum_price_volume = price_volume.cumsum()
-            cum_volume = group['volume'].cumsum()
-            
-            # 计算VWAP，避免除零错误
-            vwap = np.where(cum_volume > 0, cum_price_volume / cum_volume, 0)
-            
-            # 更新回原始DataFrame
-            stock_df.loc[group.index, 'vwap'] = vwap
-        
-        # 将vwap添加到required_columns中
-        required_columns.append('vwap')
-
-        total_records = 0
-        # 按年份分组处理数据
-        stock_df['year'] = pd.to_datetime(stock_df['trade_date']).dt.year
-
-        for year, group in stock_df.groupby('year'):
-            try:
-                # 根据adjust参数决定使用哪个表
-                if adjust == '1':
-                    self._ensure_5min_table(year, adjust='1')
-                    table_name = f"stock_5min_back_{year}"
-                else:
-                    self._ensure_5min_table(year, adjust='3')
-                    table_name = f"stock_5min_{year}"
-
-                # 准备SQL语句
-                columns = ','.join(required_columns)
-                placeholders = ','.join(['%s'] * len(required_columns))
-
-                insert_sql = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders}) ON DUPLICATE KEY UPDATE {', '.join([f'{col} = VALUES({col})' for col in required_columns if col not in ('code', 'trade_date', 'time')])}"
-
-                # 准备数据
-                values = []
-                for _, row in group.iterrows():
-                    value = tuple(row[col] for col in required_columns)
-                    values.append(value)
-
-                # 执行更新
-                with self.conn.cursor() as cursor:
-                    cursor.executemany(insert_sql, values)
-
-                self.conn.commit()
-                total_records += len(values)
-                logging.debug(f"Updated {len(values)} records for {code} in {year}")
-            except Exception as e:
-                logging.error(f"Failed to update {code}_{adjust} in {year}: {e}")
-                logging.error(f"问题数据实例：{group.head().to_dict('records')}")
-                raise
-
-        logging.info(f"Total records updated for {code}_{adjust}: {total_records}")
-
-        # 更新股票列表中的更新时间
-        update_time = stock_df['trade_date'].max()
-        self.update_stock_update_time(pd.DataFrame({'code': [code], 'update_time': [update_time]}), frequency='5min', adjust=adjust)
 
     def get_all_update_time(self, frequency: str = 'daily', adjust: str = '3') -> dict:
         """获取所有股票更新时间
@@ -783,10 +808,10 @@ class DatabaseManager:
         return stock_df
 
     @staticmethod
-    def __clean_5min_data(stock_df):
-        """清洁5分钟数据"""
+    def __clean_min_data(stock_df):
+        """清洁分钟级别数据"""
         # 有的时候股票停牌，数据会为空
         stock_df['volume'] = stock_df['volume'].replace('', 0)
         stock_df['amount'] = stock_df['amount'].replace('', 0)
-        
+
         return stock_df
