@@ -243,10 +243,10 @@ class DataUpdateManager:
                     # 如果是交易日，则更新
                     break
 
-        # 如果开始日期晚于结束日期，则不更新
+        # 如果开始日期晚于结束日期，返回空值
         if start_date > end_date:
-            logging.warning(
-                f"股票 {code}_{adjust} 的开始日期 {start_date} 晚于结束日期 {end_date}，不更新。start_date到end_date可能都为非交易日")
+            logging.debug(
+                f"股票 {code}_{adjust} 的开始日期 {start_date} 晚于结束日期 {end_date}。")
             return pd.DataFrame()
 
         start_date = start_date.strftime('%Y-%m-%d')
@@ -1017,7 +1017,7 @@ class DataUpdateManager:
                 dates_to_update = daily_data[daily_data['vwap'].isna()]['trade_date'].tolist()
 
                 if not dates_to_update:
-                    logging.warning(f"股票 {code}_{adjust} 的VWAP数据已是最新")
+                    logging.debug(f"股票 {code}_{adjust} 的VWAP数据已是最新")
                     continue
 
                 # 确定日期范围

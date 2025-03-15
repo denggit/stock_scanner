@@ -53,66 +53,6 @@ class BaseFactor:
         return decorator
 
 
-class MomentumFactors(BaseFactor):
-    """动量类因子"""
-
-    @BaseFactor.register_factor(name='momentum_1m')
-    @staticmethod
-    def momentum_1m(close: pd.Series) -> pd.Series:
-        """
-        1个月动量因子
-
-        Args:
-            close: 收盘价序列
-        Returns:
-            1个月动量值
-        """
-        return close.pct_change(21)
-
-    @BaseFactor.register_factor(name='momentum_12m')
-    @staticmethod
-    def momentum_12m(close: pd.Series) -> pd.Series:
-        """
-        12个月动量因子，剔除最近1个月
-        """
-        return (close / close.shift(252)) / (close / close.shift(21)) - 1
-
-
-class VolatilityFactors(BaseFactor):
-    """波动率类因子"""
-
-    @BaseFactor.register_factor(name='volatility_1m')
-    @staticmethod
-    def volatility_1m(pct_chg: pd.Series) -> pd.Series:
-        """1个月历史波动率"""
-        return pct_chg.rolling(21).std() * np.sqrt(252)
-
-    @BaseFactor.register_factor(name='parkinson_volatility')
-    @staticmethod
-    def parkinson_volatility(high: pd.Series, low: pd.Series, window: int = 21) -> pd.Series:
-        """Parkinson波动率"""
-        return (np.log(high / low) ** 2 / (4 * np.log(2))).rolling(window).mean().pow(0.5)
-
-
-class MeanReversionFactors(BaseFactor):
-    """均值回归类因子"""
-
-    @BaseFactor.register_factor(name='mean_reversion')
-    @staticmethod
-    def mean_reversion(close: pd.Series, window: int = 20) -> pd.Series:
-        """均值回归因子"""
-        ma = close.rolling(window).mean()
-        return (close - ma) / ma
-
-    @BaseFactor.register_factor(name='bollinger_score')
-    @staticmethod
-    def bollinger_score(close: pd.Series, window: int = 20) -> pd.Series:
-        """布林带得分"""
-        ma = close.rolling(window).mean()
-        std = close.rolling(window).std()
-        return (close - ma) / (2 * std)
-
-
 class TechnicalFactors(BaseFactor):
     """技术指标类因子"""
 
@@ -135,22 +75,6 @@ class TechnicalFactors(BaseFactor):
         macd_line = exp1 - exp2
         signal_line = macd_line.ewm(span=signal).mean()
         return macd_line - signal_line
-
-
-class VolumeFactors(BaseFactor):
-    """成交量类因子"""
-
-    @BaseFactor.register_factor(name='volume_price_corr')
-    @staticmethod
-    def volume_price_corr(close: pd.Series, volume: pd.Series, window: int = 20) -> pd.Series:
-        """成交量-价格相关性因子"""
-        return close.rolling(window).corr(volume)
-
-    @BaseFactor.register_factor(name='obv')
-    @staticmethod
-    def on_balance_volume(close: pd.Series, volume: pd.Series) -> pd.Series:
-        """能量潮指标(OBV)"""
-        return (np.sign(close.diff()) * volume).cumsum()
 
 
 class ShortTermFactors(BaseFactor):
@@ -443,26 +367,26 @@ class WorldQuantFactors(BaseFactor):
         ranked_low = low.rank(pct=True)
         return -1 * ranked_low.rolling(9).apply(ts_rank, raw=False)
 
-    # @BaseFactor.register_factor(name='alpha_5')
-    # @staticmethod
-    # def alpha_5(open_price: pd.Series, close: pd.Series, vwap: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#5: (rank((open - (sum(vwap, 10) / 10))) * (-1 * abs(rank((close - vwap)))))
-    #
-    #     开盘价与10日均量价的差的排名，乘以收盘价与当日均量价差排名的绝对值的负数。
-    #
-    #     Args:
-    #         open_price: 开盘价序列
-    #         close: 收盘价序列
-    #         vwap: 成交量加权平均价格序列，更适合用于日内交易，不太适合用于隔夜策略
-    #     Returns:
-    #         Alpha#5因子值
-    #     """
-    #     vwap_mean_10 = vwap.rolling(10).mean()
-    #     rank_open = (open_price - vwap_mean_10).rank(pct=True)
-    #     rank_close = (close - vwap).rank(pct=True)
-    #
-    #     return rank_open * (-1 * np.abs(rank_close))
+    @BaseFactor.register_factor(name='alpha_5')
+    @staticmethod
+    def alpha_5(open_price: pd.Series, close: pd.Series, vwap: pd.Series) -> pd.Series:
+        """
+        Alpha#5: (rank((open - (sum(vwap, 10) / 10))) * (-1 * abs(rank((close - vwap)))))
+
+        开盘价与10日均量价的差的排名，乘以收盘价与当日均量价差排名的绝对值的负数。
+
+        Args:
+            open_price: 开盘价序列
+            close: 收盘价序列
+            vwap: 成交量加权平均价格序列，更适合用于日内交易，不太适合用于隔夜策略
+        Returns:
+            Alpha#5因子值
+        """
+        vwap_mean_10 = vwap.rolling(10).mean()
+        rank_open = (open_price - vwap_mean_10).rank(pct=True)
+        rank_close = (close - vwap).rank(pct=True)
+
+        return rank_open * (-1 * np.abs(rank_close))
 
     @BaseFactor.register_factor(name='alpha_6')
     @staticmethod
@@ -592,32 +516,32 @@ class WorldQuantFactors(BaseFactor):
 
         return result.rank(pct=True)
 
-    # @BaseFactor.register_factor(name='alpha_11')
-    # @staticmethod
-    # def alpha_11(close: pd.Series, volume: pd.Series, vwap: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#11: ((rank(ts_max((vwap - close), 3)) + rank(ts_min((vwap - close), 3))) * rank(delta(volume, 3)))
-    #
-    #     最近3天均价与收盘价差值的最大值的排名，加上最小值的排名，再乘以3天成交量变化的排名。
-    #
-    #     Args:
-    #         close: 收盘价序列
-    #         volume: 成交量序列
-    #         vwap: 成交量加权平均价
-    #     Returns:
-    #         Alpha#11因子值
-    #     """
-    #     # 计算vwap与收盘价的差值
-    #     diff = vwap - close
-    #
-    #     # 计算3日最大和最小值的排名
-    #     rank_max = diff.rolling(3).max().rank(pct=True)
-    #     rank_min = diff.rolling(3).min().rank(pct=True)
-    #
-    #     # 计算3日成交量变化的排名
-    #     rank_volume_delta = volume.diff(3).rank(pct=True)
-    #
-    #     return (rank_max + rank_min) * rank_volume_delta
+    @BaseFactor.register_factor(name='alpha_11')
+    @staticmethod
+    def alpha_11(close: pd.Series, volume: pd.Series, vwap: pd.Series) -> pd.Series:
+        """
+        Alpha#11: ((rank(ts_max((vwap - close), 3)) + rank(ts_min((vwap - close), 3))) * rank(delta(volume, 3)))
+
+        最近3天均价与收盘价差值的最大值的排名，加上最小值的排名，再乘以3天成交量变化的排名。
+
+        Args:
+            close: 收盘价序列
+            volume: 成交量序列
+            vwap: 成交量加权平均价
+        Returns:
+            Alpha#11因子值
+        """
+        # 计算vwap与收盘价的差值
+        diff = vwap - close
+
+        # 计算3日最大和最小值的排名
+        rank_max = diff.rolling(3).max().rank(pct=True)
+        rank_min = diff.rolling(3).min().rank(pct=True)
+
+        # 计算3日成交量变化的排名
+        rank_volume_delta = volume.diff(3).rank(pct=True)
+
+        return (rank_max + rank_min) * rank_volume_delta
 
     @BaseFactor.register_factor(name='alpha_12')
     @staticmethod
@@ -1024,33 +948,34 @@ class WorldQuantFactors(BaseFactor):
 
         return result
 
-    # @BaseFactor.register_factor(name='alpha_25')
-    # @staticmethod
-    # def alpha_25(close: pd.Series, high: pd.Series, volume: pd.Series, pct_chg: pd.Series, vwap: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#25: rank(((((-1 * returns) * adv20) * vwap) * (high - close)))
-    #
-    #     将收益率的负值乘以20日平均成交量再乘以成交量加权平均价格，最后乘以最高价与收盘价之差，进行排名。
-    #
-    #     Args:
-    #         close: 收盘价序列
-    #         high: 最高价序列
-    #         volume: 成交量序列
-    #         pct_chg: 收益率序列
-    #         vwap: 成交量加权平均价序列
-    #     Returns:
-    #         Alpha#25因子值
-    #     """
-    #     # 计算20日平均成交量
-    #     adv20 = volume.rolling(20).mean()
-    #
-    #     # 计算收益率的负值
-    #     neg_returns = -1 * pct_chg
-    #
-    #     # 计算结果
-    #     result = neg_returns * adv20 * vwap * (high - close)
-    #
-    #     return result.rank(pct=True)
+    @BaseFactor.register_factor(name='alpha_25')
+    @staticmethod
+    def alpha_25(close: pd.Series, high: pd.Series, volume: pd.Series, pct_chg: pd.Series,
+                 vwap: pd.Series) -> pd.Series:
+        """
+        Alpha#25: rank(((((-1 * returns) * adv20) * vwap) * (high - close)))
+
+        将收益率的负值乘以20日平均成交量再乘以成交量加权平均价格，最后乘以最高价与收盘价之差，进行排名。
+
+        Args:
+            close: 收盘价序列
+            high: 最高价序列
+            volume: 成交量序列
+            pct_chg: 收益率序列
+            vwap: 成交量加权平均价序列
+        Returns:
+            Alpha#25因子值
+        """
+        # 计算20日平均成交量
+        adv20 = volume.rolling(20).mean()
+
+        # 计算收益率的负值
+        neg_returns = -1 * pct_chg
+
+        # 计算结果
+        result = neg_returns * adv20 * vwap * (high - close)
+
+        return result.rank(pct=True)
 
     @BaseFactor.register_factor(name='alpha_26')
     @staticmethod
@@ -1081,37 +1006,37 @@ class WorldQuantFactors(BaseFactor):
         # 计算相关系数的3日最大值，取负值
         return -1 * corr.rolling(3).max()
 
-    # @BaseFactor.register_factor(name='alpha_27')
-    # @staticmethod
-    # def alpha_27(volume: pd.Series, close: pd.Series, vwap: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#27: ((0.5 < rank((sum(correlation(rank(volume), rank(vwap), 6), 2) / 2.0))) ? (-1 * 1) : 1)
-    #
-    #     当成交量排名和加权平均价格排名的6日相关系数2日和的一半的排名大于0.5时，返回-1；否则返回1。
-    #
-    #     Args:
-    #         volume: 成交量序列
-    #         close: 收盘价序列
-    #         vwap: 成交量加权平均价序列
-    #     Returns:
-    #         Alpha#27因子值
-    #     """
-    #     # 计算volume和vwap的排名
-    #     rank_volume = volume.rank(pct=True)
-    #     rank_vwap = vwap.rank(pct=True)
-    #
-    #     # 计算排名之间的6日相关系数
-    #     corr = rank_volume.rolling(6).corr(rank_vwap)
-    #
-    #     # 计算相关系数的2日和的一半
-    #     sum_corr = corr.rolling(2).sum() / 2.0
-    #
-    #     # 计算排名并应用条件逻辑
-    #     rank_sum_corr = sum_corr.rank(pct=True)
-    #     result = pd.Series(1, index=close.index)
-    #     result[rank_sum_corr > 0.5] = -1
-    #
-    #     return result
+    @BaseFactor.register_factor(name='alpha_27')
+    @staticmethod
+    def alpha_27(volume: pd.Series, close: pd.Series, vwap: pd.Series) -> pd.Series:
+        """
+        Alpha#27: ((0.5 < rank((sum(correlation(rank(volume), rank(vwap), 6), 2) / 2.0))) ? (-1 * 1) : 1)
+
+        当成交量排名和加权平均价格排名的6日相关系数2日和的一半的排名大于0.5时，返回-1；否则返回1。
+
+        Args:
+            volume: 成交量序列
+            close: 收盘价序列
+            vwap: 成交量加权平均价序列
+        Returns:
+            Alpha#27因子值
+        """
+        # 计算volume和vwap的排名
+        rank_volume = volume.rank(pct=True)
+        rank_vwap = vwap.rank(pct=True)
+
+        # 计算排名之间的6日相关系数
+        corr = rank_volume.rolling(6).corr(rank_vwap)
+
+        # 计算相关系数的2日和的一半
+        sum_corr = corr.rolling(2).sum() / 2.0
+
+        # 计算排名并应用条件逻辑
+        rank_sum_corr = sum_corr.rank(pct=True)
+        result = pd.Series(1, index=close.index)
+        result[rank_sum_corr > 0.5] = -1
+
+        return result
 
     @BaseFactor.register_factor(name='alpha_28')
     @staticmethod
@@ -1277,35 +1202,35 @@ class WorldQuantFactors(BaseFactor):
         # 组合三项
         return decayed + neg_delta_close_3 + sign_corr
 
-    # @BaseFactor.register_factor(name='alpha_32')
-    # @staticmethod
-    # def alpha_32(close: pd.Series, vwap: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#32: (scale(((sum(close, 7) / 7) - close)) + (20 * scale(correlation(vwap, delay(close, 5), 230))))
-    #
-    #     收盘价与其7日均线的差的标准化，加上成交量加权平均价与5日前收盘价的230日相关系数的标准化乘以20。
-    #
-    #     Args:
-    #         close: 收盘价序列
-    #         vwap: 成交量加权平均价序列
-    #     Returns:
-    #         Alpha#32因子值
-    #     """
-    #
-    #     # 标准化函数
-    #     def scale(x):
-    #         return (x - x.mean()) / (x.std() + 1e-10)
-    #
-    #     # 计算7日均线与收盘价的差，并标准化
-    #     mean_close_7 = close.rolling(7).mean()
-    #     term1 = scale((mean_close_7 - close))
-    #
-    #     # 计算vwap与5日前收盘价的230日相关系数，并标准化
-    #     delay_close_5 = close.shift(5)
-    #     corr = vwap.rolling(230).corr(delay_close_5)
-    #     term2 = 20 * scale(corr)
-    #
-    #     return term1 + term2
+    @BaseFactor.register_factor(name='alpha_32')
+    @staticmethod
+    def alpha_32(close: pd.Series, vwap: pd.Series) -> pd.Series:
+        """
+        Alpha#32: (scale(((sum(close, 7) / 7) - close)) + (20 * scale(correlation(vwap, delay(close, 5), 230))))
+
+        收盘价与其7日均线的差的标准化，加上成交量加权平均价与5日前收盘价的230日相关系数的标准化乘以20。
+
+        Args:
+            close: 收盘价序列
+            vwap: 成交量加权平均价序列
+        Returns:
+            Alpha#32因子值
+        """
+
+        # 标准化函数
+        def scale(x):
+            return (x - x.mean()) / (x.std() + 1e-10)
+
+        # 计算7日均线与收盘价的差，并标准化
+        mean_close_7 = close.rolling(7).mean()
+        term1 = scale((mean_close_7 - close))
+
+        # 计算vwap与5日前收盘价的230日相关系数，并标准化
+        delay_close_5 = close.shift(5)
+        corr = vwap.rolling(230).corr(delay_close_5)
+        term2 = 20 * scale(corr)
+
+        return term1 + term2
 
     @BaseFactor.register_factor(name='alpha_33')
     @staticmethod
@@ -1387,54 +1312,55 @@ class WorldQuantFactors(BaseFactor):
         # 组合三项
         return ts_rank_volume * term2 * term3
 
-    # @BaseFactor.register_factor(name='alpha_36')
-    # @staticmethod
-    # def alpha_36(open_price: pd.Series, close: pd.Series, volume: pd.Series, vwap: pd.Series, pct_chg: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#36: (((((2.21 * rank(correlation((close - open), delay(volume, 1), 15))) + (0.7 * rank((open - close)))) + (0.73 * rank(Ts_Rank(delay((-1 * returns), 6), 5)))) + rank(abs(correlation(vwap, adv20, 6)))) + (0.6 * rank((((sum(close, 200) / 200) - open) * (close - open)))))
-    #
-    #     复杂多因子组合：价格变化与成交量的相关性、开盘收盘价差、收益率时序排名、价格均线与开盘价之差。
-    #
-    #     Args:
-    #         open_price: 开盘价序列
-    #         close: 收盘价序列
-    #         volume: 成交量序列
-    #         vwap: 成交量加权平均价序列
-    #     Returns:
-    #         Alpha#36因子值
-    #     """
-    #     # 计算收盘价与开盘价的差
-    #     close_open_diff = close - open_price
-    #
-    #     # 计算第一项：差价与成交量的15日相关系数的排名
-    #     delay_volume = volume.shift(1)
-    #     corr1 = close_open_diff.rolling(15).corr(delay_volume)
-    #     term1 = 2.21 * corr1.rank(pct=True)
-    #
-    #     # 计算第二项：开盘价与收盘价之差的排名
-    #     open_close_diff = open_price - close
-    #     term2 = 0.7 * open_close_diff.rank(pct=True)
-    #
-    #     # 计算第三项：收益率负值的6日延迟的5日时序排名的排名
-    #     neg_returns = -1 * pct_chg
-    #
-    #     def ts_rank_func(x):
-    #         return pd.Series(x).rank(pct=True).iloc[-1]
-    #
-    #     ts_rank_returns = neg_returns.shift(6).rolling(5).apply(ts_rank_func, raw=False)
-    #     term3 = 0.73 * ts_rank_returns.rank(pct=True)
-    #
-    #     # 计算第四项：vwap与adv20的6日相关系数绝对值的排名
-    #     adv20 = volume.rolling(20).mean()
-    #     corr2 = vwap.rolling(6).corr(adv20)
-    #     term4 = corr2.abs().rank(pct=True)
-    #
-    #     # 计算第五项：200日均线与开盘价之差乘以收盘价与开盘价之差的排名
-    #     mean_close_200 = close.rolling(200).mean()
-    #     term5 = 0.6 * (((mean_close_200 - open_price) * close_open_diff).rank(pct=True))
-    #
-    #     # 组合所有项
-    #     return term1 + term2 + term3 + term4 + term5
+    @BaseFactor.register_factor(name='alpha_36')
+    @staticmethod
+    def alpha_36(open_price: pd.Series, close: pd.Series, volume: pd.Series, vwap: pd.Series,
+                 pct_chg: pd.Series) -> pd.Series:
+        """
+        Alpha#36: (((((2.21 * rank(correlation((close - open), delay(volume, 1), 15))) + (0.7 * rank((open - close)))) + (0.73 * rank(Ts_Rank(delay((-1 * returns), 6), 5)))) + rank(abs(correlation(vwap, adv20, 6)))) + (0.6 * rank((((sum(close, 200) / 200) - open) * (close - open)))))
+
+        复杂多因子组合：价格变化与成交量的相关性、开盘收盘价差、收益率时序排名、价格均线与开盘价之差。
+
+        Args:
+            open_price: 开盘价序列
+            close: 收盘价序列
+            volume: 成交量序列
+            vwap: 成交量加权平均价序列
+        Returns:
+            Alpha#36因子值
+        """
+        # 计算收盘价与开盘价的差
+        close_open_diff = close - open_price
+
+        # 计算第一项：差价与成交量的15日相关系数的排名
+        delay_volume = volume.shift(1)
+        corr1 = close_open_diff.rolling(15).corr(delay_volume)
+        term1 = 2.21 * corr1.rank(pct=True)
+
+        # 计算第二项：开盘价与收盘价之差的排名
+        open_close_diff = open_price - close
+        term2 = 0.7 * open_close_diff.rank(pct=True)
+
+        # 计算第三项：收益率负值的6日延迟的5日时序排名的排名
+        neg_returns = -1 * pct_chg
+
+        def ts_rank_func(x):
+            return pd.Series(x).rank(pct=True).iloc[-1]
+
+        ts_rank_returns = neg_returns.shift(6).rolling(5).apply(ts_rank_func, raw=False)
+        term3 = 0.73 * ts_rank_returns.rank(pct=True)
+
+        # 计算第四项：vwap与adv20的6日相关系数绝对值的排名
+        adv20 = volume.rolling(20).mean()
+        corr2 = vwap.rolling(6).corr(adv20)
+        term4 = corr2.abs().rank(pct=True)
+
+        # 计算第五项：200日均线与开盘价之差乘以收盘价与开盘价之差的排名
+        mean_close_200 = close.rolling(200).mean()
+        term5 = 0.6 * (((mean_close_200 - open_price) * close_open_diff).rank(pct=True))
+
+        # 组合所有项
+        return term1 + term2 + term3 + term4 + term5
 
     @BaseFactor.register_factor(name='alpha_37')
     @staticmethod
@@ -1572,46 +1498,46 @@ class WorldQuantFactors(BaseFactor):
         # 组合两项
         return (term1 * corr).clip(-1000000, 1000000)
 
-    # @BaseFactor.register_factor(name='alpha_41')
-    # @staticmethod
-    # def alpha_41(high: pd.Series, low: pd.Series, vwap: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#41: (((high * low)^0.5) - vwap)
-    #
-    #     最高价与最低价的几何平均减去成交量加权平均价。
-    #
-    #     Args:
-    #         high: 最高价序列
-    #         low: 最低价序列
-    #         vwap: 成交量加权平均价序列
-    #     Returns:
-    #         Alpha#41因子值
-    #     """
-    #     # 计算几何平均
-    #     geometric_mean = np.sqrt(high * low)
-    #
-    #     return geometric_mean - vwap
+    @BaseFactor.register_factor(name='alpha_41')
+    @staticmethod
+    def alpha_41(high: pd.Series, low: pd.Series, vwap: pd.Series) -> pd.Series:
+        """
+        Alpha#41: (((high * low)^0.5) - vwap)
 
-    # @BaseFactor.register_factor(name='alpha_42')
-    # @staticmethod
-    # def alpha_42(close: pd.Series, vwap: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#42: (rank((vwap - close)) / rank((vwap + close)))
-    #
-    #     成交量加权平均价减收盘价的排名除以成交量加权平均价加收盘价的排名。
-    #
-    #     Args:
-    #         close: 收盘价序列
-    #         vwap: 成交量加权平均价序列
-    #     Returns:
-    #         Alpha#42因子值
-    #     """
-    #     # 计算差与和的排名
-    #     rank_diff = (vwap - close).rank(pct=True)
-    #     rank_sum = (vwap + close).rank(pct=True)
-    #
-    #     # 计算比值
-    #     return rank_diff / (rank_sum + 1e-12)
+        最高价与最低价的几何平均减去成交量加权平均价。
+
+        Args:
+            high: 最高价序列
+            low: 最低价序列
+            vwap: 成交量加权平均价序列
+        Returns:
+            Alpha#41因子值
+        """
+        # 计算几何平均
+        geometric_mean = np.sqrt(high * low)
+
+        return geometric_mean - vwap
+
+    @BaseFactor.register_factor(name='alpha_42')
+    @staticmethod
+    def alpha_42(close: pd.Series, vwap: pd.Series) -> pd.Series:
+        """
+        Alpha#42: (rank((vwap - close)) / rank((vwap + close)))
+
+        成交量加权平均价减收盘价的排名除以成交量加权平均价加收盘价的排名。
+
+        Args:
+            close: 收盘价序列
+            vwap: 成交量加权平均价序列
+        Returns:
+            Alpha#42因子值
+        """
+        # 计算差与和的排名
+        rank_diff = (vwap - close).rank(pct=True)
+        rank_sum = (vwap + close).rank(pct=True)
+
+        # 计算比值
+        return rank_diff / (rank_sum + 1e-12)
 
     @BaseFactor.register_factor(name='alpha_43')
     @staticmethod
@@ -1736,68 +1662,68 @@ class WorldQuantFactors(BaseFactor):
 
         return result
 
-    # @BaseFactor.register_factor(name='alpha_47')
+    @BaseFactor.register_factor(name='alpha_47')
+    @staticmethod
+    def alpha_47(close: pd.Series, high: pd.Series, volume: pd.Series, vwap: pd.Series) -> pd.Series:
+        """
+        Alpha#47: ((((rank((1 / close)) * volume) / adv20) * ((high * rank((high - close))) / (sum(high, 5) / 5))) - rank((vwap - delay(vwap, 5))))
+
+        收盘价倒数的排名乘以成交量再除以20日均量，乘以最高价与最高价减收盘价的排名的乘积除以5日最高价均值，减去加权均价与5日前加权均价差值的排名。
+
+        Args:
+            close: 收盘价序列
+            high: 最高价序列
+            volume: 成交量序列
+            vwap: 成交量加权平均价序列
+        Returns:
+            Alpha#47因子值
+        """
+        # 计算收盘价倒数的排名乘以成交量除以20日均量
+        inv_close_rank = (1 / (close + 1e-12)).rank(pct=True)
+        adv20 = volume.rolling(20).mean()
+        term1 = (inv_close_rank * volume) / (adv20 + 1e-12)
+
+        # 计算最高价与最高价减收盘价的排名的乘积除以5日最高价均值
+        high_minus_close_rank = (high - close).rank(pct=True)
+        mean_high_5 = high.rolling(5).mean()
+        term2 = (high * high_minus_close_rank) / (mean_high_5 + 1e-12)
+
+        # 计算加权均价与5日前加权均价差值的排名
+        vwap_diff = vwap - vwap.shift(5)
+        term3 = vwap_diff.rank(pct=True)
+
+        return (term1 * term2) - term3
+
+    # @BaseFactor.register_factor(name='alpha_48')
     # @staticmethod
-    # def alpha_47(close: pd.Series, high: pd.Series, volume: pd.Series, vwap: pd.Series) -> pd.Series:
+    # def alpha_48(close: pd.Series) -> pd.Series:
     #     """
-    #     Alpha#47: ((((rank((1 / close)) * volume) / adv20) * ((high * rank((high - close))) / (sum(high, 5) / 5))) - rank((vwap - delay(vwap, 5))))
+    #     Alpha#48: (indneutralize(((correlation(delta(close, 1), delta(delay(close, 1), 1), 250) * delta(close, 1)) / close), IndClass.subindustry) / sum(((delta(close, 1) / delay(close, 1))^2), 250))
     #
-    #     收盘价倒数的排名乘以成交量再除以20日均量，乘以最高价与最高价减收盘价的排名的乘积除以5日最高价均值，减去加权均价与5日前加权均价差值的排名。
+    #     行业中性化处理：收盘价变化与昨日收盘价变化的250日相关系数乘以收盘价变化再除以收盘价，除以收盘价变化率平方的250日累加。
     #
     #     Args:
     #         close: 收盘价序列
-    #         high: 最高价序列
-    #         volume: 成交量序列
-    #         vwap: 成交量加权平均价序列
     #     Returns:
-    #         Alpha#47因子值
+    #         Alpha#48因子值
     #     """
-    #     # 计算收盘价倒数的排名乘以成交量除以20日均量
-    #     inv_close_rank = (1 / (close + 1e-12)).rank(pct=True)
-    #     adv20 = volume.rolling(20).mean()
-    #     term1 = (inv_close_rank * volume) / (adv20 + 1e-12)
+    #     # 计算收盘价的变化
+    #     delta_close = close.diff(1)
+    #     delta_delay_close = close.shift(1).diff(1)
     #
-    #     # 计算最高价与最高价减收盘价的排名的乘积除以5日最高价均值
-    #     high_minus_close_rank = (high - close).rank(pct=True)
-    #     mean_high_5 = high.rolling(5).mean()
-    #     term2 = (high * high_minus_close_rank) / (mean_high_5 + 1e-12)
+    #     # 计算250日相关系数
+    #     corr_250 = delta_close.rolling(250).corr(delta_delay_close)
     #
-    #     # 计算加权均价与5日前加权均价差值的排名
-    #     vwap_diff = vwap - vwap.shift(5)
-    #     term3 = vwap_diff.rank(pct=True)
+    #     # 计算分子部分
+    #     numerator = (corr_250 * delta_close) / (close + 1e-12)
     #
-    #     return (term1 * term2) - term3
-
-    @BaseFactor.register_factor(name='alpha_48')
-    @staticmethod
-    def alpha_48(close: pd.Series) -> pd.Series:
-        """
-        Alpha#48: (indneutralize(((correlation(delta(close, 1), delta(delay(close, 1), 1), 250) * delta(close, 1)) / close), IndClass.subindustry) / sum(((delta(close, 1) / delay(close, 1))^2), 250))
-        
-        行业中性化处理：收盘价变化与昨日收盘价变化的250日相关系数乘以收盘价变化再除以收盘价，除以收盘价变化率平方的250日累加。
-        
-        Args:
-            close: 收盘价序列
-        Returns:
-            Alpha#48因子值
-        """
-        # 计算收盘价的变化
-        delta_close = close.diff(1)
-        delta_delay_close = close.shift(1).diff(1)
-
-        # 计算250日相关系数
-        corr_250 = delta_close.rolling(250).corr(delta_delay_close)
-
-        # 计算分子部分
-        numerator = (corr_250 * delta_close) / (close + 1e-12)
-
-        # 因无法实现行业中性化，跳过indneutralize步骤
-
-        # 计算分母部分
-        close_returns = delta_close / (close.shift(1) + 1e-12)
-        denominator = (close_returns ** 2).rolling(250).sum()
-
-        return numerator / (denominator + 1e-12)
+    #     # 因无法实现行业中性化，跳过indneutralize步骤
+    #
+    #     # 计算分母部分
+    #     close_returns = delta_close / (close.shift(1) + 1e-12)
+    #     denominator = (close_returns ** 2).rolling(250).sum()
+    #
+    #     return numerator / (denominator + 1e-12)
 
     @BaseFactor.register_factor(name='alpha_49')
     @staticmethod
@@ -1832,29 +1758,29 @@ class WorldQuantFactors(BaseFactor):
 
         return result
 
-    # @BaseFactor.register_factor(name='alpha_50')
-    # @staticmethod
-    # def alpha_50(vwap: pd.Series, volume: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#50: (-1 * ts_max(rank(correlation(rank(volume), rank(vwap), 5)), 5))
-    #
-    #     成交量排名与成交量加权平均价排名的5日相关系数的排名的5日最大值，取负值。
-    #
-    #     Args:
-    #         vwap: 成交量加权平均价序列
-    #         volume: 成交量序列
-    #     Returns:
-    #         Alpha#50因子值
-    #     """
-    #     # 计算volume和vwap的排名
-    #     rank_volume = volume.rank(pct=True)
-    #     rank_vwap = vwap.rank(pct=True)
-    #
-    #     # 计算排名之间的5日相关系数
-    #     corr = rank_volume.rolling(5).corr(rank_vwap)
-    #
-    #     # 计算相关系数的排名的5日最大值，取负值
-    #     return -1 * corr.rank(pct=True).rolling(5).max()
+    @BaseFactor.register_factor(name='alpha_50')
+    @staticmethod
+    def alpha_50(vwap: pd.Series, volume: pd.Series) -> pd.Series:
+        """
+        Alpha#50: (-1 * ts_max(rank(correlation(rank(volume), rank(vwap), 5)), 5))
+
+        成交量排名与成交量加权平均价排名的5日相关系数的排名的5日最大值，取负值。
+
+        Args:
+            vwap: 成交量加权平均价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#50因子值
+        """
+        # 计算volume和vwap的排名
+        rank_volume = volume.rank(pct=True)
+        rank_vwap = vwap.rank(pct=True)
+
+        # 计算排名之间的5日相关系数
+        corr = rank_volume.rolling(5).corr(rank_vwap)
+
+        # 计算相关系数的排名的5日最大值，取负值
+        return -1 * corr.rank(pct=True).rolling(5).max()
 
     @BaseFactor.register_factor(name='alpha_51')
     @staticmethod
@@ -2028,46 +1954,47 @@ class WorldQuantFactors(BaseFactor):
         # 计算最终结果，取负值
         return -1 * (rank1 * rank2)
 
-    # @BaseFactor.register_factor(name='alpha_57')
-    # @staticmethod
-    # def alpha_57(close: pd.Series, vwap: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#57: (0 - (1 * ((close - vwap) / decay_linear(rank(ts_argmax(close, 30)), 2))))
-    #
-    #     收盘价减去加权平均价，除以收盘价30日最大值位置排名的2日线性衰减，取负值。
-    #
-    #     Args:
-    #         close: 收盘价序列
-    #         volume: 成交量序列
-    #     Returns:
-    #         Alpha#57因子值
-    #     """
-    #     # 计算收盘价30日最大值的位置
-    #     def ts_argmax(x):
-    #         return np.argmax(x[-30:]) if len(x) >= 30 else np.nan
-    #
-    #     argmax_close = close.rolling(30).apply(ts_argmax, raw=True)
-    #
-    #     # 计算最大值位置的排名
-    #     rank_argmax = argmax_close.rank(pct=True)
-    #
-    #     # 线性衰减函数
-    #     def decay_linear(series, window):
-    #         weights = np.arange(1, window + 1) / window
-    #         weights = weights[::-1]  # 反转权重使最近的观测值权重最大
-    #
-    #         result = pd.Series(index=series.index)
-    #         for i in range(window - 1, len(series)):
-    #             if i < window - 1:
-    #                 continue
-    #             result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
-    #         return result
-    #
-    #     # 计算排名的2日线性衰减
-    #     decayed = decay_linear(rank_argmax, 2)
-    #
-    #     # 计算收盘价减去vwap，除以衰减值，取负值
-    #     return -1 * ((close - vwap) / (decayed + 1e-12))
+    @BaseFactor.register_factor(name='alpha_57')
+    @staticmethod
+    def alpha_57(close: pd.Series, vwap: pd.Series) -> pd.Series:
+        """
+        Alpha#57: (0 - (1 * ((close - vwap) / decay_linear(rank(ts_argmax(close, 30)), 2))))
+
+        收盘价减去加权平均价，除以收盘价30日最大值位置排名的2日线性衰减，取负值。
+
+        Args:
+            close: 收盘价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#57因子值
+        """
+
+        # 计算收盘价30日最大值的位置
+        def ts_argmax(x):
+            return np.argmax(x[-30:]) if len(x) >= 30 else np.nan
+
+        argmax_close = close.rolling(30).apply(ts_argmax, raw=True)
+
+        # 计算最大值位置的排名
+        rank_argmax = argmax_close.rank(pct=True)
+
+        # 线性衰减函数
+        def decay_linear(series, window):
+            weights = np.arange(1, window + 1) / window
+            weights = weights[::-1]  # 反转权重使最近的观测值权重最大
+
+            result = pd.Series(index=series.index)
+            for i in range(window - 1, len(series)):
+                if i < window - 1:
+                    continue
+                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
+            return result
+
+        # 计算排名的2日线性衰减
+        decayed = decay_linear(rank_argmax, 2)
+
+        # 计算收盘价减去vwap，除以衰减值，取负值
+        return -1 * ((close - vwap) / (decayed + 1e-12))
 
     # @BaseFactor.register_factor(name='alpha_58')
     # @staticmethod
@@ -2078,7 +2005,7 @@ class WorldQuantFactors(BaseFactor):
     #     行业中性化处理的加权平均价与成交量的相关系数的线性衰减的时序排名，取负值。
     #
     #     Args:
-    #         close: 收盘价序列
+    #         vwap: 加权平均价序列
     #         volume: 成交量序列
     #     Returns:
     #         Alpha#58因子值
@@ -2119,7 +2046,7 @@ class WorldQuantFactors(BaseFactor):
     #     加权平均价的行业中性化处理与成交量的相关系数的线性衰减的时序排名，取负值。
     #
     #     Args:
-    #         close: 收盘价序列
+    #         vwap: 加权平均价序列
     #         volume: 成交量序列
     #     Returns:
     #         Alpha#59因子值
@@ -2194,75 +2121,76 @@ class WorldQuantFactors(BaseFactor):
         # 计算最终结果，取负值
         return -1 * ((2 * scaled_rank_term1) - scaled_rank_argmax)
 
-    # @BaseFactor.register_factor(name='alpha_61')
-    # @staticmethod
-    # def alpha_61(close: pd.Series, volume: pd.Series, vwap: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#61: (rank((vwap - ts_min(vwap, 16.1219))) < rank(correlation(vwap, adv180, 17.9282)))
-    #
-    #     加权平均价与其16日最小值差值的排名，是否小于加权平均价与180日均量的18日相关系数的排名。
-    #
-    #     Args:
-    #         close: 收盘价序列
-    #         volume: 成交量序列
-    #     Returns:
-    #         Alpha#61因子值
-    #     """
-    #     # 计算vwap的16日最小值
-    #     ts_min_vwap = vwap.rolling(16).min()
-    #
-    #     # 计算vwap与其最小值差值的排名
-    #     rank_diff = (vwap - ts_min_vwap).rank(pct=True)
-    #
-    #     # 计算180日均量
-    #     adv180 = volume.rolling(180).mean()
-    #
-    #     # 计算vwap与adv180的18日相关系数的排名
-    #     corr = vwap.rolling(18).corr(adv180)
-    #     rank_corr = corr.rank(pct=True)
-    #
-    #     # 比较两个排名，返回1或0
-    #     result = pd.Series(0, index=close.index)
-    #     result[rank_diff < rank_corr] = 1
-    #
-    #     return result
+    @BaseFactor.register_factor(name='alpha_61')
+    @staticmethod
+    def alpha_61(close: pd.Series, volume: pd.Series, vwap: pd.Series) -> pd.Series:
+        """
+        Alpha#61: (rank((vwap - ts_min(vwap, 16.1219))) < rank(correlation(vwap, adv180, 17.9282)))
 
-    # @BaseFactor.register_factor(name='alpha_62')
-    # @staticmethod
-    # def alpha_62(high: pd.Series, low: pd.Series, open_price: pd.Series, close: pd.Series, volume: pd.Series, vwap: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#62: ((rank(correlation(vwap, sum(adv20, 22.4101), 9.91009)) < rank(((rank(open) + rank(open)) < (rank(((high + low) / 2)) + rank(high))))) * -1)
-    #
-    #     加权平均价与20日均量22日累积的10日相关系数的排名，是否小于开盘价排名的两倍小于最高价与最低价均值的排名加最高价排名的排名。条件成立取-1，否则取0。
-    #
-    #     Args:
-    #         close: 收盘价序列
-    #         volume: 成交量序列
-    #     Returns:
-    #         Alpha#62因子值
-    #     """
-    #     # 计算adv20
-    #     adv20 = volume.rolling(20).mean()
-    #
-    #     # 计算adv20的22日累积
-    #     sum_adv20 = adv20.rolling(22).sum()
-    #
-    #     # 计算vwap与sum_adv20的10日相关系数的排名
-    #     corr = vwap.rolling(10).corr(sum_adv20)
-    #     rank_corr = corr.rank(pct=True)
-    #
-    #     # 计算右侧条件的排名
-    #     rank_open = open_price.rank(pct=True)
-    #     rank_high = high.rank(pct=True)
-    #     rank_avg = ((high + low) / 2).rank(pct=True)
-    #
-    #     cond_rank = ((rank_open + rank_open) < (rank_avg + rank_high)).rank(pct=True)
-    #
-    #     # 比较两个排名，条件成立取-1，否则取0
-    #     result = pd.Series(0, index=close.index)
-    #     result[rank_corr < cond_rank] = -1
-    #
-    #     return result
+        加权平均价与其16日最小值差值的排名，是否小于加权平均价与180日均量的18日相关系数的排名。
+
+        Args:
+            close: 收盘价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#61因子值
+        """
+        # 计算vwap的16日最小值
+        ts_min_vwap = vwap.rolling(16).min()
+
+        # 计算vwap与其最小值差值的排名
+        rank_diff = (vwap - ts_min_vwap).rank(pct=True)
+
+        # 计算180日均量
+        adv180 = volume.rolling(180).mean()
+
+        # 计算vwap与adv180的18日相关系数的排名
+        corr = vwap.rolling(18).corr(adv180)
+        rank_corr = corr.rank(pct=True)
+
+        # 比较两个排名，返回1或0
+        result = pd.Series(0, index=close.index)
+        result[rank_diff < rank_corr] = 1
+
+        return result
+
+    @BaseFactor.register_factor(name='alpha_62')
+    @staticmethod
+    def alpha_62(high: pd.Series, low: pd.Series, open_price: pd.Series, close: pd.Series, volume: pd.Series,
+                 vwap: pd.Series) -> pd.Series:
+        """
+        Alpha#62: ((rank(correlation(vwap, sum(adv20, 22.4101), 9.91009)) < rank(((rank(open) + rank(open)) < (rank(((high + low) / 2)) + rank(high))))) * -1)
+
+        加权平均价与20日均量22日累积的10日相关系数的排名，是否小于开盘价排名的两倍小于最高价与最低价均值的排名加最高价排名的排名。条件成立取-1，否则取0。
+
+        Args:
+            close: 收盘价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#62因子值
+        """
+        # 计算adv20
+        adv20 = volume.rolling(20).mean()
+
+        # 计算adv20的22日累积
+        sum_adv20 = adv20.rolling(22).sum()
+
+        # 计算vwap与sum_adv20的10日相关系数的排名
+        corr = vwap.rolling(10).corr(sum_adv20)
+        rank_corr = corr.rank(pct=True)
+
+        # 计算右侧条件的排名
+        rank_open = open_price.rank(pct=True)
+        rank_high = high.rank(pct=True)
+        rank_avg = ((high + low) / 2).rank(pct=True)
+
+        cond_rank = ((rank_open + rank_open) < (rank_avg + rank_high)).rank(pct=True)
+
+        # 比较两个排名，条件成立取-1，否则取0
+        result = pd.Series(0, index=close.index)
+        result[rank_corr < cond_rank] = -1
+
+        return result
 
     # @BaseFactor.register_factor(name='alpha_63')
     # @staticmethod
@@ -2315,135 +2243,136 @@ class WorldQuantFactors(BaseFactor):
     #     # 计算最终结果，取负值
     #     return -1 * (rank_term1 - rank_term2)
 
-    # @BaseFactor.register_factor(name='alpha_64')
-    # @staticmethod
-    # def alpha_64(close: pd.Series, volume: pd.Series, open_price: pd.Series, low: pd.Series, high: pd.Series, vwap: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#64: ((rank(correlation(sum(((open * 0.178404) + (low * (1 - 0.178404))), 12.7054), sum(adv120, 12.7054), 16.6208)) < rank(delta(((((high + low) / 2) * 0.178404) + (vwap * (1 - 0.178404))), 3.69741))) * -1)
-    #
-    #     开盘价与最低价的加权和的13日累积与120日均量13日累积的17日相关系数的排名，是否小于最高价与最低价均值与加权平均价的加权和的4日变化的排名，条件成立取-1，否则取0。
-    #
-    #     Args:
-    #         close: 收盘价序列
-    #         volume: 成交量序列
-    #     Returns:
-    #         Alpha#64因子值
-    #     """
-    #     # 计算开盘价与最低价的加权和
-    #     weighted_open_low = open_price * 0.178404 + low * (1 - 0.178404)
-    #
-    #     # 计算weighted_open_low的13日累积
-    #     sum_weighted_open_low = weighted_open_low.rolling(13).sum()
-    #
-    #     # 计算120日均量的13日累积
-    #     adv120 = volume.rolling(120).mean()
-    #     sum_adv120 = adv120.rolling(13).sum()
-    #
-    #     # 计算sum_weighted_open_low与sum_adv120的17日相关系数的排名
-    #     corr = sum_weighted_open_low.rolling(17).corr(sum_adv120)
-    #     rank_corr = corr.rank(pct=True)
-    #
-    #     # 计算最高价与最低价均值与vwap的加权和
-    #     avg_price = (high + low) / 2
-    #     weighted_avg_vwap = avg_price * 0.178404 + vwap * (1 - 0.178404)
-    #
-    #     # 计算weighted_avg_vwap的4日变化的排名
-    #     delta_weighted = weighted_avg_vwap.diff(4)
-    #     rank_delta = delta_weighted.rank(pct=True)
-    #
-    #     # 比较两个排名，条件成立取-1，否则取0
-    #     result = pd.Series(0, index=close.index)
-    #     result[rank_corr < rank_delta] = -1
-    #
-    #     return result
+    @BaseFactor.register_factor(name='alpha_64')
+    @staticmethod
+    def alpha_64(close: pd.Series, volume: pd.Series, open_price: pd.Series, low: pd.Series, high: pd.Series,
+                 vwap: pd.Series) -> pd.Series:
+        """
+        Alpha#64: ((rank(correlation(sum(((open * 0.178404) + (low * (1 - 0.178404))), 12.7054), sum(adv120, 12.7054), 16.6208)) < rank(delta(((((high + low) / 2) * 0.178404) + (vwap * (1 - 0.178404))), 3.69741))) * -1)
 
-    # @BaseFactor.register_factor(name='alpha_65')
-    # @staticmethod
-    # def alpha_65(close: pd.Series, volume: pd.Series, vwap: pd.Series, open_price: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#65: ((rank(correlation(((open * 0.00817205) + (vwap * (1 - 0.00817205))), sum(adv60, 8.6911), 6.40374)) < rank((open - ts_min(open, 13.635)))) * -1)
-    #
-    #     开盘价与加权平均价的加权和与60日均量的9日累积的6日相关系数的排名，是否小于开盘价与其14日最小值差值的排名，条件成立取-1，否则取0。
-    #
-    #     Args:
-    #         close: 收盘价序列
-    #         volume: 成交量序列
-    #     Returns:
-    #         Alpha#65因子值
-    #     """
-    #     # 计算开盘价与vwap的加权和
-    #     weighted_open_vwap = open_price * 0.00817205 + vwap * (1 - 0.00817205)
-    #
-    #     # 计算60日均量的9日累积
-    #     adv60 = volume.rolling(60).mean()
-    #     sum_adv60 = adv60.rolling(9).sum()
-    #
-    #     # 计算weighted_open_vwap与sum_adv60的6日相关系数的排名
-    #     corr = weighted_open_vwap.rolling(6).corr(sum_adv60)
-    #     rank_corr = corr.rank(pct=True)
-    #
-    #     # 计算open与其14日最小值的差值的排名
-    #     ts_min_open = open_price.rolling(14).min()
-    #     diff_open = open_price - ts_min_open
-    #     rank_diff = diff_open.rank(pct=True)
-    #
-    #     # 比较两个排名，条件成立取-1，否则取0
-    #     result = pd.Series(0, index=close.index)
-    #     result[rank_corr < rank_diff] = -1
-    #
-    #     return result
+        开盘价与最低价的加权和的13日累积与120日均量13日累积的17日相关系数的排名，是否小于最高价与最低价均值与加权平均价的加权和的4日变化的排名，条件成立取-1，否则取0。
 
-    # @BaseFactor.register_factor(name='alpha_66')
-    # @staticmethod
-    # def alpha_66(vwap: pd.Series, low: pd.Series, high: pd.Series, open_price: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#66: ((rank(decay_linear(delta(vwap, 3.51013), 7.23052)) + Ts_Rank(decay_linear(((((low * 0.96633) + (low * (1 - 0.96633))) - vwap) / (open - ((high + low) / 2))), 11.4157), 6.72611)) * -1)
-    #
-    #     加权平均价的4日变化的7日线性衰减的排名，加上最低价与加权平均价差值除以开盘价与最高价最低价均值差值的11日线性衰减的7日时序排名，取负值。
-    #
-    #     Args:
-    #         close: 收盘价序列
-    #         volume: 成交量序列
-    #     Returns:
-    #         Alpha#66因子值
-    #     """
-    #     # 计算vwap的4日变化
-    #     delta_vwap = vwap.diff(4)
-    #
-    #     # 线性衰减函数
-    #     def decay_linear(series, window):
-    #         weights = np.arange(1, window + 1) / window
-    #         weights = weights[::-1]  # 反转权重使最近的观测值权重最大
-    #
-    #         result = pd.Series(index=series.index)
-    #         for i in range(window - 1, len(series)):
-    #             if i < window - 1:
-    #                 continue
-    #             result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
-    #         return result
-    #
-    #     # 计算delta_vwap的7日线性衰减的排名
-    #     decayed_delta = decay_linear(delta_vwap, 7)
-    #     rank_term1 = decayed_delta.rank(pct=True)
-    #
-    #     # 计算第二项中的分子分母
-    #     # low * 0.96633 + low * (1 - 0.96633) 等于 low
-    #     numerator = low - vwap
-    #     denominator = open_price - ((high + low) / 2)
-    #
-    #     # 计算比值并进行线性衰减
-    #     ratio = numerator / (denominator + 1e-12)
-    #     decayed_ratio = decay_linear(ratio, 11)
-    #
-    #     # 计算时序排名函数
-    #     def ts_rank_func(x):
-    #         return pd.Series(x).rank(pct=True).iloc[-1]
-    #
-    #     # 计算decayed_ratio的7日时序排名
-    #     ts_rank_term2 = decayed_ratio.rolling(7).apply(ts_rank_func, raw=False)
-    #
-    #     # 计算最终结果，取负值
-    #     return -1 * (rank_term1 + ts_rank_term2)
+        Args:
+            close: 收盘价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#64因子值
+        """
+        # 计算开盘价与最低价的加权和
+        weighted_open_low = open_price * 0.178404 + low * (1 - 0.178404)
+
+        # 计算weighted_open_low的13日累积
+        sum_weighted_open_low = weighted_open_low.rolling(13).sum()
+
+        # 计算120日均量的13日累积
+        adv120 = volume.rolling(120).mean()
+        sum_adv120 = adv120.rolling(13).sum()
+
+        # 计算sum_weighted_open_low与sum_adv120的17日相关系数的排名
+        corr = sum_weighted_open_low.rolling(17).corr(sum_adv120)
+        rank_corr = corr.rank(pct=True)
+
+        # 计算最高价与最低价均值与vwap的加权和
+        avg_price = (high + low) / 2
+        weighted_avg_vwap = avg_price * 0.178404 + vwap * (1 - 0.178404)
+
+        # 计算weighted_avg_vwap的4日变化的排名
+        delta_weighted = weighted_avg_vwap.diff(4)
+        rank_delta = delta_weighted.rank(pct=True)
+
+        # 比较两个排名，条件成立取-1，否则取0
+        result = pd.Series(0, index=close.index)
+        result[rank_corr < rank_delta] = -1
+
+        return result
+
+    @BaseFactor.register_factor(name='alpha_65')
+    @staticmethod
+    def alpha_65(close: pd.Series, volume: pd.Series, vwap: pd.Series, open_price: pd.Series) -> pd.Series:
+        """
+        Alpha#65: ((rank(correlation(((open * 0.00817205) + (vwap * (1 - 0.00817205))), sum(adv60, 8.6911), 6.40374)) < rank((open - ts_min(open, 13.635)))) * -1)
+
+        开盘价与加权平均价的加权和与60日均量的9日累积的6日相关系数的排名，是否小于开盘价与其14日最小值差值的排名，条件成立取-1，否则取0。
+
+        Args:
+            close: 收盘价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#65因子值
+        """
+        # 计算开盘价与vwap的加权和
+        weighted_open_vwap = open_price * 0.00817205 + vwap * (1 - 0.00817205)
+
+        # 计算60日均量的9日累积
+        adv60 = volume.rolling(60).mean()
+        sum_adv60 = adv60.rolling(9).sum()
+
+        # 计算weighted_open_vwap与sum_adv60的6日相关系数的排名
+        corr = weighted_open_vwap.rolling(6).corr(sum_adv60)
+        rank_corr = corr.rank(pct=True)
+
+        # 计算open与其14日最小值的差值的排名
+        ts_min_open = open_price.rolling(14).min()
+        diff_open = open_price - ts_min_open
+        rank_diff = diff_open.rank(pct=True)
+
+        # 比较两个排名，条件成立取-1，否则取0
+        result = pd.Series(0, index=close.index)
+        result[rank_corr < rank_diff] = -1
+
+        return result
+
+    @BaseFactor.register_factor(name='alpha_66')
+    @staticmethod
+    def alpha_66(vwap: pd.Series, low: pd.Series, high: pd.Series, open_price: pd.Series) -> pd.Series:
+        """
+        Alpha#66: ((rank(decay_linear(delta(vwap, 3.51013), 7.23052)) + Ts_Rank(decay_linear(((((low * 0.96633) + (low * (1 - 0.96633))) - vwap) / (open - ((high + low) / 2))), 11.4157), 6.72611)) * -1)
+
+        加权平均价的4日变化的7日线性衰减的排名，加上最低价与加权平均价差值除以开盘价与最高价最低价均值差值的11日线性衰减的7日时序排名，取负值。
+
+        Args:
+            close: 收盘价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#66因子值
+        """
+        # 计算vwap的4日变化
+        delta_vwap = vwap.diff(4)
+
+        # 线性衰减函数
+        def decay_linear(series, window):
+            weights = np.arange(1, window + 1) / window
+            weights = weights[::-1]  # 反转权重使最近的观测值权重最大
+
+            result = pd.Series(index=series.index)
+            for i in range(window - 1, len(series)):
+                if i < window - 1:
+                    continue
+                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
+            return result
+
+        # 计算delta_vwap的7日线性衰减的排名
+        decayed_delta = decay_linear(delta_vwap, 7)
+        rank_term1 = decayed_delta.rank(pct=True)
+
+        # 计算第二项中的分子分母
+        # low * 0.96633 + low * (1 - 0.96633) 等于 low
+        numerator = low - vwap
+        denominator = open_price - ((high + low) / 2)
+
+        # 计算比值并进行线性衰减
+        ratio = numerator / (denominator + 1e-12)
+        decayed_ratio = decay_linear(ratio, 11)
+
+        # 计算时序排名函数
+        def ts_rank_func(x):
+            return pd.Series(x).rank(pct=True).iloc[-1]
+
+        # 计算decayed_ratio的7日时序排名
+        ts_rank_term2 = decayed_ratio.rolling(7).apply(ts_rank_func, raw=False)
+
+        # 计算最终结果，取负值
+        return -1 * (rank_term1 + ts_rank_term2)
 
     # @BaseFactor.register_factor(name='alpha_67')
     # @staticmethod
@@ -2591,266 +2520,270 @@ class WorldQuantFactors(BaseFactor):
     #     # 计算rank_delta的ts_rank_corr次方，取负值
     #     return -1 * (rank_delta ** ts_rank_corr)
 
-    # @BaseFactor.register_factor(name='alpha_71')
-    # @staticmethod
-    # def alpha_71(open_price: pd.Series, close: pd.Series, low: pd.Series, vwap: pd.Series, volume: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#71: (max(ts_rank(decay_linear(correlation(ts_rank(close, 3.43976), ts_rank(adv180, 12.0647), 18.0175), 4.20501), 15.6948), ts_rank(decay_linear((rank(((low + open) - (vwap + vwap)))^2), 16.4662), 4.4388)) * -1)
-    #
-    #     收盘价3日时序排名与180日均量12日时序排名的18日相关系数的4日线性衰减的16日时序排名，与(最低价+开盘价)-(加权均价*2)的排名的平方的16日线性衰减的4日时序排名，取两者较大值，取负值。
-    #
-    #     Args:
-    #         open_price: 开盘价序列
-    #         close: 收盘价序列
-    #         low: 最低价序列
-    #         high: 最高价序列
-    #         vwap: 成交量加权平均价序列
-    #         volume: 成交量序列
-    #     Returns:
-    #         Alpha#71因子值
-    #     """
-    #     # 线性衰减函数
-    #     def decay_linear(series, window):
-    #         weights = np.arange(1, window + 1) / window
-    #         weights = weights[::-1]  # 反转权重使最近的观测值权重最大
-    #
-    #         result = pd.Series(index=series.index)
-    #         for i in range(window-1, len(series)):
-    #             if i < window-1:
-    #                 continue
-    #             result.iloc[i] = np.nansum(series.iloc[i-window+1:i+1].values * weights)
-    #         return result
-    #
-    #     # 时序排名函数
-    #     def ts_rank_func(x):
-    #         return pd.Series(x).rank(pct=True).iloc[-1]
-    #
-    #     # 计算close的3日时序排名
-    #     ts_rank_close = close.rolling(3).apply(ts_rank_func, raw=False)
-    #
-    #     # 计算180日均量
-    #     adv180 = volume.rolling(180).mean()
-    #
-    #     # 计算adv180的12日时序排名
-    #     ts_rank_adv180 = adv180.rolling(12).apply(ts_rank_func, raw=False)
-    #
-    #     # 计算两个时序排名的18日相关系数
-    #     corr = ts_rank_close.rolling(18).corr(ts_rank_adv180)
-    #
-    #     # 计算相关系数的4日线性衰减
-    #     decayed_corr = decay_linear(corr, 4)
-    #
-    #     # 计算线性衰减的16日时序排名
-    #     ts_rank_term1 = decayed_corr.rolling(16).apply(ts_rank_func, raw=False)
-    #
-    #     # 计算第二项
-    #     term2_inner = (low + open_price) - (vwap + vwap)
-    #     rank_term2 = term2_inner.rank(pct=True) ** 2
-    #
-    #     # 计算rank_term2的16日线性衰减
-    #     decayed_rank = decay_linear(rank_term2, 16)
-    #
-    #     # 计算线性衰减的4日时序排名
-    #     ts_rank_term2 = decayed_rank.rolling(4).apply(ts_rank_func, raw=False)
-    #
-    #     # 取两项的较大值，再取负值
-    #     return -1 * np.maximum(ts_rank_term1, ts_rank_term2)
+    @BaseFactor.register_factor(name='alpha_71')
+    @staticmethod
+    def alpha_71(open_price: pd.Series, close: pd.Series, low: pd.Series, vwap: pd.Series,
+                 volume: pd.Series) -> pd.Series:
+        """
+        Alpha#71: (max(ts_rank(decay_linear(correlation(ts_rank(close, 3.43976), ts_rank(adv180, 12.0647), 18.0175), 4.20501), 15.6948), ts_rank(decay_linear((rank(((low + open) - (vwap + vwap)))^2), 16.4662), 4.4388)) * -1)
 
-    # @BaseFactor.register_factor(name='alpha_72')
-    # @staticmethod
-    # def alpha_72(high: pd.Series, low: pd.Series, volume: pd.Series, vwap: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#72: (rank(decay_linear(correlation(((high + low) / 2), adv40, 8.93345), 10.1519)) / rank(decay_linear(correlation(Ts_Rank(vwap, 3.72469), Ts_Rank(volume, 18.5188), 6.86671), 2.95011)))
-    #
-    #     最高价与最低价均值与40日均量的9日相关系数的10日线性衰减的排名，除以加权平均价的4日时序排名与成交量19日时序排名的7日相关系数的3日线性衰减的排名。
-    #
-    #     Args:
-    #         high: 最高价序列
-    #         low: 最低价序列
-    #         volume: 成交量序列
-    #         vwap: 成交量加权平均价序列
-    #     Returns:
-    #         Alpha#72因子值
-    #     """
-    #     # 线性衰减函数
-    #     def decay_linear(series, window):
-    #         weights = np.arange(1, window + 1) / window
-    #         weights = weights[::-1]  # 反转权重使最近的观测值权重最大
-    #
-    #         result = pd.Series(index=series.index)
-    #         for i in range(window-1, len(series)):
-    #             if i < window-1:
-    #                 continue
-    #             result.iloc[i] = np.nansum(series.iloc[i-window+1:i+1].values * weights)
-    #         return result
-    #
-    #     # 时序排名函数
-    #     def ts_rank_func(x):
-    #         return pd.Series(x).rank(pct=True).iloc[-1]
-    #
-    #     # 计算(high + low) / 2
-    #     price_avg = (high + low) / 2
-    #
-    #     # 计算40日均量
-    #     adv40 = volume.rolling(40).mean()
-    #
-    #     # 计算price_avg与adv40的9日相关系数
-    #     corr1 = price_avg.rolling(9).corr(adv40)
-    #
-    #     # 计算相关系数的10日线性衰减的排名
-    #     decayed_corr1 = decay_linear(corr1, 10)
-    #     rank_term1 = decayed_corr1.rank(pct=True)
-    #
-    #     # 计算vwap的4日时序排名
-    #     ts_rank_vwap = vwap.rolling(4).apply(ts_rank_func, raw=False)
-    #
-    #     # 计算volume的19日时序排名
-    #     ts_rank_volume = volume.rolling(19).apply(ts_rank_func, raw=False)
-    #
-    #     # 计算两个时序排名的7日相关系数
-    #     corr2 = ts_rank_vwap.rolling(7).corr(ts_rank_volume)
-    #
-    #     # 计算相关系数的3日线性衰减的排名
-    #     decayed_corr2 = decay_linear(corr2, 3)
-    #     rank_term2 = decayed_corr2.rank(pct=True)
-    #
-    #     # 计算比值
-    #     return rank_term1 / (rank_term2 + 1e-12)
+        收盘价3日时序排名与180日均量12日时序排名的18日相关系数的4日线性衰减的16日时序排名，与(最低价+开盘价)-(加权均价*2)的排名的平方的16日线性衰减的4日时序排名，取两者较大值，取负值。
 
-    # @BaseFactor.register_factor(name='alpha_73')
-    # @staticmethod
-    # def alpha_73(open_price: pd.Series, low: pd.Series, vwap: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#73: (max(rank(decay_linear(delta(vwap, 4.72775), 2.91864)), Ts_Rank(decay_linear(((delta(((open * 0.147155) + (low * (1 - 0.147155))), 2.03608) / ((open * 0.147155) + (low * (1 - 0.147155)))) * -1), 3.33829), 16.7411)) * -1)
-    #
-    #     加权平均价的5日变化的3日线性衰减的排名，与开盘价与最低价加权和的2日变化率负值的3日线性衰减的17日时序排名，取两者较大值，再取负值。
-    #
-    #     Args:
-    #         open_price: 开盘价序列
-    #         high: 最高价序列
-    #         low: 最低价序列
-    #         close: 收盘价序列
-    #         vwap: 成交量加权平均价序列
-    #         volume: 成交量序列
-    #     Returns:
-    #         Alpha#73因子值
-    #     """
-    #     # 线性衰减函数
-    #     def decay_linear(series, window):
-    #         weights = np.arange(1, window + 1) / window
-    #         weights = weights[::-1]  # 反转权重使最近的观测值权重最大
-    #
-    #         result = pd.Series(index=series.index)
-    #         for i in range(window-1, len(series)):
-    #             if i < window-1:
-    #                 continue
-    #             result.iloc[i] = np.nansum(series.iloc[i-window+1:i+1].values * weights)
-    #         return result
-    #
-    #     # 时序排名函数
-    #     def ts_rank_func(x):
-    #         return pd.Series(x).rank(pct=True).iloc[-1]
-    #
-    #     # 计算vwap的5日变化
-    #     delta_vwap = vwap.diff(5)
-    #
-    #     # 计算delta_vwap的3日线性衰减的排名
-    #     decayed_delta = decay_linear(delta_vwap, 3)
-    #     rank_term1 = decayed_delta.rank(pct=True)
-    #
-    #     # 计算开盘价与最低价的加权和
-    #     weighted_open_low = open_price * 0.147155 + low * (1 - 0.147155)
-    #
-    #     # 计算加权和的2日变化率，取负值
-    #     delta_weighted = weighted_open_low.diff(2)
-    #     change_rate = delta_weighted / (weighted_open_low + 1e-12)
-    #     neg_change_rate = -1 * change_rate
-    #
-    #     # 计算neg_change_rate的3日线性衰减
-    #     decayed_change = decay_linear(neg_change_rate, 3)
-    #
-    #     # 计算线性衰减的17日时序排名
-    #     ts_rank_term2 = decayed_change.rolling(17).apply(ts_rank_func, raw=False)
-    #
-    #     # 取两项的较大值，再取负值
-    #     return -1 * np.maximum(rank_term1, ts_rank_term2)
+        Args:
+            open_price: 开盘价序列
+            close: 收盘价序列
+            low: 最低价序列
+            high: 最高价序列
+            vwap: 成交量加权平均价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#71因子值
+        """
 
-    # @BaseFactor.register_factor(name='alpha_74')
-    # @staticmethod
-    # def alpha_74(high: pd.Series, close: pd.Series, vwap: pd.Series, volume: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#74: ((rank(correlation(close, sum(adv30, 37.4843), 15.1365)) < rank(correlation(rank(((high * 0.0261661) + (vwap * (1 - 0.0261661)))), rank(volume), 11.4791))) * -1)
-    #
-    #     收盘价与30日均量37日累积的15日相关系数的排名，是否小于最高价与加权平均价的加权和的排名与成交量排名的11日相关系数的排名，条件成立取-1，否则取0。
-    #
-    #     Args:
-    #         high: 最高价序列
-    #         close: 收盘价序列
-    #         vwap: 成交量加权平均价序列
-    #         volume: 成交量序列
-    #     Returns:
-    #         Alpha#74因子值
-    #     """
-    #     # 计算30日均量的37日累积
-    #     adv30 = volume.rolling(30).mean()
-    #     sum_adv30 = adv30.rolling(37).sum()
-    #
-    #     # 计算close与sum_adv30的15日相关系数的排名
-    #     corr1 = close.rolling(15).corr(sum_adv30)
-    #     rank_corr1 = corr1.rank(pct=True)
-    #
-    #     # 计算最高价与加权平均价的加权和
-    #     weighted_high_vwap = high * 0.0261661 + vwap * (1 - 0.0261661)
-    #
-    #     # 计算weighted_high_vwap的排名与volume排名的11日相关系数的排名
-    #     rank_weighted = weighted_high_vwap.rank(pct=True)
-    #     rank_volume = volume.rank(pct=True)
-    #
-    #     corr2 = rank_weighted.rolling(11).corr(rank_volume)
-    #     rank_corr2 = corr2.rank(pct=True)
-    #
-    #     # 比较两个排名，条件成立取-1，否则取0
-    #     result = pd.Series(0, index=close.index)
-    #     result[rank_corr1 < rank_corr2] = -1
-    #
-    #     return result
+        # 线性衰减函数
+        def decay_linear(series, window):
+            weights = np.arange(1, window + 1) / window
+            weights = weights[::-1]  # 反转权重使最近的观测值权重最大
 
-    # @BaseFactor.register_factor(name='alpha_75')
-    # @staticmethod
-    # def alpha_75(low: pd.Series, close: pd.Series, volume: pd.Series, vwap: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#75: (rank(correlation(vwap, volume, 4.24304)) < rank(correlation(rank(low), rank(adv50), 12.4413)))
-    #
-    #     加权平均价与成交量的4日相关系数的排名，是否小于最低价排名与50日均量排名的12日相关系数的排名，条件成立取1，否则取0。
-    #
-    #     Args:
-    #         open_price: 开盘价序列
-    #         high: 最高价序列
-    #         low: 最低价序列
-    #         close: 收盘价序列
-    #         volume: 成交量序列
-    #     Returns:
-    #         Alpha#75因子值
-    #     """
-    #     # 计算vwap与volume的4日相关系数的排名
-    #     corr1 = vwap.rolling(4).corr(volume)
-    #     rank_corr1 = corr1.rank(pct=True)
-    #
-    #     # 计算50日均量
-    #     adv50 = volume.rolling(50).mean()
-    #
-    #     # 计算low排名与adv50排名的12日相关系数的排名
-    #     rank_low = low.rank(pct=True)
-    #     rank_adv50 = adv50.rank(pct=True)
-    #
-    #     corr2 = rank_low.rolling(12).corr(rank_adv50)
-    #     rank_corr2 = corr2.rank(pct=True)
-    #
-    #     # 比较两个排名，条件成立取1，否则取0
-    #     result = pd.Series(0, index=close.index)
-    #     result[rank_corr1 < rank_corr2] = 1
-    #
-    #     return result
+            result = pd.Series(index=series.index)
+            for i in range(window - 1, len(series)):
+                if i < window - 1:
+                    continue
+                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
+            return result
+
+        # 时序排名函数
+        def ts_rank_func(x):
+            return pd.Series(x).rank(pct=True).iloc[-1]
+
+        # 计算close的3日时序排名
+        ts_rank_close = close.rolling(3).apply(ts_rank_func, raw=False)
+
+        # 计算180日均量
+        adv180 = volume.rolling(180).mean()
+
+        # 计算adv180的12日时序排名
+        ts_rank_adv180 = adv180.rolling(12).apply(ts_rank_func, raw=False)
+
+        # 计算两个时序排名的18日相关系数
+        corr = ts_rank_close.rolling(18).corr(ts_rank_adv180)
+
+        # 计算相关系数的4日线性衰减
+        decayed_corr = decay_linear(corr, 4)
+
+        # 计算线性衰减的16日时序排名
+        ts_rank_term1 = decayed_corr.rolling(16).apply(ts_rank_func, raw=False)
+
+        # 计算第二项
+        term2_inner = (low + open_price) - (vwap + vwap)
+        rank_term2 = term2_inner.rank(pct=True) ** 2
+
+        # 计算rank_term2的16日线性衰减
+        decayed_rank = decay_linear(rank_term2, 16)
+
+        # 计算线性衰减的4日时序排名
+        ts_rank_term2 = decayed_rank.rolling(4).apply(ts_rank_func, raw=False)
+
+        # 取两项的较大值，再取负值
+        return -1 * np.maximum(ts_rank_term1, ts_rank_term2)
+
+    @BaseFactor.register_factor(name='alpha_72')
+    @staticmethod
+    def alpha_72(high: pd.Series, low: pd.Series, volume: pd.Series, vwap: pd.Series) -> pd.Series:
+        """
+        Alpha#72: (rank(decay_linear(correlation(((high + low) / 2), adv40, 8.93345), 10.1519)) / rank(decay_linear(correlation(Ts_Rank(vwap, 3.72469), Ts_Rank(volume, 18.5188), 6.86671), 2.95011)))
+
+        最高价与最低价均值与40日均量的9日相关系数的10日线性衰减的排名，除以加权平均价的4日时序排名与成交量19日时序排名的7日相关系数的3日线性衰减的排名。
+
+        Args:
+            high: 最高价序列
+            low: 最低价序列
+            volume: 成交量序列
+            vwap: 成交量加权平均价序列
+        Returns:
+            Alpha#72因子值
+        """
+
+        # 线性衰减函数
+        def decay_linear(series, window):
+            weights = np.arange(1, window + 1) / window
+            weights = weights[::-1]  # 反转权重使最近的观测值权重最大
+
+            result = pd.Series(index=series.index)
+            for i in range(window - 1, len(series)):
+                if i < window - 1:
+                    continue
+                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
+            return result
+
+        # 时序排名函数
+        def ts_rank_func(x):
+            return pd.Series(x).rank(pct=True).iloc[-1]
+
+        # 计算(high + low) / 2
+        price_avg = (high + low) / 2
+
+        # 计算40日均量
+        adv40 = volume.rolling(40).mean()
+
+        # 计算price_avg与adv40的9日相关系数
+        corr1 = price_avg.rolling(9).corr(adv40)
+
+        # 计算相关系数的10日线性衰减的排名
+        decayed_corr1 = decay_linear(corr1, 10)
+        rank_term1 = decayed_corr1.rank(pct=True)
+
+        # 计算vwap的4日时序排名
+        ts_rank_vwap = vwap.rolling(4).apply(ts_rank_func, raw=False)
+
+        # 计算volume的19日时序排名
+        ts_rank_volume = volume.rolling(19).apply(ts_rank_func, raw=False)
+
+        # 计算两个时序排名的7日相关系数
+        corr2 = ts_rank_vwap.rolling(7).corr(ts_rank_volume)
+
+        # 计算相关系数的3日线性衰减的排名
+        decayed_corr2 = decay_linear(corr2, 3)
+        rank_term2 = decayed_corr2.rank(pct=True)
+
+        # 计算比值
+        return rank_term1 / (rank_term2 + 1e-12)
+
+    @BaseFactor.register_factor(name='alpha_73')
+    @staticmethod
+    def alpha_73(open_price: pd.Series, low: pd.Series, vwap: pd.Series) -> pd.Series:
+        """
+        Alpha#73: (max(rank(decay_linear(delta(vwap, 4.72775), 2.91864)), Ts_Rank(decay_linear(((delta(((open * 0.147155) + (low * (1 - 0.147155))), 2.03608) / ((open * 0.147155) + (low * (1 - 0.147155)))) * -1), 3.33829), 16.7411)) * -1)
+
+        加权平均价的5日变化的3日线性衰减的排名，与开盘价与最低价加权和的2日变化率负值的3日线性衰减的17日时序排名，取两者较大值，再取负值。
+
+        Args:
+            open_price: 开盘价序列
+            high: 最高价序列
+            low: 最低价序列
+            close: 收盘价序列
+            vwap: 成交量加权平均价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#73因子值
+        """
+
+        # 线性衰减函数
+        def decay_linear(series, window):
+            weights = np.arange(1, window + 1) / window
+            weights = weights[::-1]  # 反转权重使最近的观测值权重最大
+
+            result = pd.Series(index=series.index)
+            for i in range(window - 1, len(series)):
+                if i < window - 1:
+                    continue
+                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
+            return result
+
+        # 时序排名函数
+        def ts_rank_func(x):
+            return pd.Series(x).rank(pct=True).iloc[-1]
+
+        # 计算vwap的5日变化
+        delta_vwap = vwap.diff(5)
+
+        # 计算delta_vwap的3日线性衰减的排名
+        decayed_delta = decay_linear(delta_vwap, 3)
+        rank_term1 = decayed_delta.rank(pct=True)
+
+        # 计算开盘价与最低价的加权和
+        weighted_open_low = open_price * 0.147155 + low * (1 - 0.147155)
+
+        # 计算加权和的2日变化率，取负值
+        delta_weighted = weighted_open_low.diff(2)
+        change_rate = delta_weighted / (weighted_open_low + 1e-12)
+        neg_change_rate = -1 * change_rate
+
+        # 计算neg_change_rate的3日线性衰减
+        decayed_change = decay_linear(neg_change_rate, 3)
+
+        # 计算线性衰减的17日时序排名
+        ts_rank_term2 = decayed_change.rolling(17).apply(ts_rank_func, raw=False)
+
+        # 取两项的较大值，再取负值
+        return -1 * np.maximum(rank_term1, ts_rank_term2)
+
+    @BaseFactor.register_factor(name='alpha_74')
+    @staticmethod
+    def alpha_74(high: pd.Series, close: pd.Series, vwap: pd.Series, volume: pd.Series) -> pd.Series:
+        """
+        Alpha#74: ((rank(correlation(close, sum(adv30, 37.4843), 15.1365)) < rank(correlation(rank(((high * 0.0261661) + (vwap * (1 - 0.0261661)))), rank(volume), 11.4791))) * -1)
+
+        收盘价与30日均量37日累积的15日相关系数的排名，是否小于最高价与加权平均价的加权和的排名与成交量排名的11日相关系数的排名，条件成立取-1，否则取0。
+
+        Args:
+            high: 最高价序列
+            close: 收盘价序列
+            vwap: 成交量加权平均价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#74因子值
+        """
+        # 计算30日均量的37日累积
+        adv30 = volume.rolling(30).mean()
+        sum_adv30 = adv30.rolling(37).sum()
+
+        # 计算close与sum_adv30的15日相关系数的排名
+        corr1 = close.rolling(15).corr(sum_adv30)
+        rank_corr1 = corr1.rank(pct=True)
+
+        # 计算最高价与加权平均价的加权和
+        weighted_high_vwap = high * 0.0261661 + vwap * (1 - 0.0261661)
+
+        # 计算weighted_high_vwap的排名与volume排名的11日相关系数的排名
+        rank_weighted = weighted_high_vwap.rank(pct=True)
+        rank_volume = volume.rank(pct=True)
+
+        corr2 = rank_weighted.rolling(11).corr(rank_volume)
+        rank_corr2 = corr2.rank(pct=True)
+
+        # 比较两个排名，条件成立取-1，否则取0
+        result = pd.Series(0, index=close.index)
+        result[rank_corr1 < rank_corr2] = -1
+
+        return result
+
+    @BaseFactor.register_factor(name='alpha_75')
+    @staticmethod
+    def alpha_75(low: pd.Series, close: pd.Series, volume: pd.Series, vwap: pd.Series) -> pd.Series:
+        """
+        Alpha#75: (rank(correlation(vwap, volume, 4.24304)) < rank(correlation(rank(low), rank(adv50), 12.4413)))
+
+        加权平均价与成交量的4日相关系数的排名，是否小于最低价排名与50日均量排名的12日相关系数的排名，条件成立取1，否则取0。
+
+        Args:
+            open_price: 开盘价序列
+            high: 最高价序列
+            low: 最低价序列
+            close: 收盘价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#75因子值
+        """
+        # 计算vwap与volume的4日相关系数的排名
+        corr1 = vwap.rolling(4).corr(volume)
+        rank_corr1 = corr1.rank(pct=True)
+
+        # 计算50日均量
+        adv50 = volume.rolling(50).mean()
+
+        # 计算low排名与adv50排名的12日相关系数的排名
+        rank_low = low.rank(pct=True)
+        rank_adv50 = adv50.rank(pct=True)
+
+        corr2 = rank_low.rolling(12).corr(rank_adv50)
+        rank_corr2 = corr2.rank(pct=True)
+
+        # 比较两个排名，条件成立取1，否则取0
+        result = pd.Series(0, index=close.index)
+        result[rank_corr1 < rank_corr2] = 1
+
+        return result
 
     # @BaseFactor.register_factor(name='alpha_76')
     # @staticmethod
@@ -2867,16 +2800,17 @@ class WorldQuantFactors(BaseFactor):
     #     Returns:
     #         Alpha#76因子值
     #     """
+    #
     #     # 线性衰减函数
     #     def decay_linear(series, window):
     #         weights = np.arange(1, window + 1) / window
     #         weights = weights[::-1]  # 反转权重使最近的观测值权重最大
     #
     #         result = pd.Series(index=series.index)
-    #         for i in range(window-1, len(series)):
-    #             if i < window-1:
+    #         for i in range(window - 1, len(series)):
+    #             if i < window - 1:
     #                 continue
-    #             result.iloc[i] = np.nansum(series.iloc[i-window+1:i+1].values * weights)
+    #             result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
     #         return result
     #
     #     # 时序排名函数
@@ -2910,98 +2844,99 @@ class WorldQuantFactors(BaseFactor):
     #     # 取两项的较大值，再取负值
     #     return -1 * np.maximum(rank_term1, ts_rank_term2)
 
-    # @BaseFactor.register_factor(name='alpha_77')
-    # @staticmethod
-    # def alpha_77(high: pd.Series, low: pd.Series, vwap: pd.Series, volume: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#77: (min(rank(decay_linear(((((high + low) / 2) + high) - (vwap + high)), 20.0451)), rank(decay_linear(correlation(((high + low) / 2), adv40, 3.1614), 5.64125))) * -1)
-    #
-    #     价格因子的20日线性衰减的排名，与最高价最低价均值与40日均量的3日相关系数的6日线性衰减的排名，取两者较小值，再取负值。
-    #
-    #     Args:
-    #         high: 最高价序列
-    #         low: 最低价序列
-    #         vwap: 成交量加权平均价序列
-    #         volume: 成交量序列
-    #     Returns:
-    #         Alpha#77因子值
-    #     """
-    #     # 线性衰减函数
-    #     def decay_linear(series, window):
-    #         weights = np.arange(1, window + 1) / window
-    #         weights = weights[::-1]  # 反转权重使最近的观测值权重最大
-    #
-    #         result = pd.Series(index=series.index)
-    #         for i in range(window-1, len(series)):
-    #             if i < window-1:
-    #                 continue
-    #             result.iloc[i] = np.nansum(series.iloc[i-window+1:i+1].values * weights)
-    #         return result
-    #
-    #     # 计算(high + low) / 2
-    #     price_avg = (high + low) / 2
-    #
-    #     # 计算价格因子
-    #     price_factor = ((price_avg + high) - (vwap + high))
-    #
-    #     # 计算price_factor的20日线性衰减的排名
-    #     decayed_price = decay_linear(price_factor, 20)
-    #     rank_term1 = decayed_price.rank(pct=True)
-    #
-    #     # 计算40日均量
-    #     adv40 = volume.rolling(40).mean()
-    #
-    #     # 计算price_avg与adv40的3日相关系数
-    #     corr = price_avg.rolling(3).corr(adv40)
-    #
-    #     # 计算corr的6日线性衰减的排名
-    #     decayed_corr = decay_linear(corr, 6)
-    #     rank_term2 = decayed_corr.rank(pct=True)
-    #
-    #     # 取两项的较小值，再取负值
-    #     return -1 * np.minimum(rank_term1, rank_term2)
+    @BaseFactor.register_factor(name='alpha_77')
+    @staticmethod
+    def alpha_77(high: pd.Series, low: pd.Series, vwap: pd.Series, volume: pd.Series) -> pd.Series:
+        """
+        Alpha#77: (min(rank(decay_linear(((((high + low) / 2) + high) - (vwap + high)), 20.0451)), rank(decay_linear(correlation(((high + low) / 2), adv40, 3.1614), 5.64125))) * -1)
 
-    # @BaseFactor.register_factor(name='alpha_78')
-    # @staticmethod
-    # def alpha_78(low: pd.Series, vwap: pd.Series, volume: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#78: (rank(correlation(sum(((low * 0.352233) + (vwap * (1 - 0.352233))), 19.7428), sum(adv40, 19.7428), 6.83313))^rank(correlation(rank(vwap), rank(volume), 5.77492)))
-    #
-    #     最低价与加权平均价的加权和的20日累积与40日均量20日累积的7日相关系数的排名，的加权平均价排名与成交量排名的6日相关系数的排名次方。
-    #
-    #     Args:
-    #         open_price: 开盘价序列
-    #         high: 最高价序列
-    #         low: 最低价序列
-    #         close: 收盘价序列
-    #         vwap: 成交量加权平均价序列
-    #         volume: 成交量序列
-    #     Returns:
-    #         Alpha#78因子值
-    #     """
-    #     # 计算最低价与加权平均价的加权和
-    #     weighted_low_vwap = low * 0.352233 + vwap * (1 - 0.352233)
-    #
-    #     # 计算weighted_low_vwap的20日累积
-    #     sum_weighted = weighted_low_vwap.rolling(20).sum()
-    #
-    #     # 计算40日均量的20日累积
-    #     adv40 = volume.rolling(40).mean()
-    #     sum_adv40 = adv40.rolling(20).sum()
-    #
-    #     # 计算sum_weighted与sum_adv40的7日相关系数的排名
-    #     corr1 = sum_weighted.rolling(7).corr(sum_adv40)
-    #     rank_corr1 = corr1.rank(pct=True)
-    #
-    #     # 计算vwap排名与volume排名的6日相关系数的排名
-    #     rank_vwap = vwap.rank(pct=True)
-    #     rank_volume = volume.rank(pct=True)
-    #
-    #     corr2 = rank_vwap.rolling(6).corr(rank_volume)
-    #     rank_corr2 = corr2.rank(pct=True)
-    #
-    #     # 计算rank_corr1的rank_corr2次方
-    #     return rank_corr1 ** rank_corr2
+        价格因子的20日线性衰减的排名，与最高价最低价均值与40日均量的3日相关系数的6日线性衰减的排名，取两者较小值，再取负值。
+
+        Args:
+            high: 最高价序列
+            low: 最低价序列
+            vwap: 成交量加权平均价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#77因子值
+        """
+
+        # 线性衰减函数
+        def decay_linear(series, window):
+            weights = np.arange(1, window + 1) / window
+            weights = weights[::-1]  # 反转权重使最近的观测值权重最大
+
+            result = pd.Series(index=series.index)
+            for i in range(window - 1, len(series)):
+                if i < window - 1:
+                    continue
+                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
+            return result
+
+        # 计算(high + low) / 2
+        price_avg = (high + low) / 2
+
+        # 计算价格因子
+        price_factor = ((price_avg + high) - (vwap + high))
+
+        # 计算price_factor的20日线性衰减的排名
+        decayed_price = decay_linear(price_factor, 20)
+        rank_term1 = decayed_price.rank(pct=True)
+
+        # 计算40日均量
+        adv40 = volume.rolling(40).mean()
+
+        # 计算price_avg与adv40的3日相关系数
+        corr = price_avg.rolling(3).corr(adv40)
+
+        # 计算corr的6日线性衰减的排名
+        decayed_corr = decay_linear(corr, 6)
+        rank_term2 = decayed_corr.rank(pct=True)
+
+        # 取两项的较小值，再取负值
+        return -1 * np.minimum(rank_term1, rank_term2)
+
+    @BaseFactor.register_factor(name='alpha_78')
+    @staticmethod
+    def alpha_78(low: pd.Series, vwap: pd.Series, volume: pd.Series) -> pd.Series:
+        """
+        Alpha#78: (rank(correlation(sum(((low * 0.352233) + (vwap * (1 - 0.352233))), 19.7428), sum(adv40, 19.7428), 6.83313))^rank(correlation(rank(vwap), rank(volume), 5.77492)))
+
+        最低价与加权平均价的加权和的20日累积与40日均量20日累积的7日相关系数的排名，的加权平均价排名与成交量排名的6日相关系数的排名次方。
+
+        Args:
+            open_price: 开盘价序列
+            high: 最高价序列
+            low: 最低价序列
+            close: 收盘价序列
+            vwap: 成交量加权平均价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#78因子值
+        """
+        # 计算最低价与加权平均价的加权和
+        weighted_low_vwap = low * 0.352233 + vwap * (1 - 0.352233)
+
+        # 计算weighted_low_vwap的20日累积
+        sum_weighted = weighted_low_vwap.rolling(20).sum()
+
+        # 计算40日均量的20日累积
+        adv40 = volume.rolling(40).mean()
+        sum_adv40 = adv40.rolling(20).sum()
+
+        # 计算sum_weighted与sum_adv40的7日相关系数的排名
+        corr1 = sum_weighted.rolling(7).corr(sum_adv40)
+        rank_corr1 = corr1.rank(pct=True)
+
+        # 计算vwap排名与volume排名的6日相关系数的排名
+        rank_vwap = vwap.rank(pct=True)
+        rank_volume = volume.rank(pct=True)
+
+        corr2 = rank_vwap.rolling(6).corr(rank_volume)
+        rank_corr2 = corr2.rank(pct=True)
+
+        # 计算rank_corr1的rank_corr2次方
+        return rank_corr1 ** rank_corr2
 
     # @BaseFactor.register_factor(name='alpha_79')
     # @staticmethod
@@ -3021,6 +2956,7 @@ class WorldQuantFactors(BaseFactor):
     #     Returns:
     #         Alpha#79因子值
     #     """
+    #
     #     # 时序排名函数
     #     def ts_rank_func(x):
     #         return pd.Series(x).rank(pct=True).iloc[-1]
@@ -3053,237 +2989,238 @@ class WorldQuantFactors(BaseFactor):
     #
     #     return result
 
-    @BaseFactor.register_factor(name='alpha_80')
-    @staticmethod
-    def alpha_80(open_price: pd.Series, high: pd.Series, volume: pd.Series) -> pd.Series:
-        """
-        Alpha#80: ((rank(sign(delta(IndNeutralize(((open * 0.868128) + (high * (1 - 0.868128))), IndClass.industry), 4.04545)))^Ts_Rank(correlation(high, adv10, 5.11456), 5.53756)) * -1)
-        
-        开盘价与最高价加权和的行业中性化的4日变化符号的排名的时序相关性次方，取负值。
-        
-        Args:
-            open_price: 开盘价序列
-            high: 最高价序列
-            volume: 成交量序列
-        Returns:
-            Alpha#80因子值
-        """
-
-        # 时序排名函数
-        def ts_rank_func(x):
-            return pd.Series(x).rank(pct=True).iloc[-1]
-
-        # 计算开盘价与最高价的加权和
-        weighted_open_high = open_price * 0.868128 + high * (1 - 0.868128)
-
-        # 由于无法实现行业中性化，使用原始weighted_open_high
-
-        # 计算weighted_open_high的4日变化符号的排名
-        delta_weighted = weighted_open_high.diff(4)
-        sign_delta = np.sign(delta_weighted)
-        rank_sign = sign_delta.rank(pct=True)
-
-        # 计算10日均量
-        adv10 = volume.rolling(10).mean()
-
-        # 计算high与adv10的5日相关系数
-        corr = high.rolling(5).corr(adv10)
-
-        # 计算相关系数的6日时序排名
-        ts_rank_corr = corr.rolling(6).apply(ts_rank_func, raw=False)
-
-        # 计算rank_sign的ts_rank_corr次方，取负值
-        return -1 * (rank_sign ** ts_rank_corr)
-
-    # @BaseFactor.register_factor(name='alpha_81')
+    # @BaseFactor.register_factor(name='alpha_80')
     # @staticmethod
-    # def alpha_81(close: pd.Series, vwap: pd.Series, volume: pd.Series) -> pd.Series:
+    # def alpha_80(open_price: pd.Series, high: pd.Series, volume: pd.Series) -> pd.Series:
     #     """
-    #     Alpha#81: ((rank(Log(product(rank((rank(correlation(vwap, sum(adv10, 49.6054), 8.47743))^4)), 14.9655))) < rank(correlation(rank(vwap), rank(volume), 5.07914))) * -1)
+    #     Alpha#80: ((rank(sign(delta(IndNeutralize(((open * 0.868128) + (high * (1 - 0.868128))), IndClass.industry), 4.04545)))^Ts_Rank(correlation(high, adv10, 5.11456), 5.53756)) * -1)
     #
-    #     加权平均价与10日均量50日累积的8日相关系数的排名的4次方的15日乘积取对数的排名，是否小于加权平均价排名与成交量排名的5日相关系数的排名，条件成立取-1，否则取0。
+    #     开盘价与最高价加权和的行业中性化的4日变化符号的排名的时序相关性次方，取负值。
     #
     #     Args:
-    #         close: 收盘价序列
-    #         vwap: 成交量加权平均价序列
-    #         volume: 成交量序列
-    #     Returns:
-    #         Alpha#81因子值
-    #     """
-    #     # 计算10日均量
-    #     adv10 = volume.rolling(10).mean()
-    #
-    #     # 计算adv10的50日累积
-    #     sum_adv10 = adv10.rolling(50).sum()
-    #
-    #     # 计算vwap与sum_adv10的8日相关系数
-    #     corr1 = vwap.rolling(8).corr(sum_adv10)
-    #
-    #     # 计算相关系数的排名的4次方
-    #     rank_corr1 = corr1.rank(pct=True) ** 4
-    #
-    #     # 计算rank_corr1的15日乘积的对数的排名
-    #     def product(x):
-    #         return np.prod(x)
-    #
-    #     prod_rank = rank_corr1.rolling(15).apply(product, raw=True)
-    #     log_prod = np.log(prod_rank + 1e-12)  # 加小值避免log(0)
-    #     rank_log_prod = log_prod.rank(pct=True)
-    #
-    #     # 计算vwap排名与volume排名的5日相关系数的排名
-    #     rank_vwap = vwap.rank(pct=True)
-    #     rank_volume = volume.rank(pct=True)
-    #
-    #     corr2 = rank_vwap.rolling(5).corr(rank_volume)
-    #     rank_corr2 = corr2.rank(pct=True)
-    #
-    #     # 比较两个排名，条件成立取-1，否则取0
-    #     result = pd.Series(0, index=close.index)
-    #     result[rank_log_prod < rank_corr2] = -1
-    #
-    #     return result
-
-    @BaseFactor.register_factor(name='alpha_82')
-    @staticmethod
-    def alpha_82(open_price: pd.Series, volume: pd.Series) -> pd.Series:
-        """
-        Alpha#82: (min(rank(decay_linear(delta(open, 1.46063), 14.8717)), Ts_Rank(decay_linear(correlation(IndNeutralize(volume, IndClass.sector), ((open * 0.634196) + (open * (1 - 0.634196))), 17.4842), 6.92131), 13.4283)) * -1)
-        
-        开盘价的1日变化的15日线性衰减的排名，与行业中性化的成交量与开盘价的17日相关系数的7日线性衰减的13日时序排名，取两者较小值，再取负值。
-        
-        Args:
-            open_price: 开盘价序列
-            volume: 成交量序列
-        Returns:
-            Alpha#82因子值
-        """
-
-        # 线性衰减函数
-        def decay_linear(series, window):
-            weights = np.arange(1, window + 1) / window
-            weights = weights[::-1]  # 反转权重使最近的观测值权重最大
-
-            result = pd.Series(index=series.index)
-            for i in range(window - 1, len(series)):
-                if i < window - 1:
-                    continue
-                try:
-                    values = series.iloc[i - window + 1:i + 1].values
-                    # 检查是否所有值都是NaN
-                    if np.all(np.isnan(values)):
-                        result.iloc[i] = np.nan
-                    else:
-                        # 使用nansum安全处理NaN值
-                        result.iloc[i] = np.nansum(values * weights)
-                except Exception as e:
-                    print(f"错误在decay_linear: {e}")
-                    result.iloc[i] = np.nan
-            return result
-
-        # 时序排名函数
-        def ts_rank_func(x):
-            return pd.Series(x).rank(pct=True).iloc[-1]
-
-        # 计算开盘价的1日变化
-        delta_open = open_price.diff(1)
-
-        # 计算delta_open的15日线性衰减的排名
-        decayed_delta = decay_linear(delta_open, 15)
-        rank_term1 = decayed_delta.rank(pct=True)
-
-        # 由于无法实现行业中性化，使用原始volume
-
-        # 计算volume与open的17日相关系数
-        # 注意：(open * 0.634196) + (open * (1 - 0.634196)) 就等于open
-        corr = volume.rolling(17).corr(open_price)
-
-        # 计算相关系数的7日线性衰减
-        decayed_corr = decay_linear(corr, 7)
-
-        # 计算线性衰减的13日时序排名
-        ts_rank_term2 = decayed_corr.rolling(13).apply(ts_rank_func, raw=False)
-
-        # 取两项的较小值，再取负值
-        return -1 * np.minimum(rank_term1, ts_rank_term2)
-
-    # @BaseFactor.register_factor(name='alpha_83')
-    # @staticmethod
-    # def alpha_83(high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series, vwap: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#83: ((rank(delay(((high - low) / (sum(close, 5) / 5)), 2)) * rank(rank(volume))) / (((high - low) / (sum(close, 5) / 5)) / (vwap - close)))
-    #
-    #     振幅与5日均价的比值的2日延迟的排名乘以成交量排名的排名，除以振幅与5日均价的比值除以加权平均价与收盘价之差。
-    #
-    #     Args:
+    #         open_price: 开盘价序列
     #         high: 最高价序列
-    #         low: 最低价序列
-    #         close: 收盘价序列
     #         volume: 成交量序列
-    #         vwap: 成交量加权平均价序列
     #     Returns:
-    #         Alpha#83因子值
+    #         Alpha#80因子值
     #     """
-    #     # 计算振幅
-    #     range_hl = high - low
     #
-    #     # 计算5日均价
-    #     mean_close_5 = close.rolling(5).mean()
-    #
-    #     # 计算振幅与5日均价的比值
-    #     ratio = range_hl / mean_close_5
-    #
-    #     # 计算ratio的2日延迟的排名
-    #     delay_ratio = ratio.shift(2)
-    #     rank_delay = delay_ratio.rank(pct=True)
-    #
-    #     # 计算成交量排名的排名
-    #     rank_volume = volume.rank(pct=True).rank(pct=True)
-    #
-    #     # 计算分子
-    #     numerator = rank_delay * rank_volume
-    #
-    #     # 计算分母
-    #     denominator = ratio / (vwap - close + 1e-12)
-    #
-    #     # 计算比值
-    #     return numerator / (denominator + 1e-12)
-
-    # @BaseFactor.register_factor(name='alpha_84')
-    # @staticmethod
-    # def alpha_84(close: pd.Series, vwap: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#84: SignedPower(Ts_Rank((vwap - ts_max(vwap, 15.3217)), 20.7127), delta(close, 4.96796))
-    #
-    #     加权平均价与其15日最大值之差的21日时序排名，的收盘价5日变化次方。
-    #
-    #     Args:
-    #         close: 收盘价序列
-    #         vwap: 成交量加权平均价序列
-    #     Returns:
-    #         Alpha#84因子值
-    #     """
     #     # 时序排名函数
     #     def ts_rank_func(x):
     #         return pd.Series(x).rank(pct=True).iloc[-1]
     #
-    #     # 计算vwap的15日最大值
-    #     ts_max_vwap = vwap.rolling(15).max()
+    #     # 计算开盘价与最高价的加权和
+    #     weighted_open_high = open_price * 0.868128 + high * (1 - 0.868128)
     #
-    #     # 计算vwap与其最大值之差
-    #     diff_vwap = vwap - ts_max_vwap
+    #     # 由于无法实现行业中性化，使用原始weighted_open_high
     #
-    #     # 计算diff_vwap的21日时序排名
-    #     ts_rank_diff = diff_vwap.rolling(21).apply(ts_rank_func, raw=False)
+    #     # 计算weighted_open_high的4日变化符号的排名
+    #     delta_weighted = weighted_open_high.diff(4)
+    #     sign_delta = np.sign(delta_weighted)
+    #     rank_sign = sign_delta.rank(pct=True)
     #
-    #     # 计算收盘价的5日变化
-    #     delta_close = close.diff(5)
+    #     # 计算10日均量
+    #     adv10 = volume.rolling(10).mean()
     #
-    #     # 计算ts_rank_diff的delta_close次方
-    #     # SignedPower函数保持基数的符号，并将指数应用于其绝对值
-    #     def signed_power(base, exponent):
-    #         return np.sign(base) * (np.abs(base) ** exponent)
+    #     # 计算high与adv10的5日相关系数
+    #     corr = high.rolling(5).corr(adv10)
     #
-    #     return signed_power(ts_rank_diff, delta_close)
+    #     # 计算相关系数的6日时序排名
+    #     ts_rank_corr = corr.rolling(6).apply(ts_rank_func, raw=False)
+    #
+    #     # 计算rank_sign的ts_rank_corr次方，取负值
+    #     return -1 * (rank_sign ** ts_rank_corr)
+
+    @BaseFactor.register_factor(name='alpha_81')
+    @staticmethod
+    def alpha_81(close: pd.Series, vwap: pd.Series, volume: pd.Series) -> pd.Series:
+        """
+        Alpha#81: ((rank(Log(product(rank((rank(correlation(vwap, sum(adv10, 49.6054), 8.47743))^4)), 14.9655))) < rank(correlation(rank(vwap), rank(volume), 5.07914))) * -1)
+
+        加权平均价与10日均量50日累积的8日相关系数的排名的4次方的15日乘积取对数的排名，是否小于加权平均价排名与成交量排名的5日相关系数的排名，条件成立取-1，否则取0。
+
+        Args:
+            close: 收盘价序列
+            vwap: 成交量加权平均价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#81因子值
+        """
+        # 计算10日均量
+        adv10 = volume.rolling(10).mean()
+
+        # 计算adv10的50日累积
+        sum_adv10 = adv10.rolling(50).sum()
+
+        # 计算vwap与sum_adv10的8日相关系数
+        corr1 = vwap.rolling(8).corr(sum_adv10)
+
+        # 计算相关系数的排名的4次方
+        rank_corr1 = corr1.rank(pct=True) ** 4
+
+        # 计算rank_corr1的15日乘积的对数的排名
+        def product(x):
+            return np.prod(x)
+
+        prod_rank = rank_corr1.rolling(15).apply(product, raw=True)
+        log_prod = np.log(prod_rank + 1e-12)  # 加小值避免log(0)
+        rank_log_prod = log_prod.rank(pct=True)
+
+        # 计算vwap排名与volume排名的5日相关系数的排名
+        rank_vwap = vwap.rank(pct=True)
+        rank_volume = volume.rank(pct=True)
+
+        corr2 = rank_vwap.rolling(5).corr(rank_volume)
+        rank_corr2 = corr2.rank(pct=True)
+
+        # 比较两个排名，条件成立取-1，否则取0
+        result = pd.Series(0, index=close.index)
+        result[rank_log_prod < rank_corr2] = -1
+
+        return result
+
+    # @BaseFactor.register_factor(name='alpha_82')
+    # @staticmethod
+    # def alpha_82(open_price: pd.Series, volume: pd.Series) -> pd.Series:
+    #     """
+    #     Alpha#82: (min(rank(decay_linear(delta(open, 1.46063), 14.8717)), Ts_Rank(decay_linear(correlation(IndNeutralize(volume, IndClass.sector), ((open * 0.634196) + (open * (1 - 0.634196))), 17.4842), 6.92131), 13.4283)) * -1)
+    #
+    #     开盘价的1日变化的15日线性衰减的排名，与行业中性化的成交量与开盘价的17日相关系数的7日线性衰减的13日时序排名，取两者较小值，再取负值。
+    #
+    #     Args:
+    #         open_price: 开盘价序列
+    #         volume: 成交量序列
+    #     Returns:
+    #         Alpha#82因子值
+    #     """
+    #
+    #     # 线性衰减函数
+    #     def decay_linear(series, window):
+    #         weights = np.arange(1, window + 1) / window
+    #         weights = weights[::-1]  # 反转权重使最近的观测值权重最大
+    #
+    #         result = pd.Series(index=series.index)
+    #         for i in range(window - 1, len(series)):
+    #             if i < window - 1:
+    #                 continue
+    #             try:
+    #                 values = series.iloc[i - window + 1:i + 1].values
+    #                 # 检查是否所有值都是NaN
+    #                 if np.all(np.isnan(values)):
+    #                     result.iloc[i] = np.nan
+    #                 else:
+    #                     # 使用nansum安全处理NaN值
+    #                     result.iloc[i] = np.nansum(values * weights)
+    #             except Exception as e:
+    #                 print(f"错误在decay_linear: {e}")
+    #                 result.iloc[i] = np.nan
+    #         return result
+    #
+    #     # 时序排名函数
+    #     def ts_rank_func(x):
+    #         return pd.Series(x).rank(pct=True).iloc[-1]
+    #
+    #     # 计算开盘价的1日变化
+    #     delta_open = open_price.diff(1)
+    #
+    #     # 计算delta_open的15日线性衰减的排名
+    #     decayed_delta = decay_linear(delta_open, 15)
+    #     rank_term1 = decayed_delta.rank(pct=True)
+    #
+    #     # 由于无法实现行业中性化，使用原始volume
+    #
+    #     # 计算volume与open的17日相关系数
+    #     # 注意：(open * 0.634196) + (open * (1 - 0.634196)) 就等于open
+    #     corr = volume.rolling(17).corr(open_price)
+    #
+    #     # 计算相关系数的7日线性衰减
+    #     decayed_corr = decay_linear(corr, 7)
+    #
+    #     # 计算线性衰减的13日时序排名
+    #     ts_rank_term2 = decayed_corr.rolling(13).apply(ts_rank_func, raw=False)
+    #
+    #     # 取两项的较小值，再取负值
+    #     return -1 * np.minimum(rank_term1, ts_rank_term2)
+
+    @BaseFactor.register_factor(name='alpha_83')
+    @staticmethod
+    def alpha_83(high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series, vwap: pd.Series) -> pd.Series:
+        """
+        Alpha#83: ((rank(delay(((high - low) / (sum(close, 5) / 5)), 2)) * rank(rank(volume))) / (((high - low) / (sum(close, 5) / 5)) / (vwap - close)))
+
+        振幅与5日均价的比值的2日延迟的排名乘以成交量排名的排名，除以振幅与5日均价的比值除以加权平均价与收盘价之差。
+
+        Args:
+            high: 最高价序列
+            low: 最低价序列
+            close: 收盘价序列
+            volume: 成交量序列
+            vwap: 成交量加权平均价序列
+        Returns:
+            Alpha#83因子值
+        """
+        # 计算振幅
+        range_hl = high - low
+
+        # 计算5日均价
+        mean_close_5 = close.rolling(5).mean()
+
+        # 计算振幅与5日均价的比值
+        ratio = range_hl / mean_close_5
+
+        # 计算ratio的2日延迟的排名
+        delay_ratio = ratio.shift(2)
+        rank_delay = delay_ratio.rank(pct=True)
+
+        # 计算成交量排名的排名
+        rank_volume = volume.rank(pct=True).rank(pct=True)
+
+        # 计算分子
+        numerator = rank_delay * rank_volume
+
+        # 计算分母
+        denominator = ratio / (vwap - close + 1e-12)
+
+        # 计算比值
+        return numerator / (denominator + 1e-12)
+
+    @BaseFactor.register_factor(name='alpha_84')
+    @staticmethod
+    def alpha_84(close: pd.Series, vwap: pd.Series) -> pd.Series:
+        """
+        Alpha#84: SignedPower(Ts_Rank((vwap - ts_max(vwap, 15.3217)), 20.7127), delta(close, 4.96796))
+
+        加权平均价与其15日最大值之差的21日时序排名，的收盘价5日变化次方。
+
+        Args:
+            close: 收盘价序列
+            vwap: 成交量加权平均价序列
+        Returns:
+            Alpha#84因子值
+        """
+
+        # 时序排名函数
+        def ts_rank_func(x):
+            return pd.Series(x).rank(pct=True).iloc[-1]
+
+        # 计算vwap的15日最大值
+        ts_max_vwap = vwap.rolling(15).max()
+
+        # 计算vwap与其最大值之差
+        diff_vwap = vwap - ts_max_vwap
+
+        # 计算diff_vwap的21日时序排名
+        ts_rank_diff = diff_vwap.rolling(21).apply(ts_rank_func, raw=False)
+
+        # 计算收盘价的5日变化
+        delta_close = close.diff(5)
+
+        # 计算ts_rank_diff的delta_close次方
+        # SignedPower函数保持基数的符号，并将指数应用于其绝对值
+        def signed_power(base, exponent):
+            return np.sign(base) * (np.abs(base) ** exponent)
+
+        return signed_power(ts_rank_diff, delta_close)
 
     @BaseFactor.register_factor(name='alpha_85')
     @staticmethod
@@ -3332,53 +3269,55 @@ class WorldQuantFactors(BaseFactor):
         # 计算rank_corr1的rank_corr2次方
         return rank_corr1 ** rank_corr2
 
-    # @BaseFactor.register_factor(name='alpha_86')
-    # @staticmethod
-    # def alpha_86(open_price: pd.Series, close: pd.Series, volume: pd.Series, vwap: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#86: ((Ts_Rank(correlation(close, sum(adv20, 14.7444), 6.00049), 20.4195) < rank(((open + close) - (vwap + open)))) * -1)
-    #
-    #     收盘价与20日均量15日累积的6日相关系数的20日时序排名，是否小于(开盘价+收盘价)-(加权平均价+开盘价)的排名，条件成立取-1，否则取0。
-    #
-    #     Args:
-    #         open_price: 开盘价序列
-    #         close: 收盘价序列
-    #         volume: 成交量序列
-    #         vwap: 成交量加权平均价序列
-    #     Returns:
-    #         Alpha#86因子值
-    #     """
-    #     # 时序排名函数
-    #     def ts_rank_func(x):
-    #         return pd.Series(x).rank(pct=True).iloc[-1]
-    #
-    #     # 计算20日均量
-    #     adv20 = volume.rolling(20).mean()
-    #
-    #     # 计算adv20的15日累积
-    #     sum_adv20 = adv20.rolling(15).sum()
-    #
-    #     # 计算close与sum_adv20的6日相关系数
-    #     corr = close.rolling(6).corr(sum_adv20)
-    #
-    #     # 计算相关系数的20日时序排名
-    #     ts_rank_corr = corr.rolling(20).apply(ts_rank_func, raw=False)
-    #
-    #     # 计算(open + close) - (vwap + open)
-    #     term = (open_price + close) - (vwap + open_price)
-    #
-    #     # 计算term的排名
-    #     rank_term = term.rank(pct=True)
-    #
-    #     # 比较两个排名，条件成立取-1，否则取0
-    #     result = pd.Series(0, index=close.index)
-    #     result[ts_rank_corr < rank_term] = -1
-    #
-    #     return result
+    @BaseFactor.register_factor(name='alpha_86')
+    @staticmethod
+    def alpha_86(open_price: pd.Series, close: pd.Series, volume: pd.Series, vwap: pd.Series) -> pd.Series:
+        """
+        Alpha#86: ((Ts_Rank(correlation(close, sum(adv20, 14.7444), 6.00049), 20.4195) < rank(((open + close) - (vwap + open)))) * -1)
+
+        收盘价与20日均量15日累积的6日相关系数的20日时序排名，是否小于(开盘价+收盘价)-(加权平均价+开盘价)的排名，条件成立取-1，否则取0。
+
+        Args:
+            open_price: 开盘价序列
+            close: 收盘价序列
+            volume: 成交量序列
+            vwap: 成交量加权平均价序列
+        Returns:
+            Alpha#86因子值
+        """
+
+        # 时序排名函数
+        def ts_rank_func(x):
+            return pd.Series(x).rank(pct=True).iloc[-1]
+
+        # 计算20日均量
+        adv20 = volume.rolling(20).mean()
+
+        # 计算adv20的15日累积
+        sum_adv20 = adv20.rolling(15).sum()
+
+        # 计算close与sum_adv20的6日相关系数
+        corr = close.rolling(6).corr(sum_adv20)
+
+        # 计算相关系数的20日时序排名
+        ts_rank_corr = corr.rolling(20).apply(ts_rank_func, raw=False)
+
+        # 计算(open + close) - (vwap + open)
+        term = (open_price + close) - (vwap + open_price)
+
+        # 计算term的排名
+        rank_term = term.rank(pct=True)
+
+        # 比较两个排名，条件成立取-1，否则取0
+        result = pd.Series(0, index=close.index)
+        result[ts_rank_corr < rank_term] = -1
+
+        return result
 
     # @BaseFactor.register_factor(name='alpha_87')
     # @staticmethod
-    # def alpha_87(open_price: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series, vwap: pd.Series) -> pd.Series:
+    # def alpha_87(open_price: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series,
+    #              vwap: pd.Series) -> pd.Series:
     #     """
     #     Alpha#87: ((rank(decay_linear(delta(vwap, 4.72775), 5.87851)) + Ts_Rank(decay_linear(((((close * 0.485) + (vwap * (1 - 0.485))) - close) / close), 3.67975), 15.3522)) / (rank(decay_linear(correlation(IndNeutralize(adv20, IndClass.industry), low, 4.87219), 10.332)) * rank(decay_linear(delta(((vwap * 0.369701) + (open * (1 - 0.369701))), 2.15146), 3.33666))))
     #
@@ -3393,16 +3332,17 @@ class WorldQuantFactors(BaseFactor):
     #     Returns:
     #         Alpha#87因子值
     #     """
+    #
     #     # 线性衰减函数
     #     def decay_linear(series, window):
     #         weights = np.arange(1, window + 1) / window
     #         weights = weights[::-1]  # 反转权重使最近的观测值权重最大
     #
     #         result = pd.Series(index=series.index)
-    #         for i in range(window-1, len(series)):
-    #             if i < window-1:
+    #         for i in range(window - 1, len(series)):
+    #             if i < window - 1:
     #                 continue
-    #             result.iloc[i] = np.nansum(series.iloc[i-window+1:i+1].values * weights)
+    #             result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
     #         return result
     #
     #     # 时序排名函数
@@ -3555,16 +3495,17 @@ class WorldQuantFactors(BaseFactor):
     #     Returns:
     #         Alpha#89因子值
     #     """
+    #
     #     # 线性衰减函数
     #     def decay_linear(series, window):
     #         weights = np.arange(1, window + 1) / window
     #         weights = weights[::-1]  # 反转权重使最近的观测值权重最大
     #
     #         result = pd.Series(index=series.index)
-    #         for i in range(window-1, len(series)):
-    #             if i < window-1:
+    #         for i in range(window - 1, len(series)):
+    #             if i < window - 1:
     #                 continue
-    #             result.iloc[i] = np.nansum(series.iloc[i-window+1:i+1].values * weights)
+    #             result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
     #         return result
     #
     #     # 时序排名函数
@@ -3595,45 +3536,45 @@ class WorldQuantFactors(BaseFactor):
     #     # 计算差值
     #     return ts_rank_term1 - ts_rank_term2
 
-    @BaseFactor.register_factor(name='alpha_90')
-    @staticmethod
-    def alpha_90(low: pd.Series, close: pd.Series, volume: pd.Series) -> pd.Series:
-        """
-        Alpha#90: ((rank((close - ts_max(close, 4.66719)))^Ts_Rank(correlation(IndNeutralize(adv40, IndClass.subindustry), low, 5.38375), 3.21856)) * -1)
-        
-        收盘价与其5日最大值之差的排名的时序相关性次方，取负值。
-        
-        Args:
-            low: 最低价序列
-            close: 收盘价序列
-            volume: 成交量序列
-        Returns:
-            Alpha#90因子值
-        """
-
-        # 时序排名函数
-        def ts_rank_func(x):
-            return pd.Series(x).rank(pct=True).iloc[-1]
-
-        # 计算close的5日最大值
-        ts_max_close = close.rolling(5).max()
-
-        # 计算close与其最大值之差的排名
-        rank_term1 = (close - ts_max_close).rank(pct=True)
-
-        # 计算40日均量
-        adv40 = volume.rolling(40).mean()
-
-        # 由于无法实现行业中性化，使用原始adv40
-
-        # 计算adv40与low的5日相关系数
-        corr = adv40.rolling(5).corr(low)
-
-        # 计算相关系数的3日时序排名
-        ts_rank_term2 = corr.rolling(3).apply(ts_rank_func, raw=False)
-
-        # 计算rank_term1的ts_rank_term2次方，取负值
-        return -1 * (rank_term1 ** ts_rank_term2)
+    # @BaseFactor.register_factor(name='alpha_90')
+    # @staticmethod
+    # def alpha_90(low: pd.Series, close: pd.Series, volume: pd.Series) -> pd.Series:
+    #     """
+    #     Alpha#90: ((rank((close - ts_max(close, 4.66719)))^Ts_Rank(correlation(IndNeutralize(adv40, IndClass.subindustry), low, 5.38375), 3.21856)) * -1)
+    #
+    #     收盘价与其5日最大值之差的排名的时序相关性次方，取负值。
+    #
+    #     Args:
+    #         low: 最低价序列
+    #         close: 收盘价序列
+    #         volume: 成交量序列
+    #     Returns:
+    #         Alpha#90因子值
+    #     """
+    #
+    #     # 时序排名函数
+    #     def ts_rank_func(x):
+    #         return pd.Series(x).rank(pct=True).iloc[-1]
+    #
+    #     # 计算close的5日最大值
+    #     ts_max_close = close.rolling(5).max()
+    #
+    #     # 计算close与其最大值之差的排名
+    #     rank_term1 = (close - ts_max_close).rank(pct=True)
+    #
+    #     # 计算40日均量
+    #     adv40 = volume.rolling(40).mean()
+    #
+    #     # 由于无法实现行业中性化，使用原始adv40
+    #
+    #     # 计算adv40与low的5日相关系数
+    #     corr = adv40.rolling(5).corr(low)
+    #
+    #     # 计算相关系数的3日时序排名
+    #     ts_rank_term2 = corr.rolling(3).apply(ts_rank_func, raw=False)
+    #
+    #     # 计算rank_term1的ts_rank_term2次方，取负值
+    #     return -1 * (rank_term1 ** ts_rank_term2)
 
     # @BaseFactor.register_factor(name='alpha_91')
     # @staticmethod
@@ -3650,16 +3591,17 @@ class WorldQuantFactors(BaseFactor):
     #     Returns:
     #         Alpha#91因子值
     #     """
+    #
     #     # 线性衰减函数
     #     def decay_linear(series, window):
     #         weights = np.arange(1, window + 1) / window
     #         weights = weights[::-1]  # 反转权重使最近的观测值权重最大
     #
     #         result = pd.Series(index=series.index)
-    #         for i in range(window-1, len(series)):
-    #             if i < window-1:
+    #         for i in range(window - 1, len(series)):
+    #             if i < window - 1:
     #                 continue
-    #             result.iloc[i] = np.nansum(series.iloc[i-window+1:i+1].values * weights)
+    #             result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
     #         return result
     #
     #     # 时序排名函数
@@ -3777,16 +3719,17 @@ class WorldQuantFactors(BaseFactor):
     #     Returns:
     #         Alpha#93因子值
     #     """
+    #
     #     # 线性衰减函数
     #     def decay_linear(series, window):
     #         weights = np.arange(1, window + 1) / window
     #         weights = weights[::-1]  # 反转权重使最近的观测值权重最大
     #
     #         result = pd.Series(index=series.index)
-    #         for i in range(window-1, len(series)):
-    #             if i < window-1:
+    #         for i in range(window - 1, len(series)):
+    #             if i < window - 1:
     #                 continue
-    #             result.iloc[i] = np.nansum(series.iloc[i-window+1:i+1].values * weights)
+    #             result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
     #         return result
     #
     #     # 时序排名函数
@@ -3818,48 +3761,49 @@ class WorldQuantFactors(BaseFactor):
     #     # 计算比值
     #     return ts_rank_term1 / (rank_term2 + 1e-12)
 
-    # @BaseFactor.register_factor(name='alpha_94')
-    # @staticmethod
-    # def alpha_94(vwap: pd.Series, volume: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#94: ((rank((vwap - ts_min(vwap, 11.5783)))^Ts_Rank(correlation(Ts_Rank(vwap, 19.6462), Ts_Rank(adv60, 4.02992), 18.0926), 2.70756)) * -1)
-    #
-    #     加权平均价与其12日最小值之差的排名的时序相关性次方，取负值。
-    #
-    #     Args:
-    #         high: 最高价序列
-    #         vwap: 成交量加权平均价序列
-    #         volume: 成交量序列
-    #     Returns:
-    #         Alpha#94因子值
-    #     """
-    #     # 时序排名函数
-    #     def ts_rank_func(x):
-    #         return pd.Series(x).rank(pct=True).iloc[-1]
-    #
-    #     # 计算vwap的12日最小值
-    #     ts_min_vwap = vwap.rolling(12).min()
-    #
-    #     # 计算vwap与其最小值之差的排名
-    #     rank_term1 = (vwap - ts_min_vwap).rank(pct=True)
-    #
-    #     # 计算vwap的20日时序排名
-    #     ts_rank_vwap = vwap.rolling(20).apply(ts_rank_func, raw=False)
-    #
-    #     # 计算60日均量
-    #     adv60 = volume.rolling(60).mean()
-    #
-    #     # 计算adv60的4日时序排名
-    #     ts_rank_adv60 = adv60.rolling(4).apply(ts_rank_func, raw=False)
-    #
-    #     # 计算两个时序排名的18日相关系数
-    #     corr = ts_rank_vwap.rolling(18).corr(ts_rank_adv60)
-    #
-    #     # 计算相关系数的3日时序排名
-    #     ts_rank_corr = corr.rolling(3).apply(ts_rank_func, raw=False)
-    #
-    #     # 计算rank_term1的ts_rank_corr次方，取负值
-    #     return -1 * (rank_term1 ** ts_rank_corr)
+    @BaseFactor.register_factor(name='alpha_94')
+    @staticmethod
+    def alpha_94(vwap: pd.Series, volume: pd.Series) -> pd.Series:
+        """
+        Alpha#94: ((rank((vwap - ts_min(vwap, 11.5783)))^Ts_Rank(correlation(Ts_Rank(vwap, 19.6462), Ts_Rank(adv60, 4.02992), 18.0926), 2.70756)) * -1)
+
+        加权平均价与其12日最小值之差的排名的时序相关性次方，取负值。
+
+        Args:
+            high: 最高价序列
+            vwap: 成交量加权平均价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#94因子值
+        """
+
+        # 时序排名函数
+        def ts_rank_func(x):
+            return pd.Series(x).rank(pct=True).iloc[-1]
+
+        # 计算vwap的12日最小值
+        ts_min_vwap = vwap.rolling(12).min()
+
+        # 计算vwap与其最小值之差的排名
+        rank_term1 = (vwap - ts_min_vwap).rank(pct=True)
+
+        # 计算vwap的20日时序排名
+        ts_rank_vwap = vwap.rolling(20).apply(ts_rank_func, raw=False)
+
+        # 计算60日均量
+        adv60 = volume.rolling(60).mean()
+
+        # 计算adv60的4日时序排名
+        ts_rank_adv60 = adv60.rolling(4).apply(ts_rank_func, raw=False)
+
+        # 计算两个时序排名的18日相关系数
+        corr = ts_rank_vwap.rolling(18).corr(ts_rank_adv60)
+
+        # 计算相关系数的3日时序排名
+        ts_rank_corr = corr.rolling(3).apply(ts_rank_func, raw=False)
+
+        # 计算rank_term1的ts_rank_corr次方，取负值
+        return -1 * (rank_term1 ** ts_rank_corr)
 
     @BaseFactor.register_factor(name='alpha_95')
     @staticmethod
@@ -3911,72 +3855,73 @@ class WorldQuantFactors(BaseFactor):
 
         return result
 
-    # @BaseFactor.register_factor(name='alpha_96')
-    # @staticmethod
-    # def alpha_96(close: pd.Series, vwap: pd.Series, volume: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#96: (max(Ts_Rank(decay_linear(correlation(rank(vwap), rank(volume), 3.83878), 4.16783), 8.38151), Ts_Rank(decay_linear(Ts_ArgMax(correlation(Ts_Rank(close, 7.45404), Ts_Rank(adv60, 4.13242), 3.65459), 12.6556), 14.0365), 13.4143)) * -1)
-    #
-    #     加权平均价排名与成交量排名的4日相关系数的4日线性衰减的8日时序排名，与收盘价7日时序排名与60日均量4日时序排名的4日相关系数的13日最大值位置的14日线性衰减的13日时序排名，取两者较大值，再取负值。
-    #
-    #     Args:
-    #         close: 收盘价序列
-    #         vwap: 成交量加权平均价序列
-    #         volume: 成交量序列
-    #     Returns:
-    #         Alpha#96因子值
-    #     """
-    #     # 线性衰减函数
-    #     def decay_linear(series, window):
-    #         weights = np.arange(1, window + 1) / window
-    #         weights = weights[::-1]  # 反转权重使最近的观测值权重最大
-    #
-    #         result = pd.Series(index=series.index)
-    #         for i in range(window-1, len(series)):
-    #             if i < window-1:
-    #                 continue
-    #             result.iloc[i] = np.nansum(series.iloc[i-window+1:i+1].values * weights)
-    #         return result
-    #
-    #     # 时序排名函数
-    #     def ts_rank_func(x):
-    #         return pd.Series(x).rank(pct=True).iloc[-1]
-    #
-    #     # 时序最大值位置函数
-    #     def ts_argmax(x):
-    #         return np.argmax(x[-13:]) if len(x) >= 13 else np.nan
-    #
-    #     # 计算vwap排名与volume排名的4日相关系数
-    #     rank_vwap = vwap.rank(pct=True)
-    #     rank_volume = volume.rank(pct=True)
-    #
-    #     corr1 = rank_vwap.rolling(4).corr(rank_volume)
-    #
-    #     # 计算相关系数的4日线性衰减的8日时序排名
-    #     decayed_corr1 = decay_linear(corr1, 4)
-    #     ts_rank_term1 = decayed_corr1.rolling(8).apply(ts_rank_func, raw=False)
-    #
-    #     # 计算close的7日时序排名
-    #     ts_rank_close = close.rolling(7).apply(ts_rank_func, raw=False)
-    #
-    #     # 计算60日均量
-    #     adv60 = volume.rolling(60).mean()
-    #
-    #     # 计算adv60的4日时序排名
-    #     ts_rank_adv60 = adv60.rolling(4).apply(ts_rank_func, raw=False)
-    #
-    #     # 计算两个时序排名的4日相关系数
-    #     corr2 = ts_rank_close.rolling(4).corr(ts_rank_adv60)
-    #
-    #     # 计算相关系数的13日最大值位置
-    #     argmax_corr = corr2.rolling(13).apply(ts_argmax, raw=True)
-    #
-    #     # 计算argmax_corr的14日线性衰减的13日时序排名
-    #     decayed_argmax = decay_linear(argmax_corr, 14)
-    #     ts_rank_term2 = decayed_argmax.rolling(13).apply(ts_rank_func, raw=False)
-    #
-    #     # 取两项的较大值，再取负值
-    #     return -1 * np.maximum(ts_rank_term1, ts_rank_term2)
+    @BaseFactor.register_factor(name='alpha_96')
+    @staticmethod
+    def alpha_96(close: pd.Series, vwap: pd.Series, volume: pd.Series) -> pd.Series:
+        """
+        Alpha#96: (max(Ts_Rank(decay_linear(correlation(rank(vwap), rank(volume), 3.83878), 4.16783), 8.38151), Ts_Rank(decay_linear(Ts_ArgMax(correlation(Ts_Rank(close, 7.45404), Ts_Rank(adv60, 4.13242), 3.65459), 12.6556), 14.0365), 13.4143)) * -1)
+
+        加权平均价排名与成交量排名的4日相关系数的4日线性衰减的8日时序排名，与收盘价7日时序排名与60日均量4日时序排名的4日相关系数的13日最大值位置的14日线性衰减的13日时序排名，取两者较大值，再取负值。
+
+        Args:
+            close: 收盘价序列
+            vwap: 成交量加权平均价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#96因子值
+        """
+
+        # 线性衰减函数
+        def decay_linear(series, window):
+            weights = np.arange(1, window + 1) / window
+            weights = weights[::-1]  # 反转权重使最近的观测值权重最大
+
+            result = pd.Series(index=series.index)
+            for i in range(window - 1, len(series)):
+                if i < window - 1:
+                    continue
+                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
+            return result
+
+        # 时序排名函数
+        def ts_rank_func(x):
+            return pd.Series(x).rank(pct=True).iloc[-1]
+
+        # 时序最大值位置函数
+        def ts_argmax(x):
+            return np.argmax(x[-13:]) if len(x) >= 13 else np.nan
+
+        # 计算vwap排名与volume排名的4日相关系数
+        rank_vwap = vwap.rank(pct=True)
+        rank_volume = volume.rank(pct=True)
+
+        corr1 = rank_vwap.rolling(4).corr(rank_volume)
+
+        # 计算相关系数的4日线性衰减的8日时序排名
+        decayed_corr1 = decay_linear(corr1, 4)
+        ts_rank_term1 = decayed_corr1.rolling(8).apply(ts_rank_func, raw=False)
+
+        # 计算close的7日时序排名
+        ts_rank_close = close.rolling(7).apply(ts_rank_func, raw=False)
+
+        # 计算60日均量
+        adv60 = volume.rolling(60).mean()
+
+        # 计算adv60的4日时序排名
+        ts_rank_adv60 = adv60.rolling(4).apply(ts_rank_func, raw=False)
+
+        # 计算两个时序排名的4日相关系数
+        corr2 = ts_rank_close.rolling(4).corr(ts_rank_adv60)
+
+        # 计算相关系数的13日最大值位置
+        argmax_corr = corr2.rolling(13).apply(ts_argmax, raw=True)
+
+        # 计算argmax_corr的14日线性衰减的13日时序排名
+        decayed_argmax = decay_linear(argmax_corr, 14)
+        ts_rank_term2 = decayed_argmax.rolling(13).apply(ts_rank_func, raw=False)
+
+        # 取两项的较大值，再取负值
+        return -1 * np.maximum(ts_rank_term1, ts_rank_term2)
 
     # @BaseFactor.register_factor(name='alpha_97')
     # @staticmethod
@@ -3992,16 +3937,17 @@ class WorldQuantFactors(BaseFactor):
     #     Returns:
     #         Alpha#97因子值
     #     """
+    #
     #     # 线性衰减函数
     #     def decay_linear(series, window):
     #         weights = np.arange(1, window + 1) / window
     #         weights = weights[::-1]  # 反转权重使最近的观测值权重最大
     #
     #         result = pd.Series(index=series.index)
-    #         for i in range(window-1, len(series)):
-    #             if i < window-1:
+    #         for i in range(window - 1, len(series)):
+    #             if i < window - 1:
     #                 continue
-    #             result.iloc[i] = np.nansum(series.iloc[i-window+1:i+1].values * weights)
+    #             result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
     #         return result
     #
     #     # 时序排名函数
@@ -4042,75 +3988,76 @@ class WorldQuantFactors(BaseFactor):
     #     # 计算差值，取负值
     #     return -1 * (rank_term1 - ts_rank_term2)
 
-    # @BaseFactor.register_factor(name='alpha_98')
-    # @staticmethod
-    # def alpha_98(open_price: pd.Series, vwap: pd.Series, volume: pd.Series) -> pd.Series:
-    #     """
-    #     Alpha#98: (rank(decay_linear(correlation(vwap, sum(adv5, 26.4719), 4.58418), 7.18088)) - rank(decay_linear(Ts_Rank(Ts_ArgMin(correlation(rank(open), rank(adv15), 20.8187), 8.62571), 6.95668), 8.07206)))
-    #
-    #     加权平均价与5日均量26日累积的5日相关系数的7日线性衰减的排名，减去开盘价排名与15日均量排名的21日相关系数的9日最小值位置的7日时序排名的8日线性衰减的排名。
-    #
-    #     Args:
-    #         open_price: 开盘价序列
-    #         volume: 成交量序列
-    #     Returns:
-    #         Alpha#98因子值
-    #     """
-    #     # 线性衰减函数
-    #     def decay_linear(series, window):
-    #         weights = np.arange(1, window + 1) / window
-    #         weights = weights[::-1]  # 反转权重使最近的观测值权重最大
-    #
-    #         result = pd.Series(index=series.index)
-    #         for i in range(window-1, len(series)):
-    #             if i < window-1:
-    #                 continue
-    #             result.iloc[i] = np.nansum(series.iloc[i-window+1:i+1].values * weights)
-    #         return result
-    #
-    #     # 时序排名函数
-    #     def ts_rank_func(x):
-    #         return pd.Series(x).rank(pct=True).iloc[-1]
-    #
-    #     # 时序最小值位置函数
-    #     def ts_argmin(x):
-    #         return np.argmin(x[-9:]) if len(x) >= 9 else np.nan
-    #
-    #     # 计算5日均量
-    #     adv5 = volume.rolling(5).mean()
-    #
-    #     # 计算adv5的26日累积
-    #     sum_adv5 = adv5.rolling(26).sum()
-    #
-    #     # 计算vwap与sum_adv5的5日相关系数
-    #     corr1 = vwap.rolling(5).corr(sum_adv5)
-    #
-    #     # 计算相关系数的7日线性衰减的排名
-    #     decayed_corr1 = decay_linear(corr1, 7)
-    #     rank_term1 = decayed_corr1.rank(pct=True)
-    #
-    #     # 计算open排名与adv15排名的21日相关系数
-    #     rank_open = open_price.rank(pct=True)
-    #
-    #     # 计算15日均量
-    #     adv15 = volume.rolling(15).mean()
-    #
-    #     rank_adv15 = adv15.rank(pct=True)
-    #
-    #     corr2 = rank_open.rolling(21).corr(rank_adv15)
-    #
-    #     # 计算相关系数的9日最小值位置
-    #     argmin_corr = corr2.rolling(9).apply(ts_argmin, raw=True)
-    #
-    #     # 计算argmin_corr的7日时序排名
-    #     ts_rank_argmin = argmin_corr.rolling(7).apply(ts_rank_func, raw=False)
-    #
-    #     # 计算ts_rank_argmin的8日线性衰减的排名
-    #     decayed_ts_rank = decay_linear(ts_rank_argmin, 8)
-    #     rank_term2 = decayed_ts_rank.rank(pct=True)
-    #
-    #     # 计算差值
-    #     return rank_term1 - rank_term2
+    @BaseFactor.register_factor(name='alpha_98')
+    @staticmethod
+    def alpha_98(open_price: pd.Series, vwap: pd.Series, volume: pd.Series) -> pd.Series:
+        """
+        Alpha#98: (rank(decay_linear(correlation(vwap, sum(adv5, 26.4719), 4.58418), 7.18088)) - rank(decay_linear(Ts_Rank(Ts_ArgMin(correlation(rank(open), rank(adv15), 20.8187), 8.62571), 6.95668), 8.07206)))
+
+        加权平均价与5日均量26日累积的5日相关系数的7日线性衰减的排名，减去开盘价排名与15日均量排名的21日相关系数的9日最小值位置的7日时序排名的8日线性衰减的排名。
+
+        Args:
+            open_price: 开盘价序列
+            volume: 成交量序列
+        Returns:
+            Alpha#98因子值
+        """
+
+        # 线性衰减函数
+        def decay_linear(series, window):
+            weights = np.arange(1, window + 1) / window
+            weights = weights[::-1]  # 反转权重使最近的观测值权重最大
+
+            result = pd.Series(index=series.index)
+            for i in range(window - 1, len(series)):
+                if i < window - 1:
+                    continue
+                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
+            return result
+
+        # 时序排名函数
+        def ts_rank_func(x):
+            return pd.Series(x).rank(pct=True).iloc[-1]
+
+        # 时序最小值位置函数
+        def ts_argmin(x):
+            return np.argmin(x[-9:]) if len(x) >= 9 else np.nan
+
+        # 计算5日均量
+        adv5 = volume.rolling(5).mean()
+
+        # 计算adv5的26日累积
+        sum_adv5 = adv5.rolling(26).sum()
+
+        # 计算vwap与sum_adv5的5日相关系数
+        corr1 = vwap.rolling(5).corr(sum_adv5)
+
+        # 计算相关系数的7日线性衰减的排名
+        decayed_corr1 = decay_linear(corr1, 7)
+        rank_term1 = decayed_corr1.rank(pct=True)
+
+        # 计算open排名与adv15排名的21日相关系数
+        rank_open = open_price.rank(pct=True)
+
+        # 计算15日均量
+        adv15 = volume.rolling(15).mean()
+
+        rank_adv15 = adv15.rank(pct=True)
+
+        corr2 = rank_open.rolling(21).corr(rank_adv15)
+
+        # 计算相关系数的9日最小值位置
+        argmin_corr = corr2.rolling(9).apply(ts_argmin, raw=True)
+
+        # 计算argmin_corr的7日时序排名
+        ts_rank_argmin = argmin_corr.rolling(7).apply(ts_rank_func, raw=False)
+
+        # 计算ts_rank_argmin的8日线性衰减的排名
+        decayed_ts_rank = decay_linear(ts_rank_argmin, 8)
+        rank_term2 = decayed_ts_rank.rank(pct=True)
+
+        # 计算差值
+        return rank_term1 - rank_term2
 
     @BaseFactor.register_factor(name='alpha_99')
     @staticmethod
@@ -4152,65 +4099,65 @@ class WorldQuantFactors(BaseFactor):
 
         return result
 
-    @BaseFactor.register_factor(name='alpha_100')
-    @staticmethod
-    def alpha_100(high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series) -> pd.Series:
-        """
-        Alpha#100: (0 - (1 * (((1.5 * scale(indneutralize(indneutralize(rank(((((close - low) - (high - close)) / (high - low)) * volume)), IndClass.subindustry), IndClass.subindustry))) - scale(indneutralize((correlation(close, rank(adv20), 5) - rank(ts_argmin(close, 30))), IndClass.subindustry))) * (volume / adv20))))
-        
-        价格位置指标乘以成交量的行业中性化的1.5倍，减去收盘价与20日均量排名的5日相关系数与收盘价30日最小值位置排名之差的行业中性化，再乘以成交量与20日均量之比。
-        
-        Args:
-            high: 最高价序列
-            low: 最低价序列
-            close: 收盘价序列
-            volume: 成交量序列
-        Returns:
-            Alpha#100因子值
-        """
-
-        # 标准化函数
-        def scale(x):
-            return (x - x.mean()) / (x.std() + 1e-12)
-
-        # 时序最小值位置函数
-        def ts_argmin(x):
-            return np.argmin(x[-30:]) if len(x) >= 30 else np.nan
-
-        # 计算价格位置指标
-        price_position = ((close - low) - (high - close)) / (high - low + 1e-12)
-        price_vol = price_position * volume
-
-        # 计算price_vol的排名
-        rank_price_vol = price_vol.rank(pct=True)
-
-        # 由于无法实现行业中性化，使用原始rank_price_vol并进行标准化
-        scale_term1 = scale(rank_price_vol) * 1.5
-
-        # 计算20日均量
-        adv20 = volume.rolling(20).mean()
-
-        # 计算adv20的排名
-        rank_adv20 = adv20.rank(pct=True)
-
-        # 计算close与rank_adv20的5日相关系数
-        corr = close.rolling(5).corr(rank_adv20)
-
-        # 计算close的30日最小值位置的排名
-        argmin_close = close.rolling(30).apply(ts_argmin, raw=True)
-        rank_argmin = argmin_close.rank(pct=True)
-
-        # 计算corr与rank_argmin的差
-        diff = corr - rank_argmin
-
-        # 由于无法实现行业中性化，使用原始diff并进行标准化
-        scale_term2 = scale(diff)
-
-        # 计算成交量与20日均量之比
-        volume_ratio = volume / (adv20 + 1e-12)
-
-        # 计算最终结果
-        return -1 * ((scale_term1 - scale_term2) * volume_ratio)
+    # @BaseFactor.register_factor(name='alpha_100')
+    # @staticmethod
+    # def alpha_100(high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series) -> pd.Series:
+    #     """
+    #     Alpha#100: (0 - (1 * (((1.5 * scale(indneutralize(indneutralize(rank(((((close - low) - (high - close)) / (high - low)) * volume)), IndClass.subindustry), IndClass.subindustry))) - scale(indneutralize((correlation(close, rank(adv20), 5) - rank(ts_argmin(close, 30))), IndClass.subindustry))) * (volume / adv20))))
+    #
+    #     价格位置指标乘以成交量的行业中性化的1.5倍，减去收盘价与20日均量排名的5日相关系数与收盘价30日最小值位置排名之差的行业中性化，再乘以成交量与20日均量之比。
+    #
+    #     Args:
+    #         high: 最高价序列
+    #         low: 最低价序列
+    #         close: 收盘价序列
+    #         volume: 成交量序列
+    #     Returns:
+    #         Alpha#100因子值
+    #     """
+    #
+    #     # 标准化函数
+    #     def scale(x):
+    #         return (x - x.mean()) / (x.std() + 1e-12)
+    #
+    #     # 时序最小值位置函数
+    #     def ts_argmin(x):
+    #         return np.argmin(x[-30:]) if len(x) >= 30 else np.nan
+    #
+    #     # 计算价格位置指标
+    #     price_position = ((close - low) - (high - close)) / (high - low + 1e-12)
+    #     price_vol = price_position * volume
+    #
+    #     # 计算price_vol的排名
+    #     rank_price_vol = price_vol.rank(pct=True)
+    #
+    #     # 由于无法实现行业中性化，使用原始rank_price_vol并进行标准化
+    #     scale_term1 = scale(rank_price_vol) * 1.5
+    #
+    #     # 计算20日均量
+    #     adv20 = volume.rolling(20).mean()
+    #
+    #     # 计算adv20的排名
+    #     rank_adv20 = adv20.rank(pct=True)
+    #
+    #     # 计算close与rank_adv20的5日相关系数
+    #     corr = close.rolling(5).corr(rank_adv20)
+    #
+    #     # 计算close的30日最小值位置的排名
+    #     argmin_close = close.rolling(30).apply(ts_argmin, raw=True)
+    #     rank_argmin = argmin_close.rank(pct=True)
+    #
+    #     # 计算corr与rank_argmin的差
+    #     diff = corr - rank_argmin
+    #
+    #     # 由于无法实现行业中性化，使用原始diff并进行标准化
+    #     scale_term2 = scale(diff)
+    #
+    #     # 计算成交量与20日均量之比
+    #     volume_ratio = volume / (adv20 + 1e-12)
+    #
+    #     # 计算最终结果
+    #     return -1 * ((scale_term1 - scale_term2) * volume_ratio)
 
     @BaseFactor.register_factor(name='alpha_101')
     @staticmethod

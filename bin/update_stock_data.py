@@ -131,7 +131,7 @@ def main():
     try:
         update_database(args, logger=logger, frequency='daily')
         update_database(args, logger=logger, frequency='5min')
-        update_daily_vwap(args, logger=logger, start_date='2020-03-16',
+        update_daily_vwap(args, logger=logger, start_date='2025-03-01',
                           end_date=datetime.date.today().strftime("%Y-%m-%d"))
     except KeyboardInterrupt:
         print("\n用户终端更新过程")

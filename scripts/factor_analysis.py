@@ -19,7 +19,6 @@
     start_date: 起始日期
     end_date: 结束日期
 """
-import datetime
 import os
 import sys
 from pathlib import Path
@@ -142,7 +141,7 @@ def run_factor_analysis(
         logger.info("\n" + "-" * 80)
         logger.info(f"▶️ 正在分析因子: {factor_name}")
         logger.info(f"├─ 开始时间: {datetime.datetime.now().strftime('%H:%M:%S')}")
-        
+
         try:
             # 计算因子值
             factor_values = {}
@@ -284,36 +283,36 @@ def print_excellent_factors(factor_results: List[dict]) -> None:
         logger.info("优秀因子汇总 (满足至少3项标准)")
         logger.info("=" * 100)
         logger.info(excellent_factors)
-        
+
         # 创建results目录（如果不存在）
         results_dir = os.path.join("results", datetime.now().strftime("%Y%m%d"))
         os.makedirs(results_dir, exist_ok=True)
-        
+
         # 导出优秀因子到Excel文件
         excel_path = os.path.join(results_dir, "excellent_factors.xlsx")
-        
+
         # 创建Excel写入器
         with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
             # 写入优秀因子表
             excellent_factors.to_excel(writer, sheet_name='优秀因子', index=False)
-            
+
             # 写入所有因子表
             formatted_df.to_excel(writer, sheet_name='所有因子', index=False)
-            
+
             # 写入评价标准说明
             criteria_df = pd.DataFrame({
                 '评价标准': ['强有效', '高IR值', '方向一致', '区分能力', '高胜率', '优秀度'],
                 '说明': [
-                    'IC均值 > 0.05', 
-                    'IR > 1.0', 
-                    'IC正比例 > 55%', 
-                    '多空组合收益 > 0.5%', 
+                    'IC均值 > 0.05',
+                    'IR > 1.0',
+                    'IC正比例 > 55%',
+                    '多空组合收益 > 0.5%',
                     '顶层组胜率 > 55%',
                     '满足上述标准的数量'
                 ]
             })
             criteria_df.to_excel(writer, sheet_name='评价标准', index=False)
-        
+
         logger.info(f"✅ 已将优秀因子汇总导出至: {excel_path}")
 
     # 输出评价标准说明
@@ -364,22 +363,26 @@ def main():
 
 
 if __name__ == "__main__":
-    import datetime
     # main()
 
-    # stock_codes = ["sh.605300", "sz.300490", "sh.603336", "sh.600519", "sz.000858",
-    #                "sh.601398", "sz.000651", "sh.601318", "sz.000333", "sh.600036"]
-    start_date = (datetime.date.today() - datetime.timedelta(days=730)).strftime('%Y-%m-%d')
+    import datetime
+
+    start_date = (datetime.date.today() - datetime.timedelta(days=1100)).strftime('%Y-%m-%d')
     end_date = datetime.date.today().strftime("%Y-%m-%d")
     fetcher = StockDataFetcher()
     # 股票至少已经上市1年
-    stock_codes = fetcher.get_stock_list_with_cond(pool_name="no_st", ipo_date="2024-01-01", min_amount=50000000, end_date=datetime.datetime.strptime(end_date, "%Y-%m-%d").date()).code.to_list()
+    stock_codes = fetcher.get_stock_list_with_cond(
+        pool_name="no_st",
+        ipo_date="2024-01-01",
+        min_amount=30000000,
+        end_date=datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
+    ).code.to_list()
 
     # 测试
     # stock_codes = fetcher.get_stock_list(pool_name="sz50").code.to_list()
 
     run_factor_analysis(
-        factor_name="alpha_37",
+        factor_name="",
         stock_codes=stock_codes,
         start_date=start_date,
         end_date=end_date,
