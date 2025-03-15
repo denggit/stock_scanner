@@ -42,16 +42,21 @@ class StockDataFetcher:
         """
         if period.lower().startswith('d'):
             df = self.db.get_stock_daily(code=code, start_date=start_date, end_date=end_date, adjust=adjust)
+            # 把数字型数据改为float
+            numeric_columns = ['open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn', 'pct_chg',
+                               'pe_ttm',
+                               'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm']
         # elif period.lower().startswith('w'):
         #     df = self.db.get_stock_weekly(code=code, start_date=start_date, end_date=end_date)
         # elif period.lower().startswith('m'):
         #     df = self.db.get_stock_monthly(code=code, start_date=start_date, end_date=end_date)
+        elif period.lower() in ('5min', '5'):
+            df = self.db.get_stock_5min(code=code, start_date=start_date, end_date=end_date, adjust=adjust)
+            # 把数字型数据改为float
+            numeric_columns = ['open', 'high', 'low', 'close', 'volume', 'amount', 'vwap']
         else:
             raise ValueError(f"Invalid period: {period}")
 
-        # 把数字型数据改为float
-        numeric_columns = ['open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn', 'pct_chg', 'pe_ttm',
-                           'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm']
         if len(df) == 0:
             logging.warning(f"No data found for code: {code}. Please Update Database")
             return df

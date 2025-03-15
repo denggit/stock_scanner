@@ -6,10 +6,10 @@
 @File       : update_stock_data.py
 @Description: 
 """
+import datetime
 import os
 import sys
 from pathlib import Path
-
 
 root_dir = Path(__file__).parent.parent.absolute()
 sys.path.append(str(root_dir))
@@ -30,16 +30,16 @@ from backend.utils.logger import setup_logger
 dotenv.load_dotenv()
 
 
-def update_database(args, logger):
+def update_database(args, logger, frequency):
     """更新数据库"""
 
     try:
-        logger.info(f"更新数据库: {args.frequency}")
+        logger.info(f"更新数据库: {frequency}")
         start_time = time.time()
 
         data_manager = DataUpdateManager()
         stock_list = data_manager.get_stock_list()
-        if args.frequency in ('daily', 'd'):
+        if frequency in ('daily', 'd'):
             # 日线数据需要更新股票列表，其他数据避免重复更新股票列表
             data_manager.update_stock_list(stock_list)
             logger.info("更新股票列表完成")
@@ -49,14 +49,13 @@ def update_database(args, logger):
         with tqdm(total=total_stocks * 2, desc="更新数据库", unit="份数据") as pbar:
             # 更新数据
             result = data_manager.update_all_stocks(force_full_update=args.full,
-                                                    frequency=args.frequency,
+                                                    frequency=frequency,
                                                     progress_callback=lambda: pbar.update(1))
 
         end_time = time.time()
         elapsed_time = int(end_time - start_time)
 
         # 显示最终结果
-        logger.info("更新数据库完成")
         logger.info(f"更新数据库完成，耗时 {format_info.time(elapsed_time)}")
         logger.info(f"处理速度：{total_stocks / elapsed_time:.2f} 只/秒")
 
@@ -71,21 +70,69 @@ def update_database(args, logger):
         sys.exit(1)
 
 
+def update_daily_vwap(args, logger, start_date, end_date):
+    """更新日线数据的vwap值"""
+    try:
+        logger.info(f"更新日线vwap值")
+        start_time = time.time()
+
+        data_manager = DataUpdateManager()
+        stock_list = data_manager.get_stock_list()
+        total_stocks = len(stock_list)
+
+        # 创建进度条，因为要更新不复权和后复权两个股票库，所以total * 2
+        with tqdm(total=total_stocks * 2, desc="更新日线数据的vwap值", unit="份数据") as pbar:
+            # 创建两个线程分别处理不复权和后复权数据
+            import threading
+
+            # 定义线程执行的函数
+            def update_with_adjust(adjust):
+                dm = DataUpdateManager()  # 每个线程创建独立的DataUpdateManager实例
+                dm.update_daily_vwap(start_date=start_date, end_date=end_date, adjust=adjust,
+                                     progress_callback=lambda: pbar.update(1))
+
+            # 创建两个线程
+            thread_no_adjust = threading.Thread(target=update_with_adjust, args=('3',))
+            thread_back_adjust = threading.Thread(target=update_with_adjust, args=('1',))
+
+            # 启动线程
+            thread_no_adjust.start()
+            thread_back_adjust.start()
+
+            # 等待两个线程完成
+            thread_no_adjust.join()
+            thread_back_adjust.join()
+
+        end_time = time.time()
+        elapsed_time = int(end_time - start_time)
+
+        # 显示最终结果
+        logger.info(f"更新日线vwap值完成，耗时 {format_info.time(elapsed_time)}")
+        logger.info(f"处理速度：{total_stocks / elapsed_time:.2f} 只/秒")
+    except Exception as e:
+        logger.exception(f"更新日线vwap值失败: {e}")
+        if not args.silent:
+            traceback.print_exc()
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(description="更新股票数据库")
     parser.add_argument("--full", action="store_true", help="强制全量更新(默认增量更新)")
     parser.add_argument("--silent", action="store_true", help="静默模式，减少输出信息")
-    parser.add_argument("--frequency", default="daily", help="更新频率，默认为日频(daily)")
     args = parser.parse_args()
 
     # 设置日志
     if args.silent:
-        logger = setup_logger(f"update_stock_data_{args.frequency}", log_level=logging.WARNING, set_root_logger=True)
+        logger = setup_logger(f"update_stock_data", log_level=logging.WARNING, set_root_logger=True)
     else:
-        logger = setup_logger(f"update_stock_data_{args.frequency}", log_level=logging.INFO, set_root_logger=True)
+        logger = setup_logger(f"update_stock_data", log_level=logging.INFO, set_root_logger=True)
 
     try:
-        update_database(args, logger=logger)
+        update_database(args, logger=logger, frequency='daily')
+        update_database(args, logger=logger, frequency='5min')
+        update_daily_vwap(args, logger=logger, start_date='2020-03-16',
+                          end_date=datetime.date.today().strftime("%Y-%m-%d"))
     except KeyboardInterrupt:
         print("\n用户终端更新过程")
         sys.exit(1)
@@ -93,7 +140,7 @@ def main():
 
 if __name__ == "__main__":
     main()
-
+    #
     # class A:
     #     full = False
     #     silent = False
@@ -102,4 +149,6 @@ if __name__ == "__main__":
     # args = A()
     # args.full = False
     # args.silent = False
-    # update_database(args, setup_logger("update_database", log_level=logging.INFO))
+    # # update_database(args, setup_logger("update_database", log_level=logging.INFO))
+    # update_daily_vwap(args, setup_logger("update_database", log_level=logging.INFO), start_date='2020-03-16',
+    #                   end_date=datetime.date.today().strftime("%Y-%m-%d"))

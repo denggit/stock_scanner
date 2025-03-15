@@ -235,6 +235,7 @@ class DatabaseManager:
                     ps_ttm DECIMAL(10, 2),
                     pcf_ncf_ttm DECIMAL(10, 2),
                     is_st SMALLINT,
+                    vwap DECIMAL(10, 2),
                     PRIMARY KEY (code, trade_date)
                 ) PARTITION BY RANGE (MONTH(trade_date)) (
                     PARTITION p1 VALUES LESS THAN (4),
@@ -383,8 +384,10 @@ class DatabaseManager:
                 self._ensure_kline_table(period, year, adjust)
 
                 # 准备SQL语句
-                columns = ','.join(required_columns)
-                placeholders = ','.join(['%s'] * len(required_columns))
+                # 避免新增的year列所以舍弃最后一个值
+                columns = stock_df.copy().columns.to_list()[:-1]
+                columns_str = ','.join(columns)
+                placeholders = ','.join(['%s'] * len(columns))
 
                 # 确定不包含在UPDATE中的主键列
                 pk_columns = ['code', 'trade_date']
@@ -393,15 +396,15 @@ class DatabaseManager:
                     pk_columns.append('time')
 
                 # 构建UPDATE部分
-                update_cols = [f'{col} = VALUES({col})' for col in required_columns if col not in pk_columns]
+                update_cols = [f'{col} = VALUES({col})' for col in columns if col not in pk_columns]
                 update_part = ', '.join(update_cols)
 
-                insert_sql = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders}) ON DUPLICATE KEY UPDATE {update_part}"
+                insert_sql = f"INSERT INTO {table_name} ({columns_str}) VALUES ({placeholders}) ON DUPLICATE KEY UPDATE {update_part}"
 
                 # 准备数据
                 values = []
                 for _, row in group.iterrows():
-                    value = tuple(row[col] for col in required_columns)
+                    value = tuple(row[col] for col in columns)
                     values.append(value)
 
                 # 执行更新
@@ -629,6 +632,60 @@ class DatabaseManager:
             return pd.concat(all_data, ignore_index=True)
         else:
             return pd.DataFrame()
+
+    def get_stock_5min(self, code: str, start_date: str, end_date: str, adjust: str = '3') -> pd.DataFrame:
+        """获取股票5分钟K线数据
+        
+        Args:
+            code: 股票代码
+            start_date: 开始日期，格式：YYYY-MM-DD
+            end_date: 结束日期，格式：YYYY-MM-DD
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
+            
+        Returns:
+            包含5分钟K线数据的DataFrame
+        """
+        self._ensure_connection()
+        
+        # 确定查询的年份范围
+        start_year = pd.to_datetime(start_date).year
+        end_year = pd.to_datetime(end_date).year
+            
+        # 准备存储所有年份数据的DataFrame
+        all_data = []
+        
+        # 遍历每一年获取数据
+        for year in range(start_year, end_year + 1):
+            # 确定表名
+            table_suffix = f"back_{year}" if adjust == '1' else str(year)
+            table_name = f"stock_5min_{table_suffix}"
+            
+            # 检查表是否存在
+            if not self._table_exists(table_name):
+                logging.warning(f"表 {table_name} 不存在，跳过")
+                continue
+                
+            # 构建SQL查询
+            query = f"""
+            SELECT * FROM {table_name}
+            WHERE code = %s AND trade_date BETWEEN %s AND %s 
+            ORDER BY trade_date, time ASC
+            """
+
+            with self.conn.cursor() as cursor:
+                cursor.execute(query, (code, start_date, end_date))
+                result = cursor.fetchall()
+                if result:
+                    df = pd.DataFrame(result, columns=[desc[0] for desc in cursor.description])
+                    all_data.append(df)
+        
+        # 合并所有年份的数据
+        if all_data:
+            return pd.concat(all_data, ignore_index=True)
+        else:
+            # 返回空DataFrame
+            return pd.DataFrame()
+
 
     def _save_financial_data(self, df: pd.DataFrame, table_name: str, columns: list):
         """通用的财务数据保存方法"""

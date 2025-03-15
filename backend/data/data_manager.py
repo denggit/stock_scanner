@@ -17,6 +17,7 @@ from typing import Optional, Dict, Callable, Any
 
 import numpy as np
 import pandas as pd
+from pandas.core.internals import DataManager
 from tqdm import tqdm
 
 from backend.data.database import DatabaseManager
@@ -134,7 +135,8 @@ class DataUpdateManager:
                                                  frequency=frequency, adjust='3')
                     self.__queue_stock_data(code, df, frequency, '3', progress_callback)
                     # 获取后复权数据
-                    df_back = self.__fetch_stock_data(code, force_full_update, trading_calendar, latest_dates_back.get(code),
+                    df_back = self.__fetch_stock_data(code, force_full_update, trading_calendar,
+                                                      latest_dates_back.get(code),
                                                       frequency=frequency, adjust='1')
                     self.__queue_stock_data(code, df_back, frequency, '1', progress_callback)
                 except Exception as e:
@@ -243,7 +245,8 @@ class DataUpdateManager:
 
         # 如果开始日期晚于结束日期，则不更新
         if start_date > end_date:
-            logging.warning(f"股票 {code}_{adjust} 的开始日期 {start_date} 晚于结束日期 {end_date}，不更新。可能源于起始start_date为非交易日")
+            logging.warning(
+                f"股票 {code}_{adjust} 的开始日期 {start_date} 晚于结束日期 {end_date}，不更新。start_date到end_date可能都为非交易日")
             return pd.DataFrame()
 
         start_date = start_date.strftime('%Y-%m-%d')
@@ -979,3 +982,103 @@ class DataUpdateManager:
             'dividStocksPs', 'dividCashStock', 'dividReserveToStockPs'
         ])
         return dividend_data
+
+    def update_daily_vwap(self, start_date: str = None, end_date: str = None, adjust: str = '3', progress_callback=None):
+        """更新日线数据的VWAP值
+
+        从5分钟数据中获取每日15:00:00的VWAP值，更新到日线数据中
+
+        Args:
+            start_date: 开始日期，格式：YYYY-MM-DD，默认为None（从最早数据开始）
+            end_date: 结束日期，格式：YYYY-MM-DD，默认为None（到最新数据结束）
+            adjust: 复权方式，默认为'3'（不复权）
+            progress_callback: 进度回调函数，默认为None
+        """
+        # 获取股票列表
+        stock_list = self.db.get_stock_list()
+        total_stocks = len(stock_list)
+        updated_count = 0
+        failed_count = 0
+        failed_codes = []
+
+        for code in stock_list.code.to_list():
+            try:
+                # 获取日线数据
+                daily_data = self.db.get_stock_daily(code=code, start_date=start_date, end_date=end_date, adjust=adjust)
+                if daily_data.empty:
+                    logging.warning(f"股票 {code} 没有日线数据")
+                    continue
+
+                # 检查vwap列是否存在，如果不存在则添加
+                if 'vwap' not in daily_data.columns:
+                    daily_data['vwap'] = None
+
+                # 获取需要更新vwap的日期
+                dates_to_update = daily_data[daily_data['vwap'].isna()]['trade_date'].tolist()
+
+                if not dates_to_update:
+                    logging.warning(f"股票 {code}_{adjust} 的VWAP数据已是最新")
+                    continue
+
+                # 确定日期范围
+                min_date = min(dates_to_update).strftime('%Y-%m-%d')
+                max_date = max(dates_to_update).strftime('%Y-%m-%d')
+
+                try:
+                    # 使用db.get_stock_5min一次性获取整个日期范围的5分钟数据
+                    min5_data = self.db.get_stock_5min(
+                        code=code,
+                        start_date=min_date,
+                        end_date=max_date,
+                        adjust=adjust
+                    )
+
+                    if not min5_data.empty:
+                        # 筛选出15:00:00的数据
+                        closing_data = min5_data[min5_data['time'].astype(str).str[-8:] == '15:00:00']
+
+                        if not closing_data.empty:
+                            # 创建日期到vwap的映射
+                            vwap_map = dict(zip(closing_data['trade_date'], closing_data['vwap']))
+
+                            # 更新日线数据中的VWAP值
+                            for date in dates_to_update:
+                                if date in vwap_map:
+                                    daily_data.loc[daily_data['trade_date'] == date, 'vwap'] = vwap_map[date]
+                        else:
+                            logging.warning(f"股票 {code}_{adjust} 在日期范围 {min_date} 到 {max_date} 内vwap已全部完成更新")
+
+                except Exception as e:
+                    logging.error(f"获取股票 {code} 的5分钟数据时出错: {e}")
+
+                # 保存更新后的日线数据
+                self.db.update_stock_daily(code, daily_data, adjust)
+                updated_count += 1
+
+            except Exception as e:
+                logging.error(f"处理股票 {code} 的VWAP数据时出错: {e}")
+                failed_count += 1
+                failed_codes.append(code)
+            finally:
+                if progress_callback:
+                    progress_callback()
+
+        logging.info(f"VWAP数据更新完成：")
+        logging.info(f"总共处理：{total_stocks} 只股票")
+        logging.info(f"成功更新：{updated_count} 只")
+        logging.info(f"更新失败：{failed_count} 只")
+        if failed_codes:
+            logging.info(f"失败股票代码：{', '.join(failed_codes)}")
+
+        return {
+            "total": total_stocks,
+            "updated": updated_count,
+            "failed": failed_count,
+            "failed_codes": failed_codes
+        }
+
+
+if __name__ == "__main__":
+    dm = DataUpdateManager()
+    dm.update_daily_vwap(start_date='2020-01-01', end_date='2025-03-15', adjust='3')
+    dm.update_daily_vwap(start_date='2020-01-01', end_date='2025-03-15', adjust='1')
