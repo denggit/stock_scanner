@@ -1069,7 +1069,7 @@ class WorldQuantFactors(BaseFactor):
             # 标准化函数
             def scale(x):
                 """对序列进行标准化"""
-                return (x - x.mean()) / x.std()
+                return ((x - x.mean()) / x.std()).clip(-1000000, 1000000)
 
             return scale(result)
 

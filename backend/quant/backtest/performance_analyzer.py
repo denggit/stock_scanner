@@ -376,10 +376,15 @@ class FactorAnalyzer:
 
             self.group_returns = pd.DataFrame(group_returns)
 
-        # 添加多空组合收益
+        # 添加多空组合收益和纯多头收益
         if num_quantiles > 1 and not self.group_returns.empty:
+            # 多空组合收益（顶层组减底层组）
             long_short = self.group_returns.loc[num_quantiles] - self.group_returns.loc[1]
             self.group_returns.loc['long_short'] = long_short
+            
+            # 纯多头收益（顶层组绝对收益）
+            top_group = self.group_returns.loc[num_quantiles]
+            self.group_returns.loc['top_group'] = top_group
 
         return self.group_returns
 
@@ -695,6 +700,9 @@ class FactorAnalyzer:
                     'long_short_return': self.group_returns.loc['long_short', representative_period]
                     if 'long_short' in self.group_returns.index and representative_period in self.group_returns.columns
                     else np.nan,
+                    'pure_long_return': self.group_returns.loc['top_group', representative_period]
+                    if 'top_group' in self.group_returns.index and representative_period in self.group_returns.columns
+                    else np.nan,
                     'top_group_win_rate': win_rates.loc[5, representative_period]
                     if 5 in win_rates.index and representative_period in win_rates.columns
                     else np.nan,
@@ -982,7 +990,7 @@ class FactorAnalyzer:
                             columns = self.group_returns.columns
                             dates = pd.date_range(end=pd.Timestamp.today(), periods=len(columns))
                             data = {
-                                '最高分位': np.cumprod(1 + self.group_returns.loc[5].values) - 1,
+                                '最高分位(纯多头)': np.cumprod(1 + self.group_returns.loc[5].values) - 1,
                                 '最低分位': np.cumprod(1 + self.group_returns.loc[1].values) - 1,
                                 '多空组合': np.cumprod(1 + self.group_returns.loc['long_short'].values) - 1
                             }
@@ -1005,6 +1013,7 @@ class FactorAnalyzer:
             'ic_ir': f"{report_data['summary'].get('ic_ir', float('nan')):.4f}",
             'ic_pos_rate': f"{report_data['summary'].get('ic_pos_rate', float('nan')) * 100:.2f}%",
             'long_short_return': f"{report_data['summary'].get('long_short_return', float('nan')) * 100:.2f}%",
+            'pure_long_return': f"{report_data['summary'].get('pure_long_return', float('nan')) * 100:.2f}%",
             'top_group_win_rate': f"{report_data['summary'].get('top_group_win_rate', float('nan')) * 100:.2f}%"
         }
 
@@ -1039,6 +1048,7 @@ class FactorAnalyzer:
                 <p>IC IR值: {{summary.ic_ir}} (>1.0为优秀因子, >1.5为极优)</p>
                 <p>IC正比例: {{summary.ic_pos_rate}} (>55%表示方向一致)</p>
                 <p>多空组合收益: {{summary.long_short_return}} (越大表示区分能力越强)</p>
+                <p>纯多头收益: {{summary.pure_long_return}} (顶层组绝对收益)</p>
                 <p>顶层组胜率: {{summary.top_group_win_rate}} (>55%通常认为有效)</p>
             </div>
             

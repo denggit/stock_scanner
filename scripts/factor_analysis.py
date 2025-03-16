@@ -193,6 +193,7 @@ def run_factor_analysis(
                 'ic_ir': report_data['summary'].get('ic_ir', float('nan')),
                 'ic_pos_rate': report_data['summary'].get('ic_pos_rate', float('nan')),
                 'long_short_return': report_data['summary'].get('long_short_return', float('nan')),
+                'pure_long_return': report_data['summary'].get('pure_long_return', float('nan')),
                 'top_group_win_rate': report_data['summary'].get('top_group_win_rate', float('nan'))
             }
             factor_results.append(factor_result)
@@ -239,34 +240,37 @@ def print_excellent_factors(factor_results: List[dict]) -> None:
     # 2. 优秀因子: IR > 1.0
     # 3. 方向一致: IC正比例 > 0.55
     # 4. 区分能力强: 多空组合收益 > 0.5%
-    # 5. 有效: 顶层组胜率 > 0.55
+    # 5. 多头收益高: 纯多头收益 > 0.5%
+    # 6. 有效: 顶层组胜率 > 0.55
 
     # 标记每个指标是否达到优秀标准
     results_df['强有效'] = results_df['ic_mean'] > 0.05
     results_df['高IR值'] = results_df['ic_ir'] > 1.0
     results_df['方向一致'] = results_df['ic_pos_rate'] > 0.55
     results_df['区分能力'] = results_df['long_short_return'] > 0.005
+    results_df['多头收益'] = results_df['pure_long_return'] > 0.005
     results_df['高胜率'] = results_df['top_group_win_rate'] > 0.55
 
     # 计算综合得分 (满足的标准数量)
-    results_df['优秀度'] = results_df[['强有效', '高IR值', '方向一致', '区分能力', '高胜率']].sum(axis=1)
+    results_df['优秀度'] = results_df[['强有效', '高IR值', '方向一致', '区分能力', '多头收益', '高胜率']].sum(axis=1)
 
     # 按优秀度排序
     results_df = results_df.sort_values('优秀度', ascending=False)
 
     # 格式化输出数据
     formatted_df = results_df[['factor_name', 'ic_mean', 'ic_ir', 'ic_pos_rate',
-                               'long_short_return', 'top_group_win_rate', '优秀度']].copy()
+                               'long_short_return', 'pure_long_return', 'top_group_win_rate', '优秀度']].copy()
 
     # 格式化显示
     formatted_df['ic_mean'] = formatted_df['ic_mean'].map(lambda x: f"{x:.4f}")
     formatted_df['ic_ir'] = formatted_df['ic_ir'].map(lambda x: f"{x:.4f}")
     formatted_df['ic_pos_rate'] = formatted_df['ic_pos_rate'].map(lambda x: f"{x:.2%}")
     formatted_df['long_short_return'] = formatted_df['long_short_return'].map(lambda x: f"{x:.2%}")
+    formatted_df['pure_long_return'] = formatted_df['pure_long_return'].map(lambda x: f"{x:.2%}")
     formatted_df['top_group_win_rate'] = formatted_df['top_group_win_rate'].map(lambda x: f"{x:.2%}")
 
     # 重命名列
-    formatted_df.columns = ['因子名称', 'IC均值', 'IR值', 'IC正比例', '多空收益', '顶层胜率', '优秀度']
+    formatted_df.columns = ['因子名称', 'IC均值', 'IR值', 'IC正比例', '多空收益', '纯多头收益', '顶层胜率', '优秀度']
 
     logger.info("\n\n" + "=" * 100)
     logger.info("因子有效性排名")
@@ -321,6 +325,7 @@ def print_excellent_factors(factor_results: List[dict]) -> None:
     logger.info("- 高IR值: IR > 1.0")
     logger.info("- 方向一致: IC正比例 > 55%")
     logger.info("- 区分能力: 多空组合收益 > 0.5%")
+    logger.info("- 多头收益: 纯多头收益 > 0.5%")
     logger.info("- 高胜率: 顶层组胜率 > 55%")
     logger.info("- 优秀度: 满足上述标准的数量")
 
@@ -371,18 +376,18 @@ if __name__ == "__main__":
     end_date = datetime.date.today().strftime("%Y-%m-%d")
     fetcher = StockDataFetcher()
     # 股票至少已经上市1年
-    # stock_codes = fetcher.get_stock_list_with_cond(
-    #     pool_name="no_st",
-    #     ipo_date="2024-01-01",
-    #     min_amount=30000000,
-    #     end_date=datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
-    # ).code.to_list()
+    stock_codes = fetcher.get_stock_list_with_cond(
+        pool_name="no_st",
+        ipo_date="2024-01-01",
+        min_amount=30000000,
+        end_date=datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
+    ).code.to_list()
 
     # 测试
-    stock_codes = fetcher.get_stock_list(pool_name="sz50").code.to_list()
+    # stock_codes = fetcher.get_stock_list(pool_name="sz50").code.to_list()
 
     run_factor_analysis(
-        factor_name="",
+        factor_name="alpha_38",
         stock_codes=stock_codes,
         start_date=start_date,
         end_date=end_date,
