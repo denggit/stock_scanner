@@ -237,7 +237,7 @@ class DataUpdateManager:
             for i in range(total_days):
                 date = (start_date + dt.timedelta(days=i)).strftime("%Y-%m-%d")
                 this_day = trading_calendar[trading_calendar['calendar_date'] == date]
-                if not this_day.empty and this_day.is_trading_day.values[0] == '0':
+                if this_day.empty or this_day.is_trading_day.values[0] == '0':
                     # 如果不是交易日，则跳过
                     start_date = start_date + dt.timedelta(days=1)
                 else:
