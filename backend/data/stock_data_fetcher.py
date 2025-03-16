@@ -44,8 +44,7 @@ class StockDataFetcher:
             df = self.db.get_stock_daily(code=code, start_date=start_date, end_date=end_date, adjust=adjust)
             # 把数字型数据改为float
             numeric_columns = ['open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn', 'pct_chg',
-                               'pe_ttm',
-                               'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm']
+                               'pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm', 'vwap']
         # elif period.lower().startswith('w'):
         #     df = self.db.get_stock_weekly(code=code, start_date=start_date, end_date=end_date)
         # elif period.lower().startswith('m'):
