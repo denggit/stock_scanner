@@ -1052,24 +1052,26 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#28因子值
         """
-        # 计算adv20
-        adv20 = volume.rolling(20).mean()
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid value encountered in reduce')
+            # 计算adv20
+            adv20 = volume.rolling(20).mean()
 
-        # 计算adv20与low的5日相关系数
-        corr = adv20.rolling(5).corr(low)
+            # 计算adv20与low的5日相关系数
+            corr = adv20.rolling(5).corr(low)
 
-        # 计算(high + low) / 2
-        avg_price = (high + low) / 2
+            # 计算(high + low) / 2
+            avg_price = (high + low) / 2
 
-        # 计算结果并标准化
-        result = corr + avg_price - close
+            # 计算结果并标准化
+            result = corr + avg_price - close
 
-        # 标准化函数
-        def scale(x):
-            """对序列进行标准化"""
-            return (x - x.mean()) / x.std()
+            # 标准化函数
+            def scale(x):
+                """对序列进行标准化"""
+                return (x - x.mean()) / x.std()
 
-        return scale(result)
+            return scale(result)
 
     @BaseFactor.register_factor(name='alpha_29')
     @staticmethod
@@ -2539,53 +2541,54 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#71因子值
         """
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid value encountered in reduce')
+            # 线性衰减函数
+            def decay_linear(series, window):
+                weights = np.arange(1, window + 1) / window
+                weights = weights[::-1]  # 反转权重使最近的观测值权重最大
 
-        # 线性衰减函数
-        def decay_linear(series, window):
-            weights = np.arange(1, window + 1) / window
-            weights = weights[::-1]  # 反转权重使最近的观测值权重最大
+                result = pd.Series(index=series.index)
+                for i in range(window - 1, len(series)):
+                    if i < window - 1:
+                        continue
+                    result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
+                return result
 
-            result = pd.Series(index=series.index)
-            for i in range(window - 1, len(series)):
-                if i < window - 1:
-                    continue
-                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
-            return result
+            # 时序排名函数
+            def ts_rank_func(x):
+                return pd.Series(x).rank(pct=True).iloc[-1]
 
-        # 时序排名函数
-        def ts_rank_func(x):
-            return pd.Series(x).rank(pct=True).iloc[-1]
+            # 计算close的3日时序排名
+            ts_rank_close = close.rolling(3).apply(ts_rank_func, raw=False)
 
-        # 计算close的3日时序排名
-        ts_rank_close = close.rolling(3).apply(ts_rank_func, raw=False)
+            # 计算180日均量
+            adv180 = volume.rolling(180).mean()
 
-        # 计算180日均量
-        adv180 = volume.rolling(180).mean()
+            # 计算adv180的12日时序排名
+            ts_rank_adv180 = adv180.rolling(12).apply(ts_rank_func, raw=False)
 
-        # 计算adv180的12日时序排名
-        ts_rank_adv180 = adv180.rolling(12).apply(ts_rank_func, raw=False)
+            # 计算两个时序排名的18日相关系数
+            corr = ts_rank_close.rolling(18).corr(ts_rank_adv180)
 
-        # 计算两个时序排名的18日相关系数
-        corr = ts_rank_close.rolling(18).corr(ts_rank_adv180)
+            # 计算相关系数的4日线性衰减
+            decayed_corr = decay_linear(corr, 4)
 
-        # 计算相关系数的4日线性衰减
-        decayed_corr = decay_linear(corr, 4)
+            # 计算线性衰减的16日时序排名
+            ts_rank_term1 = decayed_corr.rolling(16).apply(ts_rank_func, raw=False)
 
-        # 计算线性衰减的16日时序排名
-        ts_rank_term1 = decayed_corr.rolling(16).apply(ts_rank_func, raw=False)
+            # 计算第二项
+            term2_inner = (low + open_price) - (vwap + vwap)
+            rank_term2 = term2_inner.rank(pct=True) ** 2
 
-        # 计算第二项
-        term2_inner = (low + open_price) - (vwap + vwap)
-        rank_term2 = term2_inner.rank(pct=True) ** 2
+            # 计算rank_term2的16日线性衰减
+            decayed_rank = decay_linear(rank_term2, 16)
 
-        # 计算rank_term2的16日线性衰减
-        decayed_rank = decay_linear(rank_term2, 16)
+            # 计算线性衰减的4日时序排名
+            ts_rank_term2 = decayed_rank.rolling(4).apply(ts_rank_func, raw=False)
 
-        # 计算线性衰减的4日时序排名
-        ts_rank_term2 = decayed_rank.rolling(4).apply(ts_rank_func, raw=False)
-
-        # 取两项的较大值，再取负值
-        return -1 * np.maximum(ts_rank_term1, ts_rank_term2)
+            # 取两项的较大值，再取负值
+            return -1 * np.maximum(ts_rank_term1, ts_rank_term2)
 
     @BaseFactor.register_factor(name='alpha_72')
     @staticmethod
@@ -2603,51 +2606,52 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#72因子值
         """
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid value encountered in reduce')
+            # 线性衰减函数
+            def decay_linear(series, window):
+                weights = np.arange(1, window + 1) / window
+                weights = weights[::-1]  # 反转权重使最近的观测值权重最大
 
-        # 线性衰减函数
-        def decay_linear(series, window):
-            weights = np.arange(1, window + 1) / window
-            weights = weights[::-1]  # 反转权重使最近的观测值权重最大
+                result = pd.Series(index=series.index)
+                for i in range(window - 1, len(series)):
+                    if i < window - 1:
+                        continue
+                    result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
+                return result
 
-            result = pd.Series(index=series.index)
-            for i in range(window - 1, len(series)):
-                if i < window - 1:
-                    continue
-                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
-            return result
+            # 时序排名函数
+            def ts_rank_func(x):
+                return pd.Series(x).rank(pct=True).iloc[-1]
 
-        # 时序排名函数
-        def ts_rank_func(x):
-            return pd.Series(x).rank(pct=True).iloc[-1]
+            # 计算(high + low) / 2
+            price_avg = (high + low) / 2
 
-        # 计算(high + low) / 2
-        price_avg = (high + low) / 2
+            # 计算40日均量
+            adv40 = volume.rolling(40).mean()
 
-        # 计算40日均量
-        adv40 = volume.rolling(40).mean()
+            # 计算price_avg与adv40的9日相关系数
+            corr1 = price_avg.rolling(9).corr(adv40)
 
-        # 计算price_avg与adv40的9日相关系数
-        corr1 = price_avg.rolling(9).corr(adv40)
+            # 计算相关系数的10日线性衰减的排名
+            decayed_corr1 = decay_linear(corr1, 10)
+            rank_term1 = decayed_corr1.rank(pct=True)
 
-        # 计算相关系数的10日线性衰减的排名
-        decayed_corr1 = decay_linear(corr1, 10)
-        rank_term1 = decayed_corr1.rank(pct=True)
+            # 计算vwap的4日时序排名
+            ts_rank_vwap = vwap.rolling(4).apply(ts_rank_func, raw=False)
 
-        # 计算vwap的4日时序排名
-        ts_rank_vwap = vwap.rolling(4).apply(ts_rank_func, raw=False)
+            # 计算volume的19日时序排名
+            ts_rank_volume = volume.rolling(19).apply(ts_rank_func, raw=False)
 
-        # 计算volume的19日时序排名
-        ts_rank_volume = volume.rolling(19).apply(ts_rank_func, raw=False)
+            # 计算两个时序排名的7日相关系数
+            corr2 = ts_rank_vwap.rolling(7).corr(ts_rank_volume)
 
-        # 计算两个时序排名的7日相关系数
-        corr2 = ts_rank_vwap.rolling(7).corr(ts_rank_volume)
+            # 计算相关系数的3日线性衰减的排名
+            decayed_corr2 = decay_linear(corr2, 3)
+            rank_term2 = decayed_corr2.rank(pct=True)
 
-        # 计算相关系数的3日线性衰减的排名
-        decayed_corr2 = decay_linear(corr2, 3)
-        rank_term2 = decayed_corr2.rank(pct=True)
-
-        # 计算比值
-        return rank_term1 / (rank_term2 + 1e-12)
+            # 计算比值
+            return rank_term1 / (rank_term2 + 1e-12)
 
     @BaseFactor.register_factor(name='alpha_73')
     @staticmethod
@@ -2860,41 +2864,42 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#77因子值
         """
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid value encountered in reduce')
+            # 线性衰减函数
+            def decay_linear(series, window):
+                weights = np.arange(1, window + 1) / window
+                weights = weights[::-1]  # 反转权重使最近的观测值权重最大
 
-        # 线性衰减函数
-        def decay_linear(series, window):
-            weights = np.arange(1, window + 1) / window
-            weights = weights[::-1]  # 反转权重使最近的观测值权重最大
+                result = pd.Series(index=series.index)
+                for i in range(window - 1, len(series)):
+                    if i < window - 1:
+                        continue
+                    result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
+                return result
 
-            result = pd.Series(index=series.index)
-            for i in range(window - 1, len(series)):
-                if i < window - 1:
-                    continue
-                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
-            return result
+            # 计算(high + low) / 2
+            price_avg = (high + low) / 2
 
-        # 计算(high + low) / 2
-        price_avg = (high + low) / 2
+            # 计算价格因子
+            price_factor = ((price_avg + high) - (vwap + high))
 
-        # 计算价格因子
-        price_factor = ((price_avg + high) - (vwap + high))
+            # 计算price_factor的20日线性衰减的排名
+            decayed_price = decay_linear(price_factor, 20)
+            rank_term1 = decayed_price.rank(pct=True)
 
-        # 计算price_factor的20日线性衰减的排名
-        decayed_price = decay_linear(price_factor, 20)
-        rank_term1 = decayed_price.rank(pct=True)
+            # 计算40日均量
+            adv40 = volume.rolling(40).mean()
 
-        # 计算40日均量
-        adv40 = volume.rolling(40).mean()
+            # 计算price_avg与adv40的3日相关系数
+            corr = price_avg.rolling(3).corr(adv40)
 
-        # 计算price_avg与adv40的3日相关系数
-        corr = price_avg.rolling(3).corr(adv40)
+            # 计算corr的6日线性衰减的排名
+            decayed_corr = decay_linear(corr, 6)
+            rank_term2 = decayed_corr.rank(pct=True)
 
-        # 计算corr的6日线性衰减的排名
-        decayed_corr = decay_linear(corr, 6)
-        rank_term2 = decayed_corr.rank(pct=True)
-
-        # 取两项的较小值，再取负值
-        return -1 * np.minimum(rank_term1, rank_term2)
+            # 取两项的较小值，再取负值
+            return -1 * np.minimum(rank_term1, rank_term2)
 
     @BaseFactor.register_factor(name='alpha_78')
     @staticmethod
@@ -3220,7 +3225,7 @@ class WorldQuantFactors(BaseFactor):
         def signed_power(base, exponent):
             return np.sign(base) * (np.abs(base) ** exponent)
 
-        return signed_power(ts_rank_diff, delta_close)
+        return signed_power(ts_rank_diff, delta_close).clip(-1000000, 1000000)
 
     @BaseFactor.register_factor(name='alpha_85')
     @staticmethod
@@ -4002,62 +4007,63 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#98因子值
         """
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid value encountered in reduce')
+            # 线性衰减函数
+            def decay_linear(series, window):
+                weights = np.arange(1, window + 1) / window
+                weights = weights[::-1]  # 反转权重使最近的观测值权重最大
 
-        # 线性衰减函数
-        def decay_linear(series, window):
-            weights = np.arange(1, window + 1) / window
-            weights = weights[::-1]  # 反转权重使最近的观测值权重最大
+                result = pd.Series(index=series.index)
+                for i in range(window - 1, len(series)):
+                    if i < window - 1:
+                        continue
+                    result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
+                return result
 
-            result = pd.Series(index=series.index)
-            for i in range(window - 1, len(series)):
-                if i < window - 1:
-                    continue
-                result.iloc[i] = np.nansum(series.iloc[i - window + 1:i + 1].values * weights)
-            return result
+            # 时序排名函数
+            def ts_rank_func(x):
+                return pd.Series(x).rank(pct=True).iloc[-1]
 
-        # 时序排名函数
-        def ts_rank_func(x):
-            return pd.Series(x).rank(pct=True).iloc[-1]
+            # 时序最小值位置函数
+            def ts_argmin(x):
+                return np.argmin(x[-9:]) if len(x) >= 9 else np.nan
 
-        # 时序最小值位置函数
-        def ts_argmin(x):
-            return np.argmin(x[-9:]) if len(x) >= 9 else np.nan
+            # 计算5日均量
+            adv5 = volume.rolling(5).mean()
 
-        # 计算5日均量
-        adv5 = volume.rolling(5).mean()
+            # 计算adv5的26日累积
+            sum_adv5 = adv5.rolling(26).sum()
 
-        # 计算adv5的26日累积
-        sum_adv5 = adv5.rolling(26).sum()
+            # 计算vwap与sum_adv5的5日相关系数
+            corr1 = vwap.rolling(5).corr(sum_adv5)
 
-        # 计算vwap与sum_adv5的5日相关系数
-        corr1 = vwap.rolling(5).corr(sum_adv5)
+            # 计算相关系数的7日线性衰减的排名
+            decayed_corr1 = decay_linear(corr1, 7)
+            rank_term1 = decayed_corr1.rank(pct=True)
 
-        # 计算相关系数的7日线性衰减的排名
-        decayed_corr1 = decay_linear(corr1, 7)
-        rank_term1 = decayed_corr1.rank(pct=True)
+            # 计算open排名与adv15排名的21日相关系数
+            rank_open = open_price.rank(pct=True)
 
-        # 计算open排名与adv15排名的21日相关系数
-        rank_open = open_price.rank(pct=True)
+            # 计算15日均量
+            adv15 = volume.rolling(15).mean()
 
-        # 计算15日均量
-        adv15 = volume.rolling(15).mean()
+            rank_adv15 = adv15.rank(pct=True)
 
-        rank_adv15 = adv15.rank(pct=True)
+            corr2 = rank_open.rolling(21).corr(rank_adv15)
 
-        corr2 = rank_open.rolling(21).corr(rank_adv15)
+            # 计算相关系数的9日最小值位置
+            argmin_corr = corr2.rolling(9).apply(ts_argmin, raw=True)
 
-        # 计算相关系数的9日最小值位置
-        argmin_corr = corr2.rolling(9).apply(ts_argmin, raw=True)
+            # 计算argmin_corr的7日时序排名
+            ts_rank_argmin = argmin_corr.rolling(7).apply(ts_rank_func, raw=False)
 
-        # 计算argmin_corr的7日时序排名
-        ts_rank_argmin = argmin_corr.rolling(7).apply(ts_rank_func, raw=False)
+            # 计算ts_rank_argmin的8日线性衰减的排名
+            decayed_ts_rank = decay_linear(ts_rank_argmin, 8)
+            rank_term2 = decayed_ts_rank.rank(pct=True)
 
-        # 计算ts_rank_argmin的8日线性衰减的排名
-        decayed_ts_rank = decay_linear(ts_rank_argmin, 8)
-        rank_term2 = decayed_ts_rank.rank(pct=True)
-
-        # 计算差值
-        return rank_term1 - rank_term2
+            # 计算差值
+            return rank_term1 - rank_term2
 
     @BaseFactor.register_factor(name='alpha_99')
     @staticmethod
