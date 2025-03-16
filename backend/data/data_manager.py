@@ -218,7 +218,7 @@ class DataUpdateManager:
         """获取单只股票的数据"""
         if isinstance(latest_date, str):
             latest_date = dt.datetime.strptime(latest_date, '%Y-%m-%d %H:%M:%S')
-        latest_date = latest_date.date()
+        latest_date = None if latest_date is None else latest_date.date()
         if force_full_update or latest_date is None:
             # 如果强制全量更新或者是新股票（没有历史数据），则从5年前开始更新
             start_date = dt.date.today() - dt.timedelta(days=5 * 365)
