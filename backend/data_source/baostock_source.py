@@ -207,6 +207,12 @@ class BaostockSource(DataSource):
         return df[required_columns]  # 只返回必须的列，并按照固定顺去配置
 
     @ensure_connection
+    def get_stock_industry(self, code: str):
+        """"""
+        df = bs.query_stock_industry(code=code).get_data()
+
+
+    @ensure_connection
     def get_sz50(self):
         """获取上证50股票"""
         return bs.query_sz50_stocks().get_data()

@@ -1913,18 +1913,20 @@ class WorldQuantFactors(BaseFactor):
         Returns:
             Alpha#55因子值
         """
-        # 计算收盘价相对于12日价格区间的位置
-        min_low_12 = low.rolling(12).min()
-        max_high_12 = high.rolling(12).max()
-        relative_position = (close - min_low_12) / (max_high_12 - min_low_12 + 1e-12)
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid value encountered in subtract')
+            # 计算收盘价相对于12日价格区间的位置
+            min_low_12 = low.rolling(12).min()
+            max_high_12 = high.rolling(12).max()
+            relative_position = (close - min_low_12) / (max_high_12 - min_low_12 + 1e-12)
 
-        # 计算相对位置的排名与成交量排名的6日相关系数，取双重负值
-        rank_position = relative_position.rank(pct=True)
-        rank_volume = volume.rank(pct=True)
+            # 计算相对位置的排名与成交量排名的6日相关系数，取双重负值
+            rank_position = relative_position.rank(pct=True)
+            rank_volume = volume.rank(pct=True)
 
-        corr = rank_position.rolling(6).corr(rank_volume)
-        corr.clip(-1000000, 1000000)
-        return -1 * corr * -1  # 双重负值相当于原值
+            corr = rank_position.rolling(6).corr(rank_volume)
+            corr.clip(-1000000, 1000000)
+            return -1 * corr * -1  # 双重负值相当于原值
 
     @BaseFactor.register_factor(name='alpha_56')
     @staticmethod

@@ -120,6 +120,9 @@ def main():
     parser = argparse.ArgumentParser(description="更新股票数据库")
     parser.add_argument("--full", action="store_true", help="强制全量更新(默认增量更新)")
     parser.add_argument("--silent", action="store_true", help="静默模式，减少输出信息")
+    parser.add_argument("--daily", action="store_true", help="更新日线行情数据")
+    parser.add_argument("--minute", action="store_true", help="更新分钟行情数据")
+    parser.add_argument("--vwap", action="store_true", help="更新日线vwap")
     args = parser.parse_args()
 
     # 设置日志
@@ -130,9 +133,11 @@ def main():
 
     try:
         update_database(args, logger=logger, frequency='daily')
-        update_database(args, logger=logger, frequency='5min')
-        update_daily_vwap(args, logger=logger, start_date='2025-03-01',
-                          end_date=datetime.date.today().strftime("%Y-%m-%d"))
+        if args.minute:
+            update_database(args, logger=logger, frequency='5min')
+        if args.vwap:
+            update_daily_vwap(args, logger=logger, start_date='2025-03-01',
+                              end_date=datetime.date.today().strftime("%Y-%m-%d"))
     except KeyboardInterrupt:
         print("\n用户终端更新过程")
         sys.exit(1)

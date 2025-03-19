@@ -373,7 +373,8 @@ if __name__ == "__main__":
     import datetime
 
     start_date = (datetime.date.today() - datetime.timedelta(days=1100)).strftime('%Y-%m-%d')
-    end_date = datetime.date.today().strftime("%Y-%m-%d")
+    # end_date = datetime.date.today().strftime("%Y-%m-%d")
+    end_date = datetime.date.today().strftime("2025-03-18")
     fetcher = StockDataFetcher()
     # 股票至少已经上市1年
     stock_codes = fetcher.get_stock_list_with_cond(
@@ -387,7 +388,7 @@ if __name__ == "__main__":
     # stock_codes = fetcher.get_stock_list(pool_name="sz50").code.to_list()
 
     run_factor_analysis(
-        factor_name="alpha_38",
+        factor_name="",
         stock_codes=stock_codes,
         start_date=start_date,
         end_date=end_date,
