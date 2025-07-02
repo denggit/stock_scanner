@@ -5,6 +5,7 @@
 """
 
 import logging
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -14,8 +15,9 @@ from backend.ml.model_trainer import ExplosiveStockModelTrainer
 from backend.strategies.base import BaseStrategy
 from backend.utils.indicators import CalIndicators
 
-# MODEL_BASE_PATH = "backend/ml/models/explosive_stock_model"
-MODEL_BASE_PATH = "模型没训练好先不用"
+# 模型路径配置
+MODEL_BASE_PATH = Path("backend/ml/models/explosive_stock_model")
+MODEL_CONFIG_PATH = MODEL_BASE_PATH / "model_config.json"
 
 
 class ExplosiveStockStrategy(BaseStrategy):
@@ -35,6 +37,8 @@ class ExplosiveStockStrategy(BaseStrategy):
     def __init__(self):
         super().__init__(name="爆发式选股策略", description="寻找20个交易日内可能暴涨30%的股票")
         self._init_params()
+        self.ml_trainer = None
+        self._init_ml_model()
 
     def _init_params(self):
         """初始化策略参数"""
@@ -53,6 +57,8 @@ class ExplosiveStockStrategy(BaseStrategy):
             "pattern_weight": 0.20,  # 形态分析权重
             "volatility_weight": 0.15,  # 波动性分析权重
             "holdings": [],  # 持仓股票代码
+            "use_ml_model": True,  # 是否使用机器学习模型
+            "ml_model_fallback": True,  # 模型失败时是否回退到规则基预测
         }
 
     def generate_signal(self, data: pd.DataFrame) -> pd.Series:
@@ -794,28 +800,25 @@ class ExplosiveStockStrategy(BaseStrategy):
 
     def _init_ml_model(self):
         """初始化机器学习模型"""
-        self.ml_trainer = None
         try:
-            # 初始化模型训练器
+            if not self._params.get("use_ml_model", True):
+                logging.info("机器学习模型已禁用，使用规则基预测")
+                return
+
+            if not MODEL_BASE_PATH.exists():
+                logging.warning(f"模型目录不存在: {MODEL_BASE_PATH}")
+                return
+
+            if not MODEL_CONFIG_PATH.exists():
+                logging.warning(f"模型配置文件不存在: {MODEL_CONFIG_PATH}")
+                return
+
             self.ml_trainer = ExplosiveStockModelTrainer()
-
-            stock_pool = self._params.get("stock_pool", "full")
-            # 修改为正确的模型文件路径
-            base_path = MODEL_BASE_PATH
-            model_files = {}
-            for model_name in self.ml_trainer.models.keys():
-                model_files[model_name] = f"{base_path}_{stock_pool}_{model_name}.joblib"
-            scaler_path = f'backend/ml/models/explosive_stock_model_{stock_pool}_scaler.joblib'
-
-            # 使用新的加载方法,传入具体的模型文件路径
-            self.ml_trainer.load_models(model_files, scaler_path)
-
-            logging.debug("成功加载机器学习模型")
-
-            # 验证模型加载状态
-            if not self._is_model_ready():
-                raise ValueError("模型加载不完整")
-
+            self.ml_trainer.load_models(str(MODEL_BASE_PATH))
+            logging.info("机器学习模型加载成功")
+            
         except Exception as e:
-            logging.warning(f"加载机器学习模型失败: {e}")
+            logging.warning(f"机器学习模型初始化失败: {e}")
+            if self._params.get("ml_model_fallback", True):
+                logging.info("将使用规则基预测作为备选方案")
             self.ml_trainer = None

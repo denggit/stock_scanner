@@ -50,3 +50,14 @@ streamlit
 
 # backtest
 backtrader
+
+# 新增依赖 - 缓存和性能监控
+psutil>=5.9.0
+redis>=4.5.0
+
+# 新增依赖 - 配置管理
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# 新增依赖 - 日志和监控
+structlog>=23.0.0
