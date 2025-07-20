@@ -1,0 +1,58 @@
+# 通道分析配置参数
+# 上升通道回归模块配置
+
+ascending_channel:
+  # 通道宽度倍数 (±k·σ)
+  k: 2.0
+  
+  # 窗口最长天数（超出后向右滑动）
+  L_max: 120
+  
+  # 滑动时一次剔除最早 delta_cut 天
+  delta_cut: 5
+  
+  # 判断 pivot low 宽度 (m 左 m 右更高)
+  pivot_m: 3
+  
+  # 累计涨幅触发重锚
+  gain_trigger: 0.30
+  
+  # 斜率变化阈值 (±15 %)
+  beta_delta: 0.15
+  
+  # 连续 n 日突破上下沿视为失效
+  break_days: 3
+  
+  # 连续 n 次重锚仍突破/跌破时进入极端状态
+  reanchor_fail_max: 2
+  
+  # 最小数据要求
+  min_data_points: 60
+  
+  # 日志级别
+  log_level: "INFO"
+  
+  # 性能优化
+  performance:
+    # 是否启用缓存
+    enable_cache: true
+    # 缓存过期时间（秒）
+    cache_ttl: 3600
+    # 并行计算线程数
+    max_workers: 4
+
+# 通道状态定义
+channel_status:
+  NORMAL: "通道正常"
+  ACCEL_BREAKOUT: "加速突破"
+  BREAKDOWN: "跌破下沿"
+  BROKEN: "通道失效"
+
+# 异常处理配置
+error_handling:
+  # 是否抛出异常
+  raise_exceptions: true
+  # 默认返回值
+  default_return: null
+  # 重试次数
+  max_retries: 3 
