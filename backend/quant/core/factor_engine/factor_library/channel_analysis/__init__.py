@@ -24,6 +24,6 @@ from .pivot_detector import PivotDetector
 
 __all__ = [
     'AscendingChannelRegression',
-    'ChannelState', 
+    'ChannelState',
     'PivotDetector'
-] 
+]
