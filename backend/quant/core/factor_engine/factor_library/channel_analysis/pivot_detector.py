@@ -37,19 +37,21 @@ class PivotDetector:
         """
         self.pivot_m = pivot_m
 
-    def find_pivot_low(self, df: pd.DataFrame, column: str = 'low') -> Optional[Tuple[pd.Timestamp, float]]:
+    def find_pivot_low(self, df: pd.DataFrame, column: str = 'low', silent: bool = False) -> Optional[Tuple[pd.Timestamp, float]]:
         """
         查找 pivot low（局部最低点）
         
         Args:
             df (pd.DataFrame): 价格数据，包含 trade_date 和指定列
             column (str): 用于检测的列名，默认为 'low'
+            silent (bool): 是否静默模式，减少日志输出
             
         Returns:
             Optional[Tuple[pd.Timestamp, float]]: (日期, 价格) 或 None
         """
         if len(df) < 2 * self.pivot_m + 1:
-            logger.warning(f"数据长度不足，无法检测 pivot low: {len(df)} < {2 * self.pivot_m + 1}")
+            if not silent:
+                logger.warning(f"数据长度不足，无法检测 pivot low: {len(df)} < {2 * self.pivot_m + 1}")
             return None
 
         prices = df[column].values
@@ -71,28 +73,32 @@ class PivotDetector:
                 pivot_lows.append((dates[i], current_price))
 
         if not pivot_lows:
-            logger.warning("未找到有效的 pivot low")
+            if not silent:
+                logger.warning("未找到有效的 pivot low")
             return None
 
         # 选择最新的 pivot low
         latest_pivot = max(pivot_lows, key=lambda x: x[0])
-        logger.info(f"找到 pivot low: {latest_pivot[0]} @ {latest_pivot[1]:.2f}")
+        if not silent:
+            logger.info(f"找到 pivot low: {latest_pivot[0]} @ {latest_pivot[1]:.2f}")
 
         return latest_pivot
 
-    def find_pivot_high(self, df: pd.DataFrame, column: str = 'high') -> Optional[Tuple[pd.Timestamp, float]]:
+    def find_pivot_high(self, df: pd.DataFrame, column: str = 'high', silent: bool = False) -> Optional[Tuple[pd.Timestamp, float]]:
         """
         查找 pivot high（局部最高点）
         
         Args:
             df (pd.DataFrame): 价格数据，包含 trade_date 和指定列
             column (str): 用于检测的列名，默认为 'high'
+            silent (bool): 是否静默模式，减少日志输出
             
         Returns:
             Optional[Tuple[pd.Timestamp, float]]: (日期, 价格) 或 None
         """
         if len(df) < 2 * self.pivot_m + 1:
-            logger.warning(f"数据长度不足，无法检测 pivot high: {len(df)} < {2 * self.pivot_m + 1}")
+            if not silent:
+                logger.warning(f"数据长度不足，无法检测 pivot high: {len(df)} < {2 * self.pivot_m + 1}")
             return None
 
         prices = df[column].values
@@ -114,17 +120,19 @@ class PivotDetector:
                 pivot_highs.append((dates[i], current_price))
 
         if not pivot_highs:
-            logger.warning("未找到有效的 pivot high")
+            if not silent:
+                logger.warning("未找到有效的 pivot high")
             return None
 
         # 选择最新的 pivot high
         latest_pivot = max(pivot_highs, key=lambda x: x[0])
-        logger.info(f"找到 pivot high: {latest_pivot[0]} @ {latest_pivot[1]:.2f}")
+        if not silent:
+            logger.info(f"找到 pivot high: {latest_pivot[0]} @ {latest_pivot[1]:.2f}")
 
         return latest_pivot
 
-    def find_initial_anchor(self, df: pd.DataFrame, strategy: str = 'pivot_low') -> Optional[
-        Tuple[pd.Timestamp, float]]:
+    def find_initial_anchor(self, df: pd.DataFrame, strategy: str = 'pivot_low', 
+                           silent: bool = False) -> Optional[Tuple[pd.Timestamp, float]]:
         """
         查找初始锚点
         
@@ -135,18 +143,20 @@ class PivotDetector:
                 - 'pivot_high': 选择 pivot high 作为锚点
                 - 'min_price': 选择最低价格作为锚点
                 - 'max_price': 选择最高价格作为锚点
+            silent (bool): 是否静默模式，减少日志输出
                 
         Returns:
             Optional[Tuple[pd.Timestamp, float]]: (日期, 价格) 或 None
         """
         if len(df) < 60:  # 最小数据要求
-            logger.error(f"数据不足，至少需要60个数据点，当前只有 {len(df)} 个")
+            if not silent:
+                logger.error(f"数据不足，至少需要60个数据点，当前只有 {len(df)} 个")
             return None
 
         if strategy == 'pivot_low':
-            return self.find_pivot_low(df, 'low')
+            return self.find_pivot_low(df, 'low', silent=silent)
         elif strategy == 'pivot_high':
-            return self.find_pivot_high(df, 'high')
+            return self.find_pivot_high(df, 'high', silent=silent)
         elif strategy == 'min_price':
             min_idx = df['low'].idxmin()
             return (df.loc[min_idx, 'trade_date'], df.loc[min_idx, 'low'])
@@ -154,7 +164,8 @@ class PivotDetector:
             max_idx = df['high'].idxmax()
             return (df.loc[max_idx, 'trade_date'], df.loc[max_idx, 'high'])
         else:
-            logger.error(f"未知的锚点选择策略: {strategy}")
+            if not silent:
+                logger.error(f"未知的锚点选择策略: {strategy}")
             return None
 
     def find_new_anchor(self, df: pd.DataFrame, current_anchor_date: pd.Timestamp,
