@@ -95,6 +95,7 @@ class ChannelState:
         """
         return {
             "beta": self.beta,
+            "sigma": self.sigma,
             "mid_today": self.mid_today,
             "upper_today": self.upper_today,
             "lower_today": self.lower_today,
