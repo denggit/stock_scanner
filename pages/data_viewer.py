@@ -33,7 +33,12 @@ def fetch_stock_data(code: str, period: str = 'daily', start_date: str = None, e
     try:
         response = requests.get(f'http://{backend_url}:{backend_port}/api/stock/{code}', params=params)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        # 将返回的数据转换为DataFrame
+        if isinstance(data, list) and data:
+            return pd.DataFrame(data)
+        else:
+            return pd.DataFrame()
     except requests.exceptions.RequestException as e:
         st.error(f"获取股票数据失败: {e}")
         return pd.DataFrame()
@@ -316,11 +321,10 @@ def main():
                 adjusted_start = start_date_str
 
             # 获取数据（包括额外的历史数据）
-            data = fetch_stock_data(code, period, adjusted_start, end_date_str)
+            df = fetch_stock_data(code, period, adjusted_start, end_date_str)
 
-            if data:
-                # 转换为DataFrame
-                df = pd.DataFrame(data)
+            if not df.empty:
+                # 设置trade_date为索引
                 df['trade_date'] = pd.to_datetime(df['trade_date'])
                 df.set_index('trade_date', inplace=True)
                 df.index = df.index.strftime('%Y-%m-%d')
@@ -349,6 +353,8 @@ def main():
                 # 显示数据表格
                 st.subheader("数据表格")
                 st.dataframe(df.sort_index(ascending=False))
+            else:
+                st.warning("未获取到数据，请检查股票代码和日期范围")
 
 
 if __name__ == "__main__":

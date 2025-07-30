@@ -77,6 +77,12 @@ curl "http://localhost:8000/api/stock/000001.SZ?period=daily&start_date=2024-01-
 }
 ```
 
+**数据处理说明**:
+- 系统会自动处理无穷大值（inf/-inf）和NaN值，将其转换为null
+- 超出JSON范围的浮点数值会被替换为null
+- 所有数值字段都经过JSON兼容性验证
+- 空数据会返回空数组而不是null
+
 ---
 
 ## 🎯 策略接口

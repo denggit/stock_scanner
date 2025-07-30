@@ -9,6 +9,7 @@
 from typing import Optional, List, Dict, Any
 
 import pandas as pd
+import numpy as np
 
 from backend.data.stock_data_fetcher import StockDataFetcher
 from backend.utils import format_info
@@ -63,6 +64,19 @@ class StockService:
             if extra_days > 0:
                 original_start_date = pd.to_datetime(start_date_ori)
                 df = df[df.index >= original_start_date]
+
+            # 处理无穷大和NaN值，确保JSON序列化兼容
+            df = df.replace([np.inf, -np.inf], np.nan)
+            
+            # 处理超出JSON范围的浮点数值
+            numeric_columns = df.select_dtypes(include=[np.number]).columns
+            for col in numeric_columns:
+                if col in df.columns:
+                    # 将超出范围的数值替换为None
+                    df[col] = df[col].apply(lambda x: None if pd.isna(x) or abs(x) > 1e308 else x)
+            
+            # 将NaN替换为None，这样JSON序列化时会被转换为null
+            df = df.where(pd.notna(df), None)
 
             logger.info(f"Fetched stock data for {formatted_code} from {start_date} to {end_date}")
             return df.to_dict(orient='records')
