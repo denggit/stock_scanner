@@ -77,10 +77,57 @@ class StockService:
             
             # 将NaN替换为None，这样JSON序列化时会被转换为null
             df = df.where(pd.notna(df), None)
+            
+            # 处理日期字段，确保JSON序列化兼容
+            for col in df.columns:
+                if df[col].dtype == 'object':
+                    # 检查是否包含日期对象
+                    sample_value = df[col].iloc[0] if not df[col].empty else None
+                    if hasattr(sample_value, 'strftime'):
+                        # 将日期对象转换为字符串
+                        df[col] = df[col].apply(lambda x: x.strftime('%Y-%m-%d') if x is not None else None)
+            
+            # 确保所有数值都是JSON兼容的
+            for col in df.columns:
+                if pd.api.types.is_numeric_dtype(df[col]):
+                    df[col] = df[col].astype(float)
+                    # 处理特殊数值
+                    df[col] = df[col].apply(lambda x: None if pd.isna(x) or np.isinf(x) or abs(x) > 1e308 else float(x))
+            
+            # 确保所有字符串字段都是字符串类型
+            for col in df.columns:
+                if df[col].dtype == 'object':
+                    df[col] = df[col].astype(str)
+                    # 将'None'字符串转换为None
+                    df[col] = df[col].replace('None', None)
+                    df[col] = df[col].replace('nan', None)
+                    df[col] = df[col].replace('', None)
+
+            # 最终的安全处理：确保所有数据都是JSON兼容的
+            def safe_json_value(value):
+                """确保值是JSON兼容的"""
+                if value is None:
+                    return None
+                elif isinstance(value, (int, float)):
+                    if np.isnan(value) or np.isinf(value) or abs(value) > 1e308:
+                        return None
+                    return float(value) if isinstance(value, float) else int(value)
+                elif isinstance(value, str):
+                    if value.lower() in ['nan', 'none', 'inf', '-inf', '']:
+                        return None
+                    return value
+                else:
+                    return str(value)
+
+            # 应用安全处理到所有数据
+            for col in df.columns:
+                df[col] = df[col].apply(safe_json_value)
 
             logger.info(f"Fetched stock data for {formatted_code} from {start_date} to {end_date}")
             return df.to_dict(orient='records')
 
         except Exception as e:
             logger.error(f"Failed to fetch stock data for {code}: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise Exception(f"Failed to fetch stock data {code}: {e}")
