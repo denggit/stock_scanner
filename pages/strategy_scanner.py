@@ -660,7 +660,8 @@ def main():
 
         elif strategy == "上升通道策略":
             st.subheader("上升通道策略参数配置")
-            
+            params['start_date'] = st.date_input("开始日期", value=one_year_ago).strftime("%Y-%m-%d")
+
             # 基础通道参数
             col1, col2 = st.columns(2)
             with col1:
@@ -792,8 +793,8 @@ def main():
             st.subheader("筛选条件设置")
             col1, col2, col3 = st.columns(3)
             with col1:
-                params['max_width_pct'] = st.number_input(
-                    "最大通道宽度 (max_width_pct)",
+                params['width_pct_max'] = st.number_input(
+                    "最大通道宽度 (width_pct_max)",
                     min_value=0.10,
                     max_value=0.25,
                     value=0.15,

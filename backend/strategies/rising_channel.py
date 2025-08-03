@@ -53,7 +53,7 @@ class RisingChannelStrategy(BaseStrategy):
             "min_data_points": 60,  # 最小数据点数
             "R2_min": 0.20,  # 最小回归拟合优度
             "width_pct_min": 0.04,  # 通道宽度下限
-            "width_pct_max": 0.12,  # 通道宽度上限
+            "width_pct_max": 0.15,  # 通道宽度上限
 
             # 技术指标参数
             "bb_period": 20,  # 布林带周期
@@ -62,7 +62,6 @@ class RisingChannelStrategy(BaseStrategy):
             # 筛选条件
             "min_signal_score": 60,  # 最小信号分数
             "min_r2": 0.30,  # 最小R²值
-            "max_width_pct": 0.15,  # 最大通道宽度
             "min_slope_deg": 0.5,  # 最小斜率角度
             "max_volatility": 0.08,  # 最大波动率
 
@@ -392,7 +391,7 @@ class RisingChannelStrategy(BaseStrategy):
                 return False
 
             # 通道宽度过滤
-            if channel_info.get('width_pct', 0) > self._params['max_width_pct']:
+            if channel_info.get('width_pct', 0) > self._params['width_pct_max']:
                 return False
 
             # 斜率角度过滤

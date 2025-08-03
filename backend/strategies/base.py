@@ -24,6 +24,10 @@ class BaseStrategy(ABC):
     def set_parameters(self, params: Dict[str, Any]) -> None:
         """设置策略参数"""
         self._params.update(params)
+        
+        # 如果子类有update_params方法，调用它进行特殊处理
+        if hasattr(self, 'update_params'):
+            self.update_params(params)
 
     def get_parameters(self) -> Dict[str, Any]:
         """获取策略参数"""
