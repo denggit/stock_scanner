@@ -593,40 +593,10 @@ def main():
     # 获取URL参数
     query_params = st.query_params
     
-    # 添加调试信息
-    with st.expander("🔧 URL参数调试", expanded=False):
-        st.write("**原始query_params:**")
-        st.write(query_params)
-        st.write("**query_params类型:**")
-        st.write(type(query_params))
-    
-     # 从URL参数中获取股票代码和其他设置
-    default_code = query_params.get('code', ['000001']) if 'code' in query_params else '000001'
-    default_name = query_params.get('name', ['']) if 'name' in query_params else ''
-    auto_ascending_channel = query_params.get('auto_ascending_channel', ['false']) == 'true'
-    strategy_name = query_params.get('strategy', ['']) if 'strategy' in query_params else ''
-    
-    # 添加解析后的参数调试信息
-    with st.expander("🔧 解析后的参数", expanded=False):
-        st.write(f"**default_code:** {default_code}")
-        st.write(f"**default_name:** {default_name}")
-        st.write(f"**auto_ascending_channel:** {auto_ascending_channel}")
-        st.write(f"**strategy_name:** {strategy_name}")
-    
-    # 强制刷新机制 - 如果参数不完整，显示警告
-    if len(default_code) < 3 or len(default_name) < 2:
-        st.warning("⚠️ 检测到参数可能不完整，请检查URL或重新跳转")
-        st.info("💡 建议：点击策略扫描器中的'🔗 直接跳转到数据查看器'按钮")
-        
-        # 提供手动输入选项
-        st.subheader("手动输入股票信息")
-        manual_code = st.text_input("手动输入股票代码", value=default_code if default_code != '000001' else '')
-        manual_name = st.text_input("手动输入股票名称", value=default_name)
-        
-        if manual_code:
-            default_code = manual_code
-        if manual_name:
-            default_name = manual_name
+    # 从URL参数中获取股票代码和其他设置
+    default_code = query_params.get('code', '000001')
+    default_name = query_params.get('name', '')
+    strategy_name = query_params.get('strategy', '')
 
     # 计算日期范围
     today = datetime.today()
@@ -646,13 +616,8 @@ def main():
             st.info(f"**股票**: {default_code} {default_name}")
             st.info(f"**来源策略**: {strategy_name}")
         
-        # 股票代码输入框 - 显示"代码-名称"格式
-        if default_name:
-            code_display = f"{default_code} - {default_name}"
-        else:
-            code_display = default_code
-        
-        code = st.text_input('股票代码', value=code_display)
+        # 股票代码输入框
+        code = st.text_input('股票代码', value=default_code)
         period = st.selectbox('数据周期', options=['daily', 'weekly', 'monthly'])
 
         # 日期选择(默认值为一年前到今天)
@@ -668,7 +633,7 @@ def main():
             ma_periods = []
         show_volume = st.checkbox('显示成交量', value=True)
         show_macd = st.checkbox('显示MACD', value=False)
-        show_ascending_channel = st.checkbox('显示上升通道', value=auto_ascending_channel)
+        show_ascending_channel = st.checkbox('显示上升通道', value=False) # 默认不显示
         
         # 上升通道参数配置
         if show_ascending_channel:
@@ -735,17 +700,8 @@ def main():
     end_date_str = end_date.strftime('%Y-%m-%d') if end_date else None
 
     # 主界面
-    # 如果是从策略扫描器跳转过来的，自动获取数据
-    auto_fetch = auto_ascending_channel and default_code != '000001'
-    
-    if st.button('获取数据', key='fetch_data') or auto_fetch:
+    if st.button('获取数据', key='fetch_data'):
         with st.spinner('获取数据中...'):
-            # 从输入框中提取股票代码（如果格式是"代码-名称"）
-            if ' - ' in code:
-                actual_code = code.split(' - ')[0]
-            else:
-                actual_code = code
-            
             # 计算向前推的日期
             if show_ma and ma_periods:
                 max_period = max(ma_periods)
@@ -755,7 +711,7 @@ def main():
                 adjusted_start = start_date_str
 
             # 获取数据（包括额外的历史数据）
-            df = fetch_stock_data(actual_code, period, adjusted_start, end_date_str)
+            df = fetch_stock_data(code, period, adjusted_start, end_date_str)
 
             if not df.empty:
                 # 设置trade_date为索引
@@ -809,10 +765,7 @@ def main():
                 else:
                     st.session_state.ascending_channel_info = None
                 
-                if auto_fetch:
-                    st.success(f"自动获取 {actual_code} {default_name} 的数据，共 {len(df)} 条记录")
-                else:
-                    st.success(f"成功获取 {actual_code} 的数据，共 {len(df)} 条记录")
+                st.success(f"成功获取 {code} 的数据，共 {len(df)} 条记录")
 
     # 显示图表（如果有数据）
     if st.session_state.stock_data is not None:
