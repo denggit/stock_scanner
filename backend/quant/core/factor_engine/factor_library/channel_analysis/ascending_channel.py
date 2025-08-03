@@ -224,6 +224,7 @@ class HistoryCalculationTemplate:
             'close': current_close,
             'beta': None,
             'sigma': None,
+            'r2': None,  # 添加r2字段
             'mid_today': None,
             'upper_today': None,
             'lower_today': None,
@@ -239,7 +240,11 @@ class HistoryCalculationTemplate:
             'reanchor_fail_down': None,
             'cumulative_gain': None,
             'window_size': None,
-            'days_since_anchor': None
+            'days_since_anchor': None,
+            'break_reason': None,  # 添加break_reason字段
+            'width_pct': None,  # 添加通道宽度百分比
+            'slope_deg': None,  # 添加斜率角度（度）
+            'volatility': None  # 添加波动率
         }
         
         if not result.is_valid:
@@ -252,7 +257,8 @@ class HistoryCalculationTemplate:
                     'sigma': result.sigma,
                     'r2': result.r2,
                     'window_size': len(result.window_df) if not result.window_df.empty else None,
-                    'days_since_anchor': (current_date - result.anchor_date).days if result.anchor_date else None
+                    'days_since_anchor': (current_date - result.anchor_date).days if result.anchor_date else None,
+                    'break_reason': result.break_reason
                 })
                 if result.state:
                     base_record.update({
@@ -260,6 +266,15 @@ class HistoryCalculationTemplate:
                         'upper_today': result.state.upper_today,
                         'lower_today': result.state.lower_today,
                     })
+                    # 计算通道宽度百分比
+                    if result.state.mid_today and result.state.mid_today > 0:
+                        base_record['width_pct'] = (result.state.upper_today - result.state.lower_today) / result.state.mid_today
+                    # 计算斜率角度
+                    if result.beta:
+                        base_record['slope_deg'] = np.degrees(np.arctan(result.beta))
+                    # 计算波动率
+                    if result.sigma and result.state.mid_today and result.state.mid_today > 0:
+                        base_record['volatility'] = result.sigma / result.state.mid_today
             base_record['channel_status'] = ChannelStatus.BROKEN.value
         else:
             # 有效通道
@@ -279,7 +294,15 @@ class HistoryCalculationTemplate:
                 'channel_status': ChannelStatus.NORMAL.value,
                 'window_size': len(result.window_df),
                 'days_since_anchor': (current_date - result.anchor_date).days,
-                'cumulative_gain': state.cumulative_gain
+                'cumulative_gain': state.cumulative_gain,
+                'break_cnt_up': state.break_cnt_up,
+                'break_cnt_down': state.break_cnt_down,
+                'reanchor_fail_up': state.reanchor_fail_up,
+                'reanchor_fail_down': state.reanchor_fail_down,
+                'break_reason': None,  # 有效通道没有break_reason
+                'width_pct': (state.upper_today - state.lower_today) / state.mid_today if state.mid_today and state.mid_today > 0 else None,
+                'slope_deg': np.degrees(np.arctan(result.beta)) if result.beta else None,
+                'volatility': result.sigma / state.mid_today if result.sigma and state.mid_today and state.mid_today > 0 else None
             })
         
         return base_record
@@ -396,6 +419,7 @@ class AscendingChannelRegression:
             state = ChannelState(
                 anchor_date=result.anchor_date, anchor_price=result.anchor_price,
                 window_df=result.window_df, beta=result.beta, sigma=result.sigma,
+                r2=result.r2,  # 添加r2字段
                 mid_today=result.state.mid_today if result.state else None,
                 upper_today=result.state.upper_today if result.state else None,
                 lower_today=result.state.lower_today if result.state else None,
@@ -404,8 +428,6 @@ class AscendingChannelRegression:
                 lower_tomorrow=result.state.lower_tomorrow if result.state else None,
                 channel_status=ChannelStatus.BROKEN
             )
-            # 设置r2字段
-            state.r2 = result.r2
             return state
         
         return result.state
@@ -434,6 +456,7 @@ class AscendingChannelRegression:
 
         beta, sigma, r2 = self._calculate_regression(self.state.window_df, self.state.anchor_date)
         self.state.update_channel_boundaries(beta, sigma, self.k)
+        self.state.r2 = r2  # 更新r2字段
         self.state.cumulative_gain = (bar['close'] - self.state.anchor_price) / self.state.anchor_price
         self.state.update_break_counters(bar['close'], self.state.upper_today, self.state.lower_today)
 
@@ -493,6 +516,7 @@ class AscendingChannelRegression:
         beta, sigma, r2 = self._calculate_regression(self.state.window_df, new_anchor_date)
         self.state.beta = beta
         self.state.sigma = sigma
+        self.state.r2 = r2  # 更新r2字段
         self.state.update_channel_boundaries(beta, sigma, self.k)
         self.state.reset_break_counters()
         self.state.reanchor_fail_up = 0

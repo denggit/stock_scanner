@@ -618,6 +618,66 @@ def main():
         show_volume = st.checkbox('显示成交量', value=True)
         show_macd = st.checkbox('显示MACD', value=False)
         show_ascending_channel = st.checkbox('显示上升通道', value=False)
+        
+        # 上升通道参数配置
+        if show_ascending_channel:
+            st.header("上升通道参数")
+            
+            # 使用expander来组织参数，避免侧边栏过长
+            with st.expander("⚙️ 通道参数设置", expanded=False):
+                # 基础参数
+                st.subheader("基础参数")
+                k = st.slider("通道宽度倍数 (k)", min_value=1.0, max_value=5.0, value=2.0, step=0.1, 
+                             help="通道宽度倍数，影响通道的宽度 (±k·σ)")
+                L_max = st.slider("最大窗口长度 (L_max)", min_value=60, max_value=200, value=120, step=10,
+                                 help="窗口最长天数，超出后向右滑动")
+                delta_cut = st.slider("滑动剔除天数 (delta_cut)", min_value=1, max_value=10, value=5, step=1,
+                                     help="滑动时一次剔除最早的天数")
+                pivot_m = st.slider("锚点检测参数 (pivot_m)", min_value=2, max_value=10, value=3, step=1,
+                                   help="判断pivot low的宽度参数 (m左m右更高)")
+                
+                # 触发参数
+                st.subheader("触发参数")
+                gain_trigger = st.slider("重锚涨幅触发 (gain_trigger)", min_value=0.1, max_value=0.5, value=0.30, step=0.05,
+                                        help="累计涨幅触发重锚的阈值")
+                beta_delta = st.slider("斜率变化阈值 (beta_delta)", min_value=0.05, max_value=0.3, value=0.15, step=0.05,
+                                      help="斜率变化阈值 (±15%)")
+                break_days = st.slider("连续突破天数 (break_days)", min_value=1, max_value=10, value=3, step=1,
+                                      help="连续n日突破上下沿视为失效")
+                reanchor_fail_max = st.slider("重锚失败次数 (reanchor_fail_max)", min_value=1, max_value=5, value=2, step=1,
+                                             help="连续n次重锚仍突破/跌破时进入极端状态")
+                
+                # 质量参数
+                st.subheader("质量参数")
+                min_data_points = st.slider("最小数据点数 (min_data_points)", min_value=30, max_value=100, value=60, step=5,
+                                           help="最小有效数据点要求")
+                R2_min = st.slider("最小R²值 (R2_min)", min_value=0.1, max_value=0.5, value=0.20, step=0.05,
+                                  help="最小回归拟合优度，低于此视为无效通道")
+                width_pct_min = st.slider("通道宽度下限 (width_pct_min)", min_value=0.02, max_value=0.10, value=0.04, step=0.01,
+                                         help="通道宽度下限，小于此视为过窄")
+                width_pct_max = st.slider("通道宽度上限 (width_pct_max)", min_value=0.08, max_value=0.20, value=0.12, step=0.01,
+                                         help="通道宽度上限，超过此视为过宽")
+            
+            # 参数说明
+            with st.expander("📖 参数说明", expanded=False):
+                st.markdown("""
+                **基础参数：**
+                - **k**: 通道宽度倍数，影响通道的宽度范围
+                - **L_max**: 最大窗口长度，控制计算窗口大小
+                - **delta_cut**: 滑动剔除天数，影响窗口滑动速度
+                - **pivot_m**: 锚点检测参数，影响锚点选择的敏感度
+                
+                **触发参数：**
+                - **gain_trigger**: 重锚涨幅触发阈值，影响重锚频率
+                - **beta_delta**: 斜率变化阈值，影响趋势判断
+                - **break_days**: 连续突破天数，影响通道失效判断
+                - **reanchor_fail_max**: 重锚失败次数，影响极端状态判断
+                
+                **质量参数：**
+                - **min_data_points**: 最小数据点数，确保计算可靠性
+                - **R2_min**: 最小R²值，确保回归质量
+                - **width_pct_min/max**: 通道宽度范围，避免过窄或过宽
+                """)
 
     # 转换日期为字符串格式
     start_date_str = start_date.strftime('%Y-%m-%d') if start_date else None
@@ -662,8 +722,24 @@ def main():
                             df_for_calc = df.reset_index()
                             df_for_calc['trade_date'] = pd.to_datetime(df_for_calc['trade_date'])
                             
-                            # 计算上升通道
-                            channel_info = CalIndicators.ascending_channel(df_for_calc)
+                            # 构建上升通道参数
+                            channel_params = {
+                                'k': k,
+                                'L_max': L_max,
+                                'delta_cut': delta_cut,
+                                'pivot_m': pivot_m,
+                                'gain_trigger': gain_trigger,
+                                'beta_delta': beta_delta,
+                                'break_days': break_days,
+                                'reanchor_fail_max': reanchor_fail_max,
+                                'min_data_points': min_data_points,
+                                'R2_min': R2_min,
+                                'width_pct_min': width_pct_min,
+                                'width_pct_max': width_pct_max
+                            }
+                            
+                            # 计算上升通道，传递自定义参数
+                            channel_info = CalIndicators.ascending_channel(df_for_calc, **channel_params)
                             st.session_state.ascending_channel_info = channel_info
                             
                             st.success("上升通道计算完成")
@@ -703,18 +779,62 @@ def main():
             with col1:
                 st.metric("斜率", f"{ascending_channel_info.get('beta', 0):.4f}")
                 st.metric("通道状态", ascending_channel_info.get('channel_status', 'NORMAL'))
+                st.metric("R²值", f"{ascending_channel_info.get('r2', 0):.3f}")
             
             with col2:
                 st.metric("今日中轴", f"￥{ascending_channel_info.get('mid_today', 0):.2f}")
                 st.metric("今日上沿", f"￥{ascending_channel_info.get('upper_today', 0):.2f}")
+                st.metric("通道宽度", f"{ascending_channel_info.get('width_pct', 0):.2%}")
             
             with col3:
                 st.metric("今日下沿", f"￥{ascending_channel_info.get('lower_today', 0):.2f}")
                 st.metric("累计涨幅", f"{ascending_channel_info.get('cumulative_gain', 0):.2%}")
+                st.metric("斜率角度", f"{ascending_channel_info.get('slope_deg', 0):.2f}°")
             
             with col4:
                 st.metric("锚点价格", f"￥{ascending_channel_info.get('anchor_price', 0):.2f}")
                 st.metric("锚点日期", ascending_channel_info.get('anchor_date', 'N/A')[:10] if ascending_channel_info.get('anchor_date') else 'N/A')
+                st.metric("波动率", f"{ascending_channel_info.get('volatility', 0):.3f}")
+            
+            # 显示通道质量评估
+            st.subheader("📊 通道质量评估")
+            quality_col1, quality_col2, quality_col3, quality_col4 = st.columns(4)
+            
+            with quality_col1:
+                r2_value = ascending_channel_info.get('r2', 0)
+                if r2_value > 0.7:
+                    st.success(f"拟合质量: 优秀 ({r2_value:.3f})")
+                elif r2_value > 0.5:
+                    st.info(f"拟合质量: 良好 ({r2_value:.3f})")
+                else:
+                    st.warning(f"拟合质量: 一般 ({r2_value:.3f})")
+            
+            with quality_col2:
+                width_pct = ascending_channel_info.get('width_pct', 0)
+                if width_pct < 0.05:
+                    st.warning(f"通道宽度: 过窄 ({width_pct:.2%})")
+                elif width_pct > 0.15:
+                    st.warning(f"通道宽度: 过宽 ({width_pct:.2%})")
+                else:
+                    st.success(f"通道宽度: 适中 ({width_pct:.2%})")
+            
+            with quality_col3:
+                slope_deg = ascending_channel_info.get('slope_deg', 0)
+                if slope_deg > 5:
+                    st.info(f"趋势强度: 强 ({slope_deg:.2f}°)")
+                elif slope_deg > 1:
+                    st.success(f"趋势强度: 中 ({slope_deg:.2f}°)")
+                else:
+                    st.warning(f"趋势强度: 弱 ({slope_deg:.2f}°)")
+            
+            with quality_col4:
+                volatility = ascending_channel_info.get('volatility', 0)
+                if volatility < 0.02:
+                    st.success(f"波动率: 低 ({volatility:.3f})")
+                elif volatility < 0.05:
+                    st.info(f"波动率: 中 ({volatility:.3f})")
+                else:
+                    st.warning(f"波动率: 高 ({volatility:.3f})")
             
             # 显示详细通道信息
             with st.expander("📊 详细通道信息", expanded=False):

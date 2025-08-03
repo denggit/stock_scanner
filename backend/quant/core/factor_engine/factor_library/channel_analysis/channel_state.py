@@ -17,7 +17,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 import pandas as pd
 
@@ -59,21 +59,14 @@ class ChannelState:
     upper_tomorrow: float
     lower_tomorrow: float
 
-    # 突破计数器
+    # 可选字段（带默认值）
+    r2: Optional[float] = None  # 回归拟合优度 R²
     break_cnt_up: int = 0  # 连续突破上沿次数
     break_cnt_down: int = 0  # 连续突破下沿次数
-
-    # 重锚失败计数器
     reanchor_fail_up: int = 0  # 重锚失败（上沿）
     reanchor_fail_down: int = 0  # 重锚失败（下沿）
-
-    # 通道状态
     channel_status: ChannelStatus = ChannelStatus.NORMAL
-
-    # 累计涨幅
     cumulative_gain: float = 0.0
-
-    # 最后更新时间
     last_update: pd.Timestamp = None
 
     def __post_init__(self):
@@ -93,9 +86,26 @@ class ChannelState:
         Returns:
             Dict[str, Any]: 状态字典
         """
+        # 计算通道宽度百分比
+        width_pct = None
+        if self.mid_today and self.mid_today > 0:
+            width_pct = (self.upper_today - self.lower_today) / self.mid_today
+        
+        # 计算斜率角度
+        slope_deg = None
+        if self.beta:
+            import numpy as np
+            slope_deg = np.degrees(np.arctan(self.beta))
+        
+        # 计算波动率
+        volatility = None
+        if self.sigma and self.mid_today and self.mid_today > 0:
+            volatility = self.sigma / self.mid_today
+        
         return {
             "beta": self.beta,
             "sigma": self.sigma,
+            "r2": self.r2,  # 添加r2字段
             "mid_today": self.mid_today,
             "upper_today": self.upper_today,
             "lower_today": self.lower_today,
@@ -110,7 +120,12 @@ class ChannelState:
             "reanchor_fail_up": self.reanchor_fail_up,
             "reanchor_fail_down": self.reanchor_fail_down,
             "cumulative_gain": self.cumulative_gain,
-            "last_update": pd.Timestamp(self.last_update).isoformat()
+            "last_update": pd.Timestamp(self.last_update).isoformat(),
+            "window_size": len(self.window_df) if hasattr(self, 'window_df') and not self.window_df.empty else 0,
+            "days_since_anchor": (self.last_update - self.anchor_date).days if self.last_update and self.anchor_date else None,
+            "width_pct": width_pct,  # 通道宽度百分比
+            "slope_deg": slope_deg,  # 斜率角度
+            "volatility": volatility  # 波动率
         }
 
     def update_break_counters(self, price: float, upper: float, lower: float) -> None:
