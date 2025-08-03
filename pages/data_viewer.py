@@ -4,7 +4,7 @@
 @Author     : Zijun Deng
 @Date       : 1/29/2025 5:43 PM
 @File       : data_viewer.py
-@Description: 
+@Description: 数据查看器
 """
 
 import os
@@ -45,8 +45,9 @@ def fetch_stock_data(code: str, period: str = 'daily', start_date: str = None, e
 
 
 def plot_candlestick(df: pd.DataFrame, ma_periods: list, show_volume: bool = True, show_macd: bool = False,
+                     show_ascending_channel: bool = False, ascending_channel_info: dict = None,
                      start_date: str = None, end_date: str = None) -> go.Figure:
-    """绘制K线图和副图 - 支持拖动和缩放"""
+    """绘制K线图和副图 - 支持拖动和缩放，新增上升通道支持"""
     # 多获取数据的df，用于计算均线
     df_extra = df.copy()
 
@@ -87,7 +88,10 @@ def plot_candlestick(df: pd.DataFrame, ma_periods: list, show_volume: bool = Tru
         'grid': '#e0e0e0',    # 网格深灰色
         'text': '#000000',    # 文字黑色
         'axis': '#000000',    # 坐标轴黑色
-        'spike': '#666666'    # 悬停线深灰色
+        'spike': '#666666',   # 悬停线深灰色
+        'channel_mid': '#ff6600',    # 上升通道中轴橙色
+        'channel_upper': '#ff0000',  # 上升通道上沿红色
+        'channel_lower': '#00ff00'   # 上升通道下沿绿色
     }
 
     # 绘制K线图 - 使用完整数据
@@ -158,6 +162,153 @@ def plot_candlestick(df: pd.DataFrame, ma_periods: list, show_volume: bool = Tru
                 hoverinfo='text'
             ), row=1, col=1
         )
+
+    # 添加上升通道线（如果启用）
+    if show_ascending_channel and ascending_channel_info:
+        try:
+            # 获取通道信息
+            mid_today = ascending_channel_info.get('mid_today')
+            mid_tomorrow = ascending_channel_info.get('mid_tomorrow')
+            upper_today = ascending_channel_info.get('upper_today')
+            lower_today = ascending_channel_info.get('lower_today')
+            anchor_date = ascending_channel_info.get('anchor_date')
+            anchor_price = ascending_channel_info.get('anchor_price')
+            
+            if all([mid_today, mid_tomorrow, upper_today, lower_today, anchor_date, anchor_price]):
+                # 将anchor_date转换为datetime
+                if isinstance(anchor_date, str):
+                    anchor_date = pd.to_datetime(anchor_date)
+                
+                # 获取最新日期
+                latest_date = pd.to_datetime(df_full.index[-1])
+                
+                # 计算通道线的日期范围（从锚点日期到最新日期）
+                anchor_date_str = anchor_date.strftime('%Y-%m-%d')
+                channel_dates = df_full[df_full.index >= anchor_date_str].index.tolist()
+                
+                if channel_dates:
+                    # 计算斜率（基于mid_today和mid_tomorrow）
+                    days_diff = 1  # 从今天到明天的天数差
+                    beta = (mid_tomorrow - mid_today) / days_diff
+                    
+                    # 计算每个日期距离锚点的天数
+                    days_since_anchor = []
+                    for date_str in channel_dates:
+                        date_obj = pd.to_datetime(date_str)
+                        days = (date_obj - anchor_date).days
+                        days_since_anchor.append(days)
+                    
+                    # 计算通道线价格
+                    # 中轴：从mid_today开始，使用计算出的斜率
+                    # 计算每个日期相对于今日的天数
+                    days_to_today = (latest_date - anchor_date).days
+                    days_relative_to_today = [days - days_to_today for days in days_since_anchor]
+                    
+                    # 确保今日对应的相对天数为0
+                    # 如果最后一个值不是0，需要调整
+                    if days_relative_to_today and days_relative_to_today[-1] != 0:
+                        # 找到今日对应的索引
+                        today_index = len(days_relative_to_today) - 1
+                        # 重新计算相对天数，确保今日为0
+                        days_relative_to_today = [i - today_index for i in range(len(days_relative_to_today))]
+                    
+                    mid_prices = [mid_today + beta * days_rel for days_rel in days_relative_to_today]
+                    
+                    # 上沿：从upper_today开始，保持相同斜率
+                    upper_prices = [upper_today + beta * days_rel for days_rel in days_relative_to_today]
+                    
+                    # 下沿：从lower_today开始，保持相同斜率
+                    lower_prices = [lower_today + beta * days_rel for days_rel in days_relative_to_today]
+                    
+                    # 准备通道线悬停文本
+                    mid_hover_texts = []
+                    upper_hover_texts = []
+                    lower_hover_texts = []
+                    
+                    for date_str, mid_price, upper_price, lower_price in zip(channel_dates, mid_prices, upper_prices, lower_prices):
+                        mid_hover_text = f"<b>{date_str}</b><br>中轴: {mid_price:.2f}<br>斜率: {beta:.4f}"
+                        upper_hover_text = f"<b>{date_str}</b><br>上沿: {upper_price:.2f}<br>状态: {ascending_channel_info.get('channel_status', 'NORMAL')}"
+                        lower_hover_text = f"<b>{date_str}</b><br>下沿: {lower_price:.2f}<br>累计涨幅: {ascending_channel_info.get('cumulative_gain', 0):.2%}"
+                        
+                        mid_hover_texts.append(mid_hover_text)
+                        upper_hover_texts.append(upper_hover_text)
+                        lower_hover_texts.append(lower_hover_text)
+                    
+                    # 添加中轴线
+                    fig.add_trace(
+                        go.Scatter(
+                            x=channel_dates,
+                            y=mid_prices,
+                            mode='lines',
+                            name='上升通道中轴',
+                            line=dict(
+                                width=3,
+                                color=colors['channel_mid'],
+                                dash='solid'
+                            ),
+                            hovertext=mid_hover_texts,
+                            hoverinfo='text'
+                        ),
+                        row=1, col=1
+                    )
+                    
+                    # 添加上沿线
+                    fig.add_trace(
+                        go.Scatter(
+                            x=channel_dates,
+                            y=upper_prices,
+                            mode='lines',
+                            name='上升通道上沿',
+                            line=dict(
+                                width=2,
+                                color=colors['channel_upper'],
+                                dash='dash'
+                            ),
+                            hovertext=upper_hover_texts,
+                            hoverinfo='text'
+                        ),
+                        row=1, col=1
+                    )
+                    
+                    # 添加下沿线
+                    fig.add_trace(
+                        go.Scatter(
+                            x=channel_dates,
+                            y=lower_prices,
+                            mode='lines',
+                            name='上升通道下沿',
+                            line=dict(
+                                width=2,
+                                color=colors['channel_lower'],
+                                dash='dash'
+                            ),
+                            hovertext=lower_hover_texts,
+                            hoverinfo='text'
+                        ),
+                        row=1, col=1
+                    )
+                    
+                    # 添加锚点标记
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[anchor_date_str],
+                            y=[anchor_price],
+                            mode='markers',
+                            name='锚点',
+                            marker=dict(
+                                size=10,
+                                color=colors['channel_mid'],
+                                symbol='diamond',
+                                line=dict(width=2, color='black')
+                            ),
+                            hovertext=f"<b>锚点</b><br>日期: {anchor_date_str}<br>价格: {anchor_price:.2f}",
+                            hoverinfo='text'
+                        ),
+                        row=1, col=1
+                    )
+                    
+        except Exception as e:
+            st.warning(f"绘制上升通道线时出错: {e}")
 
     # 添加成交量图（使用完整数据）
     if show_volume:
@@ -436,6 +587,8 @@ def main():
         st.session_state.stock_data = None
     if 'chart_params' not in st.session_state:
         st.session_state.chart_params = None
+    if 'ascending_channel_info' not in st.session_state:
+        st.session_state.ascending_channel_info = None
 
     # 计算日期范围
     today = datetime.today()
@@ -464,6 +617,7 @@ def main():
             ma_periods = []
         show_volume = st.checkbox('显示成交量', value=True)
         show_macd = st.checkbox('显示MACD', value=False)
+        show_ascending_channel = st.checkbox('显示上升通道', value=False)
 
     # 转换日期为字符串格式
     start_date_str = start_date.strftime('%Y-%m-%d') if start_date else None
@@ -495,9 +649,29 @@ def main():
                     'ma_periods': ma_periods if show_ma else [],
                     'show_volume': show_volume,
                     'show_macd': show_macd,
+                    'show_ascending_channel': show_ascending_channel,
                     'start_date': start_date_str,
                     'end_date': end_date_str
                 }
+                
+                # 如果启用了上升通道，计算上升通道信息
+                if show_ascending_channel:
+                    try:
+                        with st.spinner('计算上升通道中...'):
+                            # 准备数据格式（重置索引以便计算）
+                            df_for_calc = df.reset_index()
+                            df_for_calc['trade_date'] = pd.to_datetime(df_for_calc['trade_date'])
+                            
+                            # 计算上升通道
+                            channel_info = CalIndicators.ascending_channel(df_for_calc)
+                            st.session_state.ascending_channel_info = channel_info
+                            
+                            st.success("上升通道计算完成")
+                    except Exception as e:
+                        st.error(f"上升通道计算失败: {e}")
+                        st.session_state.ascending_channel_info = None
+                else:
+                    st.session_state.ascending_channel_info = None
                 
                 st.success(f"成功获取 {code} 的数据，共 {len(df)} 条记录")
 
@@ -505,6 +679,7 @@ def main():
     if st.session_state.stock_data is not None:
         df = st.session_state.stock_data
         params = st.session_state.chart_params
+        ascending_channel_info = st.session_state.ascending_channel_info
         
         # 显示K线图和成交量副图
         st.plotly_chart(plot_candlestick(
@@ -512,9 +687,38 @@ def main():
             params['ma_periods'],
             show_volume=params['show_volume'],
             show_macd=params['show_macd'],
+            show_ascending_channel=params['show_ascending_channel'],
+            ascending_channel_info=ascending_channel_info,
             start_date=params['start_date'],
             end_date=params['end_date']
         ), use_container_width=True)
+
+        # 显示上升通道信息（如果启用）
+        if params['show_ascending_channel'] and ascending_channel_info:
+            st.subheader("📈 上升通道信息")
+            
+            # 创建列布局显示通道信息
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("斜率", f"{ascending_channel_info.get('beta', 0):.4f}")
+                st.metric("通道状态", ascending_channel_info.get('channel_status', 'NORMAL'))
+            
+            with col2:
+                st.metric("今日中轴", f"￥{ascending_channel_info.get('mid_today', 0):.2f}")
+                st.metric("今日上沿", f"￥{ascending_channel_info.get('upper_today', 0):.2f}")
+            
+            with col3:
+                st.metric("今日下沿", f"￥{ascending_channel_info.get('lower_today', 0):.2f}")
+                st.metric("累计涨幅", f"{ascending_channel_info.get('cumulative_gain', 0):.2%}")
+            
+            with col4:
+                st.metric("锚点价格", f"￥{ascending_channel_info.get('anchor_price', 0):.2f}")
+                st.metric("锚点日期", ascending_channel_info.get('anchor_date', 'N/A')[:10] if ascending_channel_info.get('anchor_date') else 'N/A')
+            
+            # 显示详细通道信息
+            with st.expander("📊 详细通道信息", expanded=False):
+                st.json(ascending_channel_info)
 
         # 添加使用说明
         with st.expander("📖 图表操作说明", expanded=False):
@@ -538,8 +742,16 @@ def main():
             - 均线悬停显示：对应均线的价格
             - 成交量悬停显示：成交量和成交额
             - MACD悬停显示：MACD、DIF、DEA值
+            - 上升通道悬停显示：中轴、上沿、下沿价格和通道状态
             - 拖动到数据边界会自动停止，防止超出范围
             - 只能左右拖动，不能上下拖动
+            
+            **📈 上升通道说明：**
+            - **中轴线**：橙色实线，表示通道的中心趋势线
+            - **上沿线**：红色虚线，表示通道的上边界
+            - **下沿线**：绿色虚线，表示通道的下边界
+            - **锚点**：橙色菱形标记，表示通道的起始点
+            - 通道状态包括：NORMAL（正常）、ACCEL_BREAKOUT（加速突破）、BREAKDOWN（跌破）、BROKEN（失效）
             """)
 
         # 显示基本信息

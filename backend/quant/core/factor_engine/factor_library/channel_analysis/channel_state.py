@@ -157,7 +157,9 @@ class ChannelState:
 
     def update_channel_boundaries(self, beta: float, sigma: float, k: float) -> None:
         """
-        更新通道边界
+        更新通道边界 - 修正版
+        
+        使用回归线的真实参数来计算通道边界
         """
         self.beta = beta
         self.sigma = sigma
@@ -166,23 +168,57 @@ class ChannelState:
             self.anchor_date = pd.to_datetime(self.anchor_date)
         if not isinstance(self.last_update, pd.Timestamp):
             self.last_update = pd.to_datetime(self.last_update)
+        
+        # 计算今日中轴价格（使用回归线）
         self.mid_today = self._calculate_mid_price()
+        
+        # 计算通道边界
         self.upper_today = self.mid_today + k * sigma
         self.lower_today = self.mid_today - k * sigma
+        
+        # 计算明日预测（使用回归线斜率）
         self.mid_tomorrow = self.mid_today + beta
         self.upper_tomorrow = self.mid_tomorrow + k * sigma
         self.lower_tomorrow = self.mid_tomorrow - k * sigma
 
     def _calculate_mid_price(self) -> float:
         """
-        计算中轴价格
+        计算中轴价格 - 修正版
+        
+        中轴线应该是回归线本身，而不是从锚点开始的线
+        回归线公式：y = intercept + slope * x
+        其中 x 是距离锚点的天数
         """
         # 确保last_update和anchor_date类型一致
         if not isinstance(self.anchor_date, pd.Timestamp):
             self.anchor_date = pd.to_datetime(self.anchor_date)
         if not isinstance(self.last_update, pd.Timestamp):
             self.last_update = pd.to_datetime(self.last_update)
+        
         days_since_anchor = (self.last_update - self.anchor_date).days
+        
+        # 计算回归线的intercept
+        # 回归线公式：y = intercept + slope * x
+        # 在锚点日期（x=0）时：anchor_price = intercept + slope * 0 = intercept
+        # 但实际上回归线不一定会穿过锚点，所以需要重新计算intercept
+        
+        # 使用窗口数据重新计算回归线
+        if hasattr(self, 'window_df') and not self.window_df.empty:
+            dates = pd.to_datetime(self.window_df['trade_date'])
+            anchor_date = pd.to_datetime(self.anchor_date)
+            days_since_anchor_all = (dates - anchor_date).dt.days
+            prices = self.window_df['close'].values
+            
+            if len(days_since_anchor_all) >= 2:
+                try:
+                    from scipy import stats
+                    slope, intercept, r_value, p_value, std_err = stats.linregress(days_since_anchor_all, prices)
+                    # 使用回归线的intercept和slope
+                    return intercept + slope * days_since_anchor
+                except Exception:
+                    pass
+        
+        # 如果无法重新计算，使用原来的方法作为fallback
         return self.anchor_price + self.beta * days_since_anchor
 
     def is_extreme_state(self) -> bool:
