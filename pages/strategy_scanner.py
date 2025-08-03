@@ -59,7 +59,7 @@ def main():
         strategy = st.selectbox(
             "选择策略",
             ["均线回踩策略", "突破策略", "波段交易策略", "扫描翻倍股", "长期上涨策略", "头肩底形态策略",
-             "爆发式选股策略", "放量上涨策略"]
+             "爆发式选股策略", "放量上涨策略", "上升通道策略"]
         )
 
         # 股票池选择
@@ -658,6 +658,217 @@ def main():
             params["continuous_days"] = st.number_input("量价齐升天数", min_value=1, value=3, max_value=10,
                                                         help="持续量价齐升天数")
 
+        elif strategy == "上升通道策略":
+            st.subheader("上升通道策略参数配置")
+            
+            # 基础通道参数
+            col1, col2 = st.columns(2)
+            with col1:
+                params['k'] = st.number_input(
+                    "通道宽度倍数 (k)",
+                    min_value=1.0,
+                    max_value=5.0,
+                    value=2.0,
+                    step=0.1,
+                    help="通道宽度倍数，影响通道的宽度 (±k·σ)"
+                )
+                params['L_max'] = st.number_input(
+                    "最大窗口长度 (L_max)",
+                    min_value=60,
+                    max_value=200,
+                    value=120,
+                    step=10,
+                    help="窗口最长天数，超出后向右滑动"
+                )
+                params['delta_cut'] = st.number_input(
+                    "滑动剔除天数 (delta_cut)",
+                    min_value=1,
+                    max_value=10,
+                    value=5,
+                    step=1,
+                    help="滑动时一次剔除最早的天数"
+                )
+                params['pivot_m'] = st.number_input(
+                    "锚点检测参数 (pivot_m)",
+                    min_value=2,
+                    max_value=10,
+                    value=3,
+                    step=1,
+                    help="判断pivot low的宽度参数 (m左m右更高)"
+                )
+            
+            with col2:
+                params['gain_trigger'] = st.number_input(
+                    "重锚涨幅触发 (gain_trigger)",
+                    min_value=0.1,
+                    max_value=0.5,
+                    value=0.30,
+                    step=0.05,
+                    help="累计涨幅触发重锚的阈值"
+                )
+                params['beta_delta'] = st.number_input(
+                    "斜率变化阈值 (beta_delta)",
+                    min_value=0.05,
+                    max_value=0.3,
+                    value=0.15,
+                    step=0.05,
+                    help="斜率变化阈值 (±15%)"
+                )
+                params['break_days'] = st.number_input(
+                    "连续突破天数 (break_days)",
+                    min_value=1,
+                    max_value=10,
+                    value=3,
+                    step=1,
+                    help="连续n日突破上下沿视为失效"
+                )
+                params['reanchor_fail_max'] = st.number_input(
+                    "重锚失败次数 (reanchor_fail_max)",
+                    min_value=1,
+                    max_value=5,
+                    value=2,
+                    step=1,
+                    help="连续n次重锚仍突破/跌破时进入极端状态"
+                )
+            
+            # 质量参数
+            st.subheader("质量参数设置")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                params['min_data_points'] = st.number_input(
+                    "最小数据点数 (min_data_points)",
+                    min_value=30,
+                    max_value=100,
+                    value=60,
+                    step=5,
+                    help="最小有效数据点要求"
+                )
+                params['R2_min'] = st.number_input(
+                    "最小R²值 (R2_min)",
+                    min_value=0.1,
+                    max_value=0.5,
+                    value=0.20,
+                    step=0.05,
+                    help="最小回归拟合优度，低于此视为无效通道"
+                )
+            
+            with col2:
+                params['width_pct_min'] = st.number_input(
+                    "通道宽度下限 (width_pct_min)",
+                    min_value=0.02,
+                    max_value=0.10,
+                    value=0.04,
+                    step=0.01,
+                    help="通道宽度下限，小于此视为过窄"
+                )
+                params['width_pct_max'] = st.number_input(
+                    "通道宽度上限 (width_pct_max)",
+                    min_value=0.08,
+                    max_value=0.20,
+                    value=0.12,
+                    step=0.01,
+                    help="通道宽度上限，超过此视为过宽"
+                )
+            
+            with col3:
+                params['min_signal_score'] = st.number_input(
+                    "最小信号分数 (min_signal_score)",
+                    min_value=30,
+                    max_value=90,
+                    value=60,
+                    step=5,
+                    help="最小综合信号分数，低于此不显示"
+                )
+                params['min_r2'] = st.number_input(
+                    "最小R²值 (min_r2)",
+                    min_value=0.1,
+                    max_value=0.6,
+                    value=0.30,
+                    step=0.05,
+                    help="最小R²值，用于最终筛选"
+                )
+            
+            # 筛选条件
+            st.subheader("筛选条件设置")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                params['max_width_pct'] = st.number_input(
+                    "最大通道宽度 (max_width_pct)",
+                    min_value=0.10,
+                    max_value=0.25,
+                    value=0.15,
+                    step=0.01,
+                    help="最大通道宽度，超过此视为过宽"
+                )
+                params['min_slope_deg'] = st.number_input(
+                    "最小斜率角度 (min_slope_deg)",
+                    min_value=0.1,
+                    max_value=2.0,
+                    value=0.5,
+                    step=0.1,
+                    help="最小斜率角度，低于此视为趋势过弱"
+                )
+            
+            with col2:
+                params['max_volatility'] = st.number_input(
+                    "最大波动率 (max_volatility)",
+                    min_value=0.03,
+                    max_value=0.15,
+                    value=0.08,
+                    step=0.01,
+                    help="最大波动率，超过此视为风险过高"
+                )
+            
+            # 评分权重设置
+            st.subheader("评分权重设置")
+            weights = {}
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                weights['channel_quality'] = st.number_input(
+                    "通道质量权重",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.35,
+                    format="%.2f",
+                    help='通道质量对综合得分的影响权重'
+                )
+            with col2:
+                weights['trend_strength'] = st.number_input(
+                    "趋势强度权重",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.25,
+                    format="%.2f",
+                    help='趋势强度对综合得分的影响权重'
+                )
+            with col3:
+                weights['risk_control'] = st.number_input(
+                    "风险控制权重",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.20,
+                    format="%.2f",
+                    help='风险控制对综合得分的影响权重'
+                )
+            with col4:
+                weights['volume_analysis'] = st.number_input(
+                    "成交量分析权重",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.20,
+                    format="%.2f",
+                    help='成交量分析对综合得分的影响权重'
+                )
+            
+            # 检查权重和是否为1
+            total_weight = sum(weights.values())
+            if abs(total_weight - 1.0) > 0.01:
+                st.warning(f"权重总和应为1.0，当前为{total_weight:.2f}")
+            else:
+                st.success("权重设置正确")
+            
+            params['weights'] = weights
+
     # 主界面
     col1, col2 = st.columns([1, 4])  # 创建两列，比例为1:4
     with col1:
@@ -676,33 +887,39 @@ def main():
     # 如果正在扫描，显示进度
     if st.session_state.scanning:
         with st.spinner("正在扫描，请稍等..."):
-            start_time = datetime.now()
-            results = scan_stocks(st.session_state.last_params['strategy'],
-                                  st.session_state.last_params['params'])
-            end_time = datetime.now()
+            try:
+                start_time = datetime.now()
+                results = scan_stocks(st.session_state.last_params['strategy'],
+                                      st.session_state.last_params['params'])
+                end_time = datetime.now()
 
-            if results:
-                st.session_state.scan_results = {
-                    'results': results,
-                    'start_time': start_time,
-                    'end_time': end_time
-                }
-            else:
-                st.session_state.scan_results = {
-                    'results': None,
-                    'start_time': start_time,
-                    'end_time': end_time
-                }
+                if results is not None:  # 确保results不是None
+                    st.session_state.scan_results = {
+                        'results': results,
+                        'start_time': start_time,
+                        'end_time': end_time
+                    }
+                    st.success(f"扫描完成！找到 {len(results)} 只符合条件的股票")
+                else:
+                    st.error("扫描失败，请检查网络连接或后端服务状态")
+                    st.session_state.scan_results = None
 
-            st.session_state.scanning = False
-            st.rerun()
+            except Exception as e:
+                st.error(f"扫描过程中发生错误: {e}")
+                st.session_state.scan_results = None
+
+            finally:
+                st.session_state.scanning = False
+                st.rerun()
 
     # 显示结果
     if st.session_state.scan_results:
         results = st.session_state.scan_results['results']
         start_time = st.session_state.scan_results['start_time']
         end_time = st.session_state.scan_results['end_time']
-        st.session_state.scan_results = None
+        
+        # 不要立即清空scan_results，让用户可以看到结果
+        # st.session_state.scan_results = None  # 注释掉这行
 
         if results:
             # 将结果转换为DataFrame
@@ -717,8 +934,17 @@ def main():
             with col1:
                 st.metric("符合条件股票数量", len(df))
             with col2:
-                avg_strength = df['signal_strength'].mean() if 'signal_strength' in df.columns else 0
-                st.metric("平均信号强度", f"{avg_strength:.1f}")
+                # 检查是否有signal字段，如果没有则使用signal_strength
+                if 'signal' in df.columns:
+                    avg_signal = df['signal'].mean()
+                    signal_col = 'signal'
+                elif 'signal_strength' in df.columns:
+                    avg_signal = df['signal_strength'].mean()
+                    signal_col = 'signal_strength'
+                else:
+                    avg_signal = 0
+                    signal_col = None
+                st.metric("平均信号分数", f"{avg_signal:.1f}")
             with col3:
                 st.metric("扫描时间", f"{datetime.now().strftime('%m-%d %H:%M')}")
 
@@ -794,7 +1020,76 @@ def main():
                     '信号强度',
                     format='%.2f'
                 ),
-                "signal": "买卖信号"
+                "signal": st.column_config.NumberColumn(
+                    '信号分数',
+                    format='%.2f'
+                ),
+                "signal": "买卖信号",
+                # 上升通道策略特有字段
+                "channel_status": "通道状态",
+                "beta": st.column_config.NumberColumn(
+                    '斜率',
+                    format='%.4f'
+                ),
+                "r2": st.column_config.NumberColumn(
+                    'R²值',
+                    format='%.3f'
+                ),
+                "width_pct": st.column_config.NumberColumn(
+                    '通道宽度',
+                    format='%.3f'
+                ),
+                "slope_deg": st.column_config.NumberColumn(
+                    '斜率角度',
+                    format='%.2f°'
+                ),
+                "volatility": st.column_config.NumberColumn(
+                    '波动率',
+                    format='%.3f'
+                ),
+                "cumulative_gain": st.column_config.NumberColumn(
+                    '累计涨幅',
+                    format='%.3f'
+                ),
+                "window_size": "窗口大小",
+                "days_since_anchor": "距锚点天数",
+                "mid_today": st.column_config.NumberColumn(
+                    '今日中轴',
+                    format='%.2f'
+                ),
+                "upper_today": st.column_config.NumberColumn(
+                    '今日上沿',
+                    format='%.2f'
+                ),
+                "lower_today": st.column_config.NumberColumn(
+                    '今日下沿',
+                    format='%.2f'
+                ),
+                "price_position": "价格位置",
+                "anchor_date": "锚点日期",
+                "anchor_price": st.column_config.NumberColumn(
+                    '锚点价格',
+                    format='%.2f'
+                ),
+                "channel_quality_score": st.column_config.NumberColumn(
+                    '通道质量得分',
+                    format='%.1f'
+                ),
+                "trend_strength_score": st.column_config.NumberColumn(
+                    '趋势强度得分',
+                    format='%.1f'
+                ),
+                "risk_control_score": st.column_config.NumberColumn(
+                    '风险控制得分',
+                    format='%.1f'
+                ),
+                "volume_analysis_score": st.column_config.NumberColumn(
+                    '成交量分析得分',
+                    format='%.1f'
+                ),
+                "buy_signal": "买入建议",
+                "risk_level": "风险等级",
+                "position_advice": "持仓建议"
             }
 
             st.dataframe(df, column_config=column_config, hide_index=True)
@@ -830,8 +1125,15 @@ def main():
             # 显示保存成功消息
             st.success(f"结果已自动保存到: {final_file}")
 
+            # 添加清除结果按钮
+            if st.button("清除结果", type="secondary"):
+                st.session_state.scan_results = None
+                st.rerun()
+
         else:
             st.info("未找到符合条件的股票")
+            # 清除空结果
+            st.session_state.scan_results = None
 
 
 if __name__ == "__main__":
