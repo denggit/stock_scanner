@@ -1094,6 +1094,105 @@ def main():
 
             st.dataframe(df, column_config=column_config, hide_index=True)
 
+            # 添加股票代码点击跳转功能
+            st.subheader("🔍 查看个股详情")
+            
+            # 检查DataFrame是否有必要的字段（支持中英文字段名）
+            code_field = None
+            name_field = None
+            
+            # 检查英文字段名
+            if 'code' in df.columns:
+                code_field = 'code'
+            elif '股票代码' in df.columns:
+                code_field = '股票代码'
+            
+            # 检查名称字段名
+            if 'name' in df.columns:
+                name_field = 'name'
+            elif '股票简称' in df.columns:
+                name_field = '股票简称'
+            elif '股票名称' in df.columns:
+                name_field = '股票名称'
+            
+            if code_field is None:
+                st.error("数据中缺少股票代码字段，无法显示股票选择功能")
+                st.write("可用的字段:", list(df.columns))
+            elif name_field is None:
+                st.error("数据中缺少股票名称字段，无法显示股票选择功能")
+                st.write("可用的字段:", list(df.columns))
+            else:
+                # 生成股票选择选项
+                try:
+                    stock_options = [f"{row[code_field]} - {[row[name_field]][0]}" for _, row in df.iterrows()]
+                    
+                    selected_stock = st.selectbox(
+                        "选择要查看的股票",
+                        options=stock_options,
+                        index=0,
+                        help="选择股票后点击下方按钮查看详细数据"
+                    ).split("-")[0].strip()
+                    
+                    if selected_stock:
+                        stock_code = selected_stock
+                        # 从DataFrame中找到对应的股票名称
+                        stock_row = df[df[code_field] == stock_code]
+                        if not stock_row.empty:
+                            stock_name = stock_row.iloc[0][name_field]
+                            
+                            # 创建查询参数
+                            query_params = {
+                                'code': stock_code,
+                                'name': stock_name,
+                                'auto_ascending_channel': 'true',
+                                'strategy': st.session_state.last_params['strategy']
+                            }
+                            
+                            # 验证参数完整性
+                            if len(stock_code) < 3 or len(stock_name) < 2:
+                                st.error(f"⚠️ 股票信息不完整: 代码={stock_code}, 名称={stock_name}")
+                                st.stop()
+                            
+                            # 构建URL - 使用正确的URL编码
+                            import urllib.parse
+                            base_url = "http://localhost:8501"
+                            query_string = urllib.parse.urlencode(query_params)
+                            data_viewer_url = f"{base_url}/data_viewer?{query_string}"
+                            
+                            # 验证URL
+                            try:
+                                parsed_url = urllib.parse.urlparse(data_viewer_url)
+                                parsed_params = urllib.parse.parse_qs(parsed_url.query)
+                                if parsed_params.get('code', [''])[0] != stock_code:
+                                    st.error("⚠️ URL参数验证失败")
+                                    st.stop()
+                            except Exception as e:
+                                st.error(f"⚠️ URL构建失败: {e}")
+                                st.stop()
+                            
+                            # 显示跳转按钮
+                            col1, col2 = st.columns([1, 3])
+
+                            # 添加更可靠的跳转按钮
+                            st.link_button(
+                                "🔗 直接跳转到数据查看器",
+                                data_viewer_url,
+                                type="secondary",
+                                help="点击此按钮直接跳转到数据查看器页面"
+                            )
+                            
+                            # 显示URL信息用于调试
+                            with st.expander("🔧 调试信息", expanded=False):
+                                st.write("**生成的URL:**")
+                                st.code(data_viewer_url)
+                                st.write("**URL参数:**")
+                                st.write(query_params)
+                        else:
+                            st.error(f"无法找到股票 {stock_code} 的详细信息")
+                except Exception as e:
+                    st.error(f"生成股票选择选项时出错: {e}")
+                    st.write("数据预览:", df.head())
+
             # 添加下载按钮
             csv = df.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
