@@ -48,20 +48,20 @@ async def get_stock_data(
             ma_periods=ma_periods
         )
         logger.info(f"stock_service.get_stock_data returned: {type(data)}")
-        
+
         if data is None:
             logger.info("Data is None, raising 404")
             raise HTTPException(status_code=404, detail=f"No data found for stock code: {code}")
-        
+
         logger.info(f"Data type: {type(data)}")
         logger.info(f"Data length: {len(data) if isinstance(data, list) else 'N/A'}")
         if isinstance(data, list) and len(data) > 0:
             logger.info(f"First record: {data[0]}")
-            
+
             # 在接口层直接处理数据，确保JSON兼容性
             import json
             import numpy as np
-            
+
             def clean_record(record):
                 """清理记录中的非JSON兼容值"""
                 cleaned = {}
@@ -81,10 +81,10 @@ async def get_stock_data(
                     else:
                         cleaned[key] = str(value)
                 return cleaned
-            
+
             # 清理所有记录
             cleaned_data = [clean_record(record) for record in data]
-            
+
             # 测试JSON序列化
             try:
                 json_str = json.dumps(cleaned_data)
@@ -92,10 +92,10 @@ async def get_stock_data(
             except Exception as e:
                 logger.error(f"JSON serialization failed: {e}")
                 raise HTTPException(status_code=500, detail=f"JSON serialization error: {str(e)}")
-            
+
             logger.info(f"Successfully get stock data for code: {code}")
             return cleaned_data
-        
+
         logger.info(f"Successfully get stock data for code: {code}")
         return data
     except ValueError as e:

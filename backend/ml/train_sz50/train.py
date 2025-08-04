@@ -218,22 +218,22 @@ def select_important_features(X_train, y_train, X_test, threshold=0.01):
     """选择重要特征"""
     xgb = XGBClassifier(n_estimators=100, random_state=42)
     xgb.fit(X_train, y_train)
-    
+
     # 获取特征重要性
     importance_scores = pd.Series(xgb.feature_importances_, index=X_train.columns)
     important_features = importance_scores[importance_scores > threshold].index
-    
+
     logger.info(f"选择的重要特征数量: {len(important_features)}")
     logger.info("\n特征重要性排名:")
     for feat, score in importance_scores.nlargest(10).items():
         logger.info(f"{feat}: {score:.4f}")
-    
+
     return X_train[important_features], X_test[important_features], important_features
 
 
 def get_adjusted_trainer():
     trainer = ExplosiveStockModelTrainer()
-    
+
     # 调整模型参数
     trainer.models['gbdt'] = GradientBoostingClassifier(
         random_state=42,
@@ -246,7 +246,7 @@ def get_adjusted_trainer():
         max_features='sqrt',
         class_weight={0: 1, 1: 2}  # 增加正样本权重
     )
-    
+
     trainer.models['rf'] = RandomForestClassifier(
         random_state=42,
         n_jobs=-1,
@@ -257,7 +257,7 @@ def get_adjusted_trainer():
         max_features='sqrt',
         class_weight={0: 1, 1: 3}  # 进一步增加正样本权重
     )
-    
+
     trainer.models['xgb'] = XGBClassifier(
         random_state=42,
         n_jobs=-1,
@@ -270,7 +270,7 @@ def get_adjusted_trainer():
         scale_pos_weight=3,  # 增加正样本权重
         gamma=0.1
     )
-    
+
     return trainer
 
 

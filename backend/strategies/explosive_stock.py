@@ -816,7 +816,7 @@ class ExplosiveStockStrategy(BaseStrategy):
             self.ml_trainer = ExplosiveStockModelTrainer()
             self.ml_trainer.load_models(str(MODEL_BASE_PATH))
             logging.info("机器学习模型加载成功")
-            
+
         except Exception as e:
             logging.warning(f"机器学习模型初始化失败: {e}")
             if self._params.get("ml_model_fallback", True):

@@ -17,7 +17,6 @@ from typing import Optional, Dict, Callable, Any
 
 import numpy as np
 import pandas as pd
-from pandas.core.internals import DataManager
 from tqdm import tqdm
 
 from backend.data.database import DatabaseManager
@@ -984,7 +983,8 @@ class DataUpdateManager:
         ])
         return dividend_data
 
-    def update_daily_vwap(self, start_date: str = None, end_date: str = None, adjust: str = '3', progress_callback=None):
+    def update_daily_vwap(self, start_date: str = None, end_date: str = None, adjust: str = '3',
+                          progress_callback=None):
         """更新日线数据的VWAP值
 
         从5分钟数据中获取每日15:00:00的VWAP值，更新到日线数据中
@@ -1047,7 +1047,8 @@ class DataUpdateManager:
                                 if date in vwap_map:
                                     daily_data.loc[daily_data['trade_date'] == date, 'vwap'] = vwap_map[date]
                         else:
-                            logging.warning(f"股票 {code}_{adjust} 在日期范围 {min_date} 到 {max_date} 内vwap已全部完成更新")
+                            logging.warning(
+                                f"股票 {code}_{adjust} 在日期范围 {min_date} 到 {max_date} 内vwap已全部完成更新")
 
                 except Exception as e:
                     logging.error(f"获取股票 {code} 的5分钟数据时出错: {e}")

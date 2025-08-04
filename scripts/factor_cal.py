@@ -65,7 +65,8 @@ def calculate_single_factor(
 
     # 获取股票列表
     logger.info(f"获取股票池: {pool_name}，上市天数>={ipo_days}天，最小成交额>={min_amount / 10000}万")
-    ipo_date = (datetime.datetime.strptime(end_date, "%Y-%m-%d") - datetime.timedelta(days=ipo_days)).strftime("%Y-%m-%d")
+    ipo_date = (datetime.datetime.strptime(end_date, "%Y-%m-%d") - datetime.timedelta(days=ipo_days)).strftime(
+        "%Y-%m-%d")
 
     stock_list = fetcher.get_stock_list_with_cond(
         pool_name=pool_name,
@@ -211,7 +212,8 @@ def main():
 
     calculate_single_factor(
         factor_name=args.factor_name,
-        start_date=(datetime.datetime.strptime(args.date, "%Y-%m-%d") - datetime.timedelta(days=365)).strftime("%Y-%m-%d"),
+        start_date=(datetime.datetime.strptime(args.date, "%Y-%m-%d") - datetime.timedelta(days=365)).strftime(
+            "%Y-%m-%d"),
         end_date=args.date,
         pool_name=args.pool,
         ipo_days=args.ipo_days,

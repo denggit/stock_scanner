@@ -11,18 +11,17 @@ import hashlib
 import json
 import logging
 import time
-from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, Union
+from functools import wraps
+from typing import Any, Dict, Optional
 
 import pandas as pd
 import redis
-from functools import wraps
 
 
 class CacheManager:
     """缓存管理器"""
-    
-    def __init__(self, redis_host: str = 'localhost', redis_port: int = 6379, 
+
+    def __init__(self, redis_host: str = 'localhost', redis_port: int = 6379,
                  redis_db: int = 0, redis_password: Optional[str] = None):
         """
         初始化缓存管理器
@@ -36,7 +35,7 @@ class CacheManager:
         self.memory_cache = {}  # 内存缓存
         self.redis_client = None
         self.redis_available = False
-        
+
         # 初始化Redis连接
         try:
             self.redis_client = redis.Redis(
@@ -60,15 +59,15 @@ class CacheManager:
         """生成缓存键"""
         # 将参数转换为字符串
         key_parts = [prefix]
-        
+
         # 添加位置参数
         for arg in args:
             key_parts.append(str(arg))
-        
+
         # 添加关键字参数（排序以确保一致性）
         for key in sorted(kwargs.keys()):
             key_parts.append(f"{key}:{kwargs[key]}")
-        
+
         # 生成MD5哈希
         key_string = "|".join(key_parts)
         return hashlib.md5(key_string.encode()).hexdigest()
@@ -90,7 +89,7 @@ class CacheManager:
                 value = self.redis_client.get(key)
                 if value is not None:
                     return json.loads(value)
-            
+
             # 再尝试内存缓存
             if key in self.memory_cache:
                 cache_item = self.memory_cache[key]
@@ -99,9 +98,9 @@ class CacheManager:
                 else:
                     # 清理过期缓存
                     del self.memory_cache[key]
-            
+
             return default
-            
+
         except Exception as e:
             logging.error(f"获取缓存失败: {e}")
             return default
@@ -122,19 +121,19 @@ class CacheManager:
             # 处理pandas DataFrame
             if isinstance(value, pd.DataFrame):
                 value = value.to_dict('records')
-            
+
             # 尝试Redis
             if self.redis_available:
                 self.redis_client.setex(key, expire, json.dumps(value))
-            
+
             # 同时设置内存缓存
             self.memory_cache[key] = {
                 'value': value,
                 'expire_time': time.time() + expire
             }
-            
+
             return True
-            
+
         except Exception as e:
             logging.error(f"设置缓存失败: {e}")
             return False
@@ -153,13 +152,13 @@ class CacheManager:
             # 删除Redis缓存
             if self.redis_available:
                 self.redis_client.delete(key)
-            
+
             # 删除内存缓存
             if key in self.memory_cache:
                 del self.memory_cache[key]
-            
+
             return True
-            
+
         except Exception as e:
             logging.error(f"删除缓存失败: {e}")
             return False
@@ -180,7 +179,7 @@ class CacheManager:
                 keys = self.redis_client.keys(pattern)
                 if keys:
                     self.redis_client.delete(*keys)
-            
+
             # 清理内存缓存
             if pattern:
                 # 简单的模式匹配
@@ -189,9 +188,9 @@ class CacheManager:
                     del self.memory_cache[key]
             else:
                 self.memory_cache.clear()
-            
+
             return True
-            
+
         except Exception as e:
             logging.error(f"清理缓存失败: {e}")
             return False
@@ -210,7 +209,7 @@ class CacheManager:
             # 检查Redis
             if self.redis_available and self.redis_client.exists(key):
                 return True
-            
+
             # 检查内存缓存
             if key in self.memory_cache:
                 cache_item = self.memory_cache[key]
@@ -218,9 +217,9 @@ class CacheManager:
                     return True
                 else:
                     del self.memory_cache[key]
-            
+
             return False
-            
+
         except Exception as e:
             logging.error(f"检查缓存存在性失败: {e}")
             return False
@@ -237,12 +236,12 @@ class CacheManager:
                 'memory_cache_size': len(self.memory_cache),
                 'redis_keys': 0
             }
-            
+
             if self.redis_available:
                 stats['redis_keys'] = self.redis_client.dbsize()
-            
+
             return stats
-            
+
         except Exception as e:
             logging.error(f"获取内存使用情况失败: {e}")
             return {'memory_cache_size': 0, 'redis_keys': 0}
@@ -257,16 +256,16 @@ class CacheManager:
         try:
             current_time = time.time()
             expired_keys = []
-            
+
             for key, cache_item in self.memory_cache.items():
                 if cache_item['expire_time'] <= current_time:
                     expired_keys.append(key)
-            
+
             for key in expired_keys:
                 del self.memory_cache[key]
-            
+
             return len(expired_keys)
-            
+
         except Exception as e:
             logging.error(f"清理过期缓存失败: {e}")
             return 0
@@ -292,27 +291,30 @@ def cached(prefix: str, expire: int = 3600):
         prefix: 缓存键前缀
         expire: 过期时间（秒）
     """
+
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
             cache_manager = get_cache_manager()
             cache_key = cache_manager._generate_key(prefix, *args, **kwargs)
-            
+
             # 尝试从缓存获取
             cached_result = cache_manager.get(cache_key)
             if cached_result is not None:
                 logging.debug(f"缓存命中: {cache_key}")
                 return cached_result
-            
+
             # 执行函数
             result = func(*args, **kwargs)
-            
+
             # 缓存结果
             cache_manager.set(cache_key, result, expire)
             logging.debug(f"缓存设置: {cache_key}")
-            
+
             return result
+
         return wrapper
+
     return decorator
 
 
@@ -331,4 +333,4 @@ def strategy_result_cache(expire: int = 3600):
 # 技术指标缓存装饰器
 def indicator_cache(expire: int = 7200):
     """技术指标缓存装饰器（2小时过期）"""
-    return cached("indicator", expire) 
+    return cached("indicator", expire)

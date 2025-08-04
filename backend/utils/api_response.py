@@ -7,11 +7,11 @@
 @Description: 
 """
 
+import datetime
 from typing import Any
 
 import numpy as np
 import pandas as pd
-import datetime
 
 
 def convert_to_python_types(obj: Any) -> Any:
@@ -49,10 +49,10 @@ def convert_to_python_types(obj: Any) -> Any:
             else:
                 # 对于非数值列，也要处理可能的NaN值
                 df_copy[col] = df_copy[col].where(pd.notna(df_copy[col]), None)
-        
+
         # 转换为字典记录
         records = df_copy.to_dict('records')
-        
+
         # 进一步处理字典中的特殊值
         for record in records:
             for key, value in record.items():
@@ -60,7 +60,7 @@ def convert_to_python_types(obj: Any) -> Any:
                     record[key] = None
                 elif pd.isna(value):
                     record[key] = None
-        
+
         return records
     elif isinstance(obj, pd.Series):
         # 处理Series中的特殊值
@@ -70,17 +70,17 @@ def convert_to_python_types(obj: Any) -> Any:
             series_copy = series_copy.where(pd.notna(series_copy), None)
         else:
             series_copy = series_copy.where(pd.notna(series_copy), None)
-        
+
         # 转换为字典
         result_dict = series_copy.to_dict()
-        
+
         # 进一步处理字典中的特殊值
         for key, value in result_dict.items():
             if isinstance(value, float) and (np.isnan(value) or np.isinf(value)):
                 result_dict[key] = None
             elif pd.isna(value):
                 result_dict[key] = None
-        
+
         return result_dict
     elif isinstance(obj, np.generic):
         # 处理numpy标量类型

@@ -18,4 +18,4 @@
 from .channel_analysis import *
 
 __version__ = "1.0.0"
-__author__ = "AI Assistant" 
+__author__ = "AI Assistant"

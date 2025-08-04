@@ -11,11 +11,13 @@
 ## 🏠 基础接口
 
 ### 1. 根路径
+
 ```http
 GET /
 ```
 
 **响应示例**:
+
 ```json
 {
   "message": "Welcome to the Stock Screener API"
@@ -23,11 +25,13 @@ GET /
 ```
 
 ### 2. 测试接口
+
 ```http
 GET /test
 ```
 
 **响应示例**:
+
 ```json
 {
   "message": "Test successful"
@@ -39,11 +43,13 @@ GET /test
 ## 📊 股票数据接口
 
 ### 1. 获取股票数据
+
 ```http
 GET /api/stock/{code}
 ```
 
 **参数**:
+
 - `code` (path): 股票代码，如 `000001.SZ`
 - `period` (query): 周期，可选值 `daily`, `weekly`, `monthly`
 - `start_date` (query): 开始日期，格式 `YYYY-MM-DD`
@@ -51,11 +57,13 @@ GET /api/stock/{code}
 - `ma_periods` (query): 移动平均线周期列表
 
 **请求示例**:
+
 ```bash
 curl "http://localhost:8000/api/stock/000001.SZ?period=daily&start_date=2024-01-01&end_date=2024-12-31"
 ```
 
 **响应示例**:
+
 ```json
 {
   "code": "000001.SZ",
@@ -78,6 +86,7 @@ curl "http://localhost:8000/api/stock/000001.SZ?period=daily&start_date=2024-01-
 ```
 
 **数据处理说明**:
+
 - 系统会自动处理无穷大值（inf/-inf）和NaN值，将其转换为null
 - 超出JSON范围的浮点数值会被替换为null
 - 所有数值字段都经过JSON兼容性验证
@@ -88,11 +97,13 @@ curl "http://localhost:8000/api/stock/000001.SZ?period=daily&start_date=2024-01-
 ## 🎯 策略接口
 
 ### 1. 策略扫描
+
 ```http
 POST /api/strategy/scan
 ```
 
 **请求体**:
+
 ```json
 {
   "strategy": "爆发式选股策略",
@@ -109,6 +120,7 @@ POST /api/strategy/scan
 ```
 
 **响应示例**:
+
 ```json
 {
   "results": [
@@ -135,11 +147,13 @@ POST /api/strategy/scan
 ```
 
 ### 2. 获取策略列表
+
 ```http
 GET /api/strategy/list
 ```
 
 **响应示例**:
+
 ```json
 {
   "strategies": [
@@ -164,11 +178,13 @@ GET /api/strategy/list
 ## 📈 回测接口
 
 ### 1. 运行回测
+
 ```http
 POST /api/backtest/run
 ```
 
 **请求体**:
+
 ```json
 {
   "strategy": "爆发式选股策略",
@@ -196,6 +212,7 @@ POST /api/backtest/run
 ```
 
 **响应示例**:
+
 ```json
 {
   "backtest_id": "bt_20250204_001",
@@ -251,14 +268,17 @@ POST /api/backtest/run
 ```
 
 ### 2. 获取回测结果
+
 ```http
 GET /api/backtest/backtest_results/{backtest_id}
 ```
 
 **参数**:
+
 - `backtest_id` (path): 回测ID
 
 **响应示例**:
+
 ```json
 {
   "backtest_id": "bt_20250204_001",
@@ -274,11 +294,13 @@ GET /api/backtest/backtest_results/{backtest_id}
 ## 🔧 系统监控接口
 
 ### 1. 获取系统健康状态
+
 ```http
 GET /api/system/health
 ```
 
 **响应示例**:
+
 ```json
 {
   "status": "healthy",
@@ -310,11 +332,13 @@ GET /api/system/health
 ```
 
 ### 2. 获取性能指标
+
 ```http
 GET /api/system/metrics
 ```
 
 **响应示例**:
+
 ```json
 {
   "timestamp": "2025-02-04T10:30:00",
@@ -341,11 +365,13 @@ GET /api/system/metrics
 ```
 
 ### 3. 获取统计信息
+
 ```http
 GET /api/system/stats
 ```
 
 **响应示例**:
+
 ```json
 {
   "api_calls": {
@@ -373,14 +399,17 @@ GET /api/system/stats
 ## 📊 数据管理接口
 
 ### 1. 获取股票列表
+
 ```http
 GET /api/data/stocks
 ```
 
 **参数**:
+
 - `pool` (query): 股票池类型，可选值 `full`, `no_st`, `sz50`, `hs300`, `zz500`
 
 **响应示例**:
+
 ```json
 {
   "stocks": [
@@ -397,11 +426,13 @@ GET /api/data/stocks
 ```
 
 ### 2. 更新数据状态
+
 ```http
 GET /api/data/update_status
 ```
 
 **响应示例**:
+
 ```json
 {
   "stock_list": {
@@ -424,11 +455,13 @@ GET /api/data/update_status
 ## 🛠️ 缓存管理接口
 
 ### 1. 获取缓存状态
+
 ```http
 GET /api/cache/status
 ```
 
 **响应示例**:
+
 ```json
 {
   "memory_cache_size": 1500,
@@ -439,11 +472,13 @@ GET /api/cache/status
 ```
 
 ### 2. 清理缓存
+
 ```http
 POST /api/cache/clear
 ```
 
 **请求体**:
+
 ```json
 {
   "pattern": "stock_data_*"  // 可选，清理特定模式的缓存
@@ -451,6 +486,7 @@ POST /api/cache/clear
 ```
 
 **响应示例**:
+
 ```json
 {
   "cleared_keys": 150,
@@ -463,6 +499,7 @@ POST /api/cache/clear
 ## 📝 错误处理
 
 ### 错误响应格式
+
 ```json
 {
   "detail": "错误描述信息",
@@ -472,12 +509,14 @@ POST /api/cache/clear
 ```
 
 ### 常见错误码
+
 - `400`: 请求参数错误
 - `404`: 资源不存在
 - `500`: 服务器内部错误
 - `503`: 服务不可用
 
 ### 错误示例
+
 ```json
 {
   "detail": "股票代码不存在: 999999.SZ",
@@ -491,11 +530,13 @@ POST /api/cache/clear
 ## 🔐 安全说明
 
 ### 当前状态
+
 - 无需认证
 - 无访问限制
 - 建议在生产环境中添加认证机制
 
 ### 建议的安全措施
+
 1. 添加API密钥认证
 2. 实现请求频率限制
 3. 添加IP白名单
@@ -506,11 +547,13 @@ POST /api/cache/clear
 ## 📞 技术支持
 
 ### 联系方式
+
 - 查看API文档: `http://localhost:8000/docs`
 - 查看日志文件: `logs/app.log`
 - 系统监控: `http://localhost:8000/api/system/health`
 
 ### 常见问题
+
 1. **连接超时**: 检查服务是否启动
 2. **数据为空**: 检查数据源连接
 3. **策略执行失败**: 检查参数配置

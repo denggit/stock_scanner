@@ -1,16 +1,15 @@
 import logging
 import os
+from multiprocessing import cpu_count
 
 import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, \
     f1_score, roc_auc_score
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
-from multiprocessing import cpu_count
 
 
 class ExplosiveStockModelTrainer:
@@ -19,13 +18,13 @@ class ExplosiveStockModelTrainer:
     def __init__(self):
         # 获取 CPU 核心数
         n_jobs = cpu_count() - 2  # 留出2个核心给系统使用
-        
+
         self.models = {
             'gbdt': GradientBoostingClassifier(
                 random_state=42,
                 n_estimators=200,
                 learning_rate=0.01,
-                max_depth=6,         # 适度增加深度
+                max_depth=6,  # 适度增加深度
                 subsample=0.9,
                 min_samples_split=15,
                 min_samples_leaf=8,
@@ -35,7 +34,7 @@ class ExplosiveStockModelTrainer:
                 random_state=42,
                 n_jobs=n_jobs,
                 n_estimators=400,
-                max_depth=10,        # 增加深度
+                max_depth=10,  # 增加深度
                 min_samples_split=10,
                 min_samples_leaf=5,
                 max_features='sqrt',
@@ -46,21 +45,21 @@ class ExplosiveStockModelTrainer:
                 random_state=42,
                 n_jobs=n_jobs,
                 n_estimators=200,
-                max_depth=6,         # 适度增加深度
+                max_depth=6,  # 适度增加深度
                 learning_rate=0.01,
                 subsample=0.9,
                 colsample_bytree=0.9,
                 min_child_weight=4,  # 减小以增加灵活性
                 scale_pos_weight=1.8,  # 微调权重
                 tree_method='hist',
-                gamma=0.12          # 减小以增加灵活性
+                gamma=0.12  # 减小以增加灵活性
             ),
             # 'lr': None  # 移除表现不佳的逻辑回归模型
         }
         self.weights = {
             'gbdt': 0.35,  # GBDT的precision很高
-            'rf': 0.45,    # RF整体表现最好
-            'xgb': 0.20    # 降低XGB权重
+            'rf': 0.45,  # RF整体表现最好
+            'xgb': 0.20  # 降低XGB权重
         }
         self.scaler = StandardScaler()
         self.trained_models = {}

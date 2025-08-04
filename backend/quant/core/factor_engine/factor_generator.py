@@ -2545,6 +2545,7 @@ class WorldQuantFactors(BaseFactor):
         """
         with warnings.catch_warnings():
             warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid value encountered in reduce')
+
             # 线性衰减函数
             def decay_linear(series, window):
                 weights = np.arange(1, window + 1) / window
@@ -2610,6 +2611,7 @@ class WorldQuantFactors(BaseFactor):
         """
         with warnings.catch_warnings():
             warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid value encountered in reduce')
+
             # 线性衰减函数
             def decay_linear(series, window):
                 weights = np.arange(1, window + 1) / window
@@ -2868,6 +2870,7 @@ class WorldQuantFactors(BaseFactor):
         """
         with warnings.catch_warnings():
             warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid value encountered in reduce')
+
             # 线性衰减函数
             def decay_linear(series, window):
                 weights = np.arange(1, window + 1) / window
@@ -4011,6 +4014,7 @@ class WorldQuantFactors(BaseFactor):
         """
         with warnings.catch_warnings():
             warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid value encountered in reduce')
+
             # 线性衰减函数
             def decay_linear(series, window):
                 weights = np.arange(1, window + 1) / window

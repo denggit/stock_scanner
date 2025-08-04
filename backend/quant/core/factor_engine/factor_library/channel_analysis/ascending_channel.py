@@ -19,10 +19,10 @@
 """
 
 import logging
-from pathlib import Path
-from typing import Dict, Any, Optional, Tuple, List
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, Any, Optional, List
 
 import numpy as np
 import pandas as pd
@@ -56,22 +56,22 @@ class ChannelCalculationResult:
 
 class ChannelCalculationStrategy(ABC):
     """通道计算策略抽象基类"""
-    
+
     @abstractmethod
-    def calculate_for_date(self, df: pd.DataFrame, current_date: pd.Timestamp, 
-                          current_close: float, config: Dict[str, Any]) -> ChannelCalculationResult:
+    def calculate_for_date(self, df: pd.DataFrame, current_date: pd.Timestamp,
+                           current_close: float, config: Dict[str, Any]) -> ChannelCalculationResult:
         """为特定日期计算通道"""
         pass
 
 
 class StandardChannelStrategy(ChannelCalculationStrategy):
     """标准通道计算策略"""
-    
+
     def __init__(self, pivot_detector: PivotDetector):
         self.pivot_detector = pivot_detector
-    
-    def calculate_for_date(self, df: pd.DataFrame, current_date: pd.Timestamp, 
-                          current_close: float, config: Dict[str, Any]) -> ChannelCalculationResult:
+
+    def calculate_for_date(self, df: pd.DataFrame, current_date: pd.Timestamp,
+                           current_close: float, config: Dict[str, Any]) -> ChannelCalculationResult:
         """实现标准的v0.2通道计算逻辑"""
         # 1. 检查数据量
         if len(df) < config['min_data_points']:
@@ -80,28 +80,28 @@ class StandardChannelStrategy(ChannelCalculationStrategy):
                 window_df=pd.DataFrame(), beta=None, sigma=None, r2=None, state=None,
                 break_reason="insufficient_data"
             )
-        
+
         # 2. 全局pivot_low锚点查找
         search_df = df.tail(config['L_max']).copy()
         pivots = self.pivot_detector.get_anchor_candidates(search_df, n_candidates=20)
         today = search_df['trade_date'].iloc[-1]
         valid_pivots = [(d, p) for d, p in pivots if (today - pd.to_datetime(d)).days >= config['min_data_points']]
-        
+
         if not valid_pivots:
             return ChannelCalculationResult(
                 is_valid=False, anchor_date=None, anchor_price=None,
                 window_df=pd.DataFrame(), beta=None, sigma=None, r2=None, state=None,
                 break_reason="no_valid_anchor"
             )
-        
+
         # 3. 选择最早最低锚点
         anchor_date, anchor_price = min(valid_pivots, key=lambda x: x[1])
         anchor_date = pd.to_datetime(anchor_date)
         window_df = df[df['trade_date'] >= anchor_date].copy()
-        
+
         # 4. 回归计算
         beta, sigma, r2 = self._calculate_regression(window_df, anchor_date)
-        
+
         # 5. 回归有效性检查
         if beta is None or beta <= 0 or r2 < config['R2_min']:
             return ChannelCalculationResult(
@@ -109,7 +109,7 @@ class StandardChannelStrategy(ChannelCalculationStrategy):
                 window_df=window_df, beta=beta, sigma=sigma, r2=r2, state=None,
                 break_reason="invalid_regression"
             )
-        
+
         # 6. 构建通道状态
         state = ChannelState(
             anchor_date=anchor_date, anchor_price=anchor_price, window_df=window_df,
@@ -118,7 +118,7 @@ class StandardChannelStrategy(ChannelCalculationStrategy):
             mid_tomorrow=0.0, upper_tomorrow=0.0, lower_tomorrow=0.0
         )
         state.update_channel_boundaries(beta, sigma, config['k'])
-        
+
         # 7. 通道宽度检查
         width_pct = (state.upper_today - state.lower_today) / state.mid_today if state.mid_today else None
         if width_pct is None or width_pct < config['width_pct_min'] or width_pct > config['width_pct_max']:
@@ -127,27 +127,27 @@ class StandardChannelStrategy(ChannelCalculationStrategy):
                 window_df=window_df, beta=beta, sigma=sigma, r2=r2, state=state,
                 break_reason="invalid_width"
             )
-        
+
         # 8. 设置正常状态
         state.cumulative_gain = (current_close - anchor_price) / anchor_price
         state.channel_status = ChannelStatus.NORMAL
         state.r2 = r2
-        
+
         return ChannelCalculationResult(
             is_valid=True, anchor_date=anchor_date, anchor_price=anchor_price,
             window_df=window_df, beta=beta, sigma=sigma, r2=r2, state=state
         )
-    
+
     def _calculate_regression(self, df: pd.DataFrame, anchor_date: pd.Timestamp):
         """计算线性回归参数，返回(beta, sigma, r2)"""
         dates = pd.to_datetime(df['trade_date'])
         anchor_date = pd.to_datetime(anchor_date)
         days_since_anchor = (dates - anchor_date).dt.days
         prices = df['close'].values
-        
+
         if len(days_since_anchor) < 2 or np.std(days_since_anchor) == 0 or np.std(prices) == 0:
             return None, None, None
-        
+
         try:
             slope, intercept, r_value, p_value, std_err = stats.linregress(days_since_anchor, prices)
             r2 = r_value ** 2
@@ -161,38 +161,38 @@ class StandardChannelStrategy(ChannelCalculationStrategy):
 
 class HistoryCalculationTemplate:
     """历史计算模板方法类"""
-    
+
     def __init__(self, strategy: ChannelCalculationStrategy, config: Dict[str, Any]):
         self.strategy = strategy
         self.config = config
-    
-    def calculate_history(self, df: pd.DataFrame, min_window_size: int, 
-                         step_days: int = 1) -> pd.DataFrame:
+
+    def calculate_history(self, df: pd.DataFrame, min_window_size: int,
+                          step_days: int = 1) -> pd.DataFrame:
         """模板方法：计算历史通道数据"""
         # 预处理
         df = self._preprocess_data(df, min_window_size)
-        
+
         # 初始化结果容器
         history_data = []
-        
+
         # 抑制日志
         with self._suppress_logs():
             # 主循环
             for i in range(min_window_size, len(df), step_days):
-                current_df = df.iloc[:i+1].copy()
+                current_df = df.iloc[:i + 1].copy()
                 current_date = current_df.iloc[-1]['trade_date']
                 current_close = current_df.iloc[-1]['close']
-                
+
                 # 使用策略计算通道
                 result = self.strategy.calculate_for_date(current_df, current_date, current_close, self.config)
-                
+
                 # 构建记录
                 record = self._build_record_from_result(result, current_date, current_close)
                 history_data.append(record)
-        
+
         # 后处理
         return self._postprocess_results(history_data)
-    
+
     def _preprocess_data(self, df: pd.DataFrame, min_window_size: int) -> pd.DataFrame:
         """预处理数据"""
         if len(df) < min_window_size + 20:
@@ -202,22 +202,23 @@ class HistoryCalculationTemplate:
         df = df.sort_values('trade_date').reset_index(drop=True)
         df['trade_date'] = pd.to_datetime(df['trade_date'])
         return df
-    
+
     def _suppress_logs(self):
         """抑制日志输出上下文管理器"""
+
         class LogSuppressor:
             def __enter__(self):
                 self.original_level = logging.getLogger().level
                 logging.getLogger().setLevel(logging.CRITICAL)
                 return self
-            
+
             def __exit__(self, exc_type, exc_val, exc_tb):
                 logging.getLogger().setLevel(self.original_level)
-        
+
         return LogSuppressor()
-    
-    def _build_record_from_result(self, result: ChannelCalculationResult, 
-                                 current_date: pd.Timestamp, current_close: float) -> Dict[str, Any]:
+
+    def _build_record_from_result(self, result: ChannelCalculationResult,
+                                  current_date: pd.Timestamp, current_close: float) -> Dict[str, Any]:
         """从计算结果构建记录"""
         base_record = {
             'trade_date': current_date,
@@ -246,7 +247,7 @@ class HistoryCalculationTemplate:
             'slope_deg': None,  # 添加斜率角度（度）
             'volatility': None  # 添加波动率
         }
-        
+
         if not result.is_valid:
             # 无效通道
             if result.anchor_date is not None:
@@ -268,7 +269,8 @@ class HistoryCalculationTemplate:
                     })
                     # 计算通道宽度百分比
                     if result.state.mid_today and result.state.mid_today > 0:
-                        base_record['width_pct'] = (result.state.upper_today - result.state.lower_today) / result.state.mid_today
+                        base_record['width_pct'] = (
+                                                               result.state.upper_today - result.state.lower_today) / result.state.mid_today
                     # 计算斜率角度
                     if result.beta:
                         base_record['slope_deg'] = np.degrees(np.arctan(result.beta))
@@ -300,13 +302,14 @@ class HistoryCalculationTemplate:
                 'reanchor_fail_up': state.reanchor_fail_up,
                 'reanchor_fail_down': state.reanchor_fail_down,
                 'break_reason': None,  # 有效通道没有break_reason
-                'width_pct': (state.upper_today - state.lower_today) / state.mid_today if state.mid_today and state.mid_today > 0 else None,
+                'width_pct': (
+                                         state.upper_today - state.lower_today) / state.mid_today if state.mid_today and state.mid_today > 0 else None,
                 'slope_deg': np.degrees(np.arctan(result.beta)) if result.beta else None,
                 'volatility': result.sigma / state.mid_today if result.sigma and state.mid_today and state.mid_today > 0 else None
             })
-        
+
         return base_record
-    
+
     def _postprocess_results(self, history_data: List[Dict[str, Any]]) -> pd.DataFrame:
         """后处理结果"""
         if not history_data:
@@ -326,15 +329,15 @@ class AscendingChannelRegression:
         # 配置加载与参数初始化
         self.config = self._load_config(config_path)
         self._init_parameters(params)
-        
+
         # 组件初始化
         self.pivot_detector = PivotDetector(pivot_m=self.pivot_m)
         self.strategy = StandardChannelStrategy(self.pivot_detector)
         self.history_calculator = HistoryCalculationTemplate(self.strategy, self._get_config_dict())
-        
+
         # 状态管理
         self.state: Optional[ChannelState] = None
-        
+
         logger.info("上升通道回归分析器初始化完成")
 
     def _init_parameters(self, params: Dict[str, Any]) -> None:
@@ -407,13 +410,13 @@ class AscendingChannelRegression:
         """拟合上升通道（单点计算）"""
         df = df.sort_values('trade_date').reset_index(drop=True)
         df['trade_date'] = pd.to_datetime(df['trade_date'])
-        
+
         current_date = df.iloc[-1]['trade_date']
         current_close = df.iloc[-1]['close']
-        
+
         # 使用策略计算
         result = self.strategy.calculate_for_date(df, current_date, current_close, self._get_config_dict())
-        
+
         if not result.is_valid:
             # 返回BROKEN状态
             state = ChannelState(
@@ -429,14 +432,15 @@ class AscendingChannelRegression:
                 channel_status=ChannelStatus.BROKEN
             )
             return state
-        
+
         return result.state
 
     def fit_channel_history(self, df: pd.DataFrame, min_window_size: int = 60) -> pd.DataFrame:
         """计算历史上升通道数据（批量计算）"""
         return self.history_calculator.calculate_history(df, min_window_size, step_days=1)
 
-    def fit_channel_history_optimized(self, df: pd.DataFrame, min_window_size: int = 60, step_days: int = 1) -> pd.DataFrame:
+    def fit_channel_history_optimized(self, df: pd.DataFrame, min_window_size: int = 60,
+                                      step_days: int = 1) -> pd.DataFrame:
         """优化的历史通道数据计算（批量计算，可配置步长）"""
         return self.history_calculator.calculate_history(df, min_window_size, step_days)
 
@@ -463,7 +467,7 @@ class AscendingChannelRegression:
         if self._should_reanchor():
             self._reanchor()
         self._check_extreme_states()
-        
+
         return self.state.to_dict()
 
     def _calculate_regression(self, df: pd.DataFrame, anchor_date: pd.Timestamp):
@@ -505,14 +509,14 @@ class AscendingChannelRegression:
             else:
                 self.state.reanchor_fail_down += 1
             return
-        
+
         new_anchor_date, new_anchor_price = new_anchor
         self.state.anchor_date = new_anchor_date
         self.state.anchor_price = new_anchor_price
         self.state.window_df = self.state.window_df[
             self.state.window_df['trade_date'] >= new_anchor_date
-        ].reset_index(drop=True)
-        
+            ].reset_index(drop=True)
+
         beta, sigma, r2 = self._calculate_regression(self.state.window_df, new_anchor_date)
         self.state.beta = beta
         self.state.sigma = sigma
@@ -521,12 +525,13 @@ class AscendingChannelRegression:
         self.state.reset_break_counters()
         self.state.reanchor_fail_up = 0
         self.state.reanchor_fail_down = 0
-        
+
         if self.state.channel_status == ChannelStatus.BROKEN:
             self.state.channel_status = ChannelStatus.NORMAL
             logger.info("通道状态重置为正常")
-        
-        logger.info(f"重锚成功: 新锚点 {new_anchor_date} @ {new_anchor_price:.2f}, 窗口大小: {len(self.state.window_df)}")
+
+        logger.info(
+            f"重锚成功: 新锚点 {new_anchor_date} @ {new_anchor_price:.2f}, 窗口大小: {len(self.state.window_df)}")
 
     def _check_extreme_states(self) -> None:
         """检查并更新极端状态"""
@@ -561,16 +566,16 @@ class AscendingChannelRegression:
         """增量更新历史通道数据"""
         if history_df.empty:
             raise ValueError("历史通道数据不能为空")
-        
+
         new_data = new_data.sort_values('trade_date').reset_index(drop=True)
         new_data['trade_date'] = pd.to_datetime(new_data['trade_date'])
-        
+
         last_record = history_df.iloc[-1]
-        
+
         if pd.isna(last_record['beta']):
             logger.warning("最后一条历史记录无效，无法进行增量更新")
             return history_df
-        
+
         last_state = ChannelState(
             anchor_date=pd.to_datetime(last_record['anchor_date']),
             anchor_price=last_record['anchor_price'],
@@ -584,7 +589,7 @@ class AscendingChannelRegression:
             upper_tomorrow=last_record['upper_tomorrow'],
             lower_tomorrow=last_record['lower_tomorrow']
         )
-        
+
         last_state.break_cnt_up = last_record['break_cnt_up']
         last_state.break_cnt_down = last_record['break_cnt_down']
         last_state.reanchor_fail_up = last_record['reanchor_fail_up']
@@ -592,18 +597,18 @@ class AscendingChannelRegression:
         last_state.cumulative_gain = last_record['cumulative_gain']
         last_state.channel_status = ChannelStatus(last_record['channel_status'])
         last_state.last_update = pd.to_datetime(last_record['trade_date'])
-        
+
         window_size = last_record['window_size']
         if pd.isna(window_size) or window_size <= 0:
             logger.warning("无法重建窗口数据，window_size无效")
             return history_df
-        
+
         new_history_data = []
-        
+
         import logging
         original_level = logging.getLogger().level
         logging.getLogger().setLevel(logging.ERROR)
-        
+
         try:
             for _, row in new_data.iterrows():
                 try:
@@ -615,10 +620,10 @@ class AscendingChannelRegression:
                         'close': row['close'],
                         'volume': row['volume']
                     }
-                    
+
                     updated_info = self.update(last_state, new_bar)
                     last_state = self.state
-                    
+
                     new_record = {
                         'trade_date': row['trade_date'],
                         'close': row['close'],
@@ -641,12 +646,12 @@ class AscendingChannelRegression:
                         'window_size': len(last_state.window_df),
                         'days_since_anchor': (row['trade_date'] - last_state.anchor_date).days
                     }
-                    
+
                     new_history_data.append(new_record)
-                    
+
                 except Exception as e:
                     logger.warning(f"增量更新时点 {row['trade_date']} 失败: {e}")
-                    
+
                     base_record = {
                         'trade_date': row['trade_date'],
                         'close': row['close'],
@@ -669,13 +674,13 @@ class AscendingChannelRegression:
                         'window_size': None,
                         'days_since_anchor': None
                     }
-                    
+
                     new_history_data.append(base_record)
                     last_state = None
                     continue
         finally:
             logging.getLogger().setLevel(original_level)
-        
+
         if new_history_data:
             new_history_df = pd.DataFrame(new_history_data)
             updated_history_df = pd.concat([history_df, new_history_df], ignore_index=True)
@@ -684,23 +689,23 @@ class AscendingChannelRegression:
         else:
             logger.warning("增量更新失败: 没有成功添加新记录")
             return history_df
-    
-    def update_channel_history_with_state(self, history_df: pd.DataFrame, 
-                                         last_state: ChannelState, 
-                                         new_data: pd.DataFrame) -> pd.DataFrame:
+
+    def update_channel_history_with_state(self, history_df: pd.DataFrame,
+                                          last_state: ChannelState,
+                                          new_data: pd.DataFrame) -> pd.DataFrame:
         """基于完整状态对象的增量更新"""
         if history_df.empty:
             raise ValueError("历史通道数据不能为空")
-        
+
         if last_state is None:
             raise ValueError("最后状态对象不能为空")
-        
+
         new_data = new_data.sort_values('trade_date').reset_index(drop=True)
         new_data['trade_date'] = pd.to_datetime(new_data['trade_date'])
-        
+
         new_history_data = []
         current_state = last_state
-        
+
         for _, row in new_data.iterrows():
             try:
                 new_bar = {
@@ -711,10 +716,10 @@ class AscendingChannelRegression:
                     'close': row['close'],
                     'volume': row['volume']
                 }
-                
+
                 updated_info = self.update(current_state, new_bar)
                 current_state = self.state
-                
+
                 new_record = {
                     'trade_date': row['trade_date'],
                     'close': row['close'],
@@ -737,13 +742,13 @@ class AscendingChannelRegression:
                     'window_size': len(current_state.window_df),
                     'days_since_anchor': (row['trade_date'] - current_state.anchor_date).days
                 }
-                
+
                 new_history_data.append(new_record)
-                
+
             except Exception as e:
                 logger.warning(f"增量更新时点 {row['trade_date']} 失败: {e}")
                 continue
-        
+
         if new_history_data:
             new_history_df = pd.DataFrame(new_history_data)
             updated_history_df = pd.concat([history_df, new_history_df], ignore_index=True)
@@ -753,25 +758,25 @@ class AscendingChannelRegression:
             logger.warning("增量更新失败: 没有成功添加新记录")
             return history_df
 
-    def update_channel_history_incremental_improved(self, history_df: pd.DataFrame, 
-                                                   original_df: pd.DataFrame, 
-                                                   new_data: pd.DataFrame) -> pd.DataFrame:
+    def update_channel_history_incremental_improved(self, history_df: pd.DataFrame,
+                                                    original_df: pd.DataFrame,
+                                                    new_data: pd.DataFrame) -> pd.DataFrame:
         """改进的增量更新历史通道数据"""
         if history_df.empty:
             raise ValueError("历史通道数据不能为空")
-        
+
         original_df = original_df.sort_values('trade_date').reset_index(drop=True)
         original_df['trade_date'] = pd.to_datetime(original_df['trade_date'])
-        
+
         new_data = new_data.sort_values('trade_date').reset_index(drop=True)
         new_data['trade_date'] = pd.to_datetime(new_data['trade_date'])
-        
+
         last_record = history_df.iloc[-1]
-        
+
         if pd.isna(last_record['beta']):
             logger.warning("最后一条历史记录无效，无法进行增量更新")
             return history_df
-        
+
         last_state = ChannelState(
             anchor_date=pd.to_datetime(last_record['anchor_date']),
             anchor_price=last_record['anchor_price'],
@@ -785,7 +790,7 @@ class AscendingChannelRegression:
             upper_tomorrow=last_record['upper_tomorrow'],
             lower_tomorrow=last_record['lower_tomorrow']
         )
-        
+
         last_state.break_cnt_up = last_record['break_cnt_up']
         last_state.break_cnt_down = last_record['break_cnt_down']
         last_state.reanchor_fail_up = last_record['reanchor_fail_up']
@@ -793,34 +798,34 @@ class AscendingChannelRegression:
         last_state.cumulative_gain = last_record['cumulative_gain']
         last_state.channel_status = ChannelStatus(last_record['channel_status'])
         last_state.last_update = pd.to_datetime(last_record['trade_date'])
-        
+
         window_size = last_record['window_size']
         if pd.isna(window_size) or window_size <= 0:
             logger.warning("无法重建窗口数据，window_size无效")
             return history_df
-        
+
         last_history_date = last_record['trade_date']
         last_history_idx = original_df[original_df['trade_date'] == last_history_date].index
-        
+
         if len(last_history_idx) == 0:
             logger.warning(f"无法在原始数据中找到历史记录日期: {last_history_date}")
             return history_df
-        
+
         last_history_idx = last_history_idx[0]
         start_idx = max(0, last_history_idx - window_size + 1)
         window_df = original_df.iloc[start_idx:last_history_idx + 1].copy()
-        
+
         if len(window_df) != window_size:
             logger.warning(f"窗口大小不匹配: 期望 {window_size}, 实际 {len(window_df)}")
             window_size = len(window_df)
-        
+
         last_state.window_df = window_df
         new_history_data = []
-        
+
         import logging
         original_level = logging.getLogger().level
         logging.getLogger().setLevel(logging.ERROR)
-        
+
         try:
             for _, row in new_data.iterrows():
                 try:
@@ -832,10 +837,10 @@ class AscendingChannelRegression:
                         'close': row['close'],
                         'volume': row['volume']
                     }
-                    
+
                     updated_info = self.update(last_state, new_bar)
                     last_state = self.state
-                    
+
                     new_record = {
                         'trade_date': row['trade_date'],
                         'close': row['close'],
@@ -858,12 +863,12 @@ class AscendingChannelRegression:
                         'window_size': len(last_state.window_df),
                         'days_since_anchor': (row['trade_date'] - last_state.anchor_date).days
                     }
-                    
+
                     new_history_data.append(new_record)
-                    
+
                 except Exception as e:
                     logger.warning(f"增量更新时点 {row['trade_date']} 失败: {e}")
-                    
+
                     base_record = {
                         'trade_date': row['trade_date'],
                         'close': row['close'],
@@ -886,13 +891,13 @@ class AscendingChannelRegression:
                         'window_size': None,
                         'days_since_anchor': None
                     }
-                    
+
                     new_history_data.append(base_record)
                     last_state = None
                     continue
         finally:
             logging.getLogger().setLevel(original_level)
-        
+
         if new_history_data:
             new_history_df = pd.DataFrame(new_history_data)
             updated_history_df = pd.concat([history_df, new_history_df], ignore_index=True)

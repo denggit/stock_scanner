@@ -211,7 +211,6 @@ class BaostockSource(DataSource):
         """"""
         df = bs.query_stock_industry(code=code).get_data()
 
-
     @ensure_connection
     def get_sz50(self):
         """获取上证50股票"""

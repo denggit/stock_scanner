@@ -10,8 +10,8 @@ import datetime
 import logging
 from typing import Optional
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from backend.data.database import DatabaseManager
 from backend.data_source.baostock_source import BaostockSource
@@ -60,14 +60,14 @@ class StockDataFetcher:
         if len(df) == 0:
             logging.warning(f"No data found for code: {code}. Please Update Database")
             return df
-        
+
         # 数据清理：处理无穷大和NaN值
         for column in numeric_columns:
             if column in df.columns:
                 df[column] = df[column].astype(float)
                 # 替换无穷大值为NaN
                 df[column] = df[column].replace([np.inf, -np.inf], np.nan)
-        
+
         # 过滤交易状态
         df = df[df.tradestatus == tradestatus]
 

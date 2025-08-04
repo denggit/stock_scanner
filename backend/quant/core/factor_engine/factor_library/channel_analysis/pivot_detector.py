@@ -37,7 +37,8 @@ class PivotDetector:
         """
         self.pivot_m = pivot_m
 
-    def find_pivot_low(self, df: pd.DataFrame, column: str = 'low', silent: bool = False) -> Optional[Tuple[pd.Timestamp, float]]:
+    def find_pivot_low(self, df: pd.DataFrame, column: str = 'low', silent: bool = False) -> Optional[
+        Tuple[pd.Timestamp, float]]:
         """
         查找 pivot low（局部最低点）
         
@@ -84,7 +85,8 @@ class PivotDetector:
 
         return latest_pivot
 
-    def find_pivot_high(self, df: pd.DataFrame, column: str = 'high', silent: bool = False) -> Optional[Tuple[pd.Timestamp, float]]:
+    def find_pivot_high(self, df: pd.DataFrame, column: str = 'high', silent: bool = False) -> Optional[
+        Tuple[pd.Timestamp, float]]:
         """
         查找 pivot high（局部最高点）
         
@@ -131,8 +133,8 @@ class PivotDetector:
 
         return latest_pivot
 
-    def find_initial_anchor(self, df: pd.DataFrame, strategy: str = 'pivot_low', 
-                           silent: bool = False) -> Optional[Tuple[pd.Timestamp, float]]:
+    def find_initial_anchor(self, df: pd.DataFrame, strategy: str = 'pivot_low',
+                            silent: bool = False) -> Optional[Tuple[pd.Timestamp, float]]:
         """
         查找初始锚点
         

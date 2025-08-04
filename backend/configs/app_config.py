@@ -9,8 +9,9 @@
 
 import os
 from typing import Dict, Any, Optional
-from pydantic_settings import BaseSettings
+
 from pydantic import Field
+from pydantic_settings import BaseSettings
 
 
 class DatabaseConfig(BaseSettings):
@@ -41,11 +42,11 @@ class DataSourceConfig(BaseSettings):
     baostock_max_retries: int = 3
     baostock_retry_delay: int = 2
     baostock_login_interval: int = 300  # 5分钟重新登录
-    
+
     # AKShare配置
     akshare_timeout: int = 30
     akshare_max_retries: int = 3
-    
+
     # 数据更新配置
     update_interval: int = Field(default=24, env="DATA_UPDATE_INTERNAL")  # 小时
     batch_size: int = 100  # 批量处理大小
@@ -69,17 +70,17 @@ class StrategyConfig(BaseSettings):
     default_rsi_period: int = 14
     default_bb_period: int = 20
     default_bb_std: float = 2.0
-    
+
     # 信号阈值
     min_signal_score: float = 70.0
     min_volume_ratio: float = 1.5
     min_explosion_prob: float = 0.5
-    
+
     # 风险控制
     max_position_size: float = 0.1  # 单只股票最大仓位
     stop_loss: float = 0.07  # 止损比例
     take_profit: float = 0.30  # 止盈比例
-    
+
     # 机器学习模型配置
     use_ml_model: bool = True
     ml_model_fallback: bool = True
@@ -93,7 +94,7 @@ class CacheConfig(BaseSettings):
     strategy_result_expire: int = 3600  # 1小时
     indicator_expire: int = 7200  # 2小时
     technical_analysis_expire: int = 3600  # 1小时
-    
+
     # 内存缓存限制
     max_memory_cache_size: int = 10000
     memory_cache_cleanup_interval: int = 3600  # 1小时
@@ -110,11 +111,11 @@ class LoggingConfig(BaseSettings):
 
 class AppConfig(BaseSettings):
     """应用主配置"""
-    
+
     # 环境配置
     environment: str = Field(default="development", env="ENVIRONMENT")
     debug: bool = Field(default=True, env="DEBUG")
-    
+
     # 子配置
     database: DatabaseConfig = DatabaseConfig()
     redis: RedisConfig = RedisConfig()
@@ -123,19 +124,19 @@ class AppConfig(BaseSettings):
     strategy: StrategyConfig = StrategyConfig()
     cache: CacheConfig = CacheConfig()
     logging: LoggingConfig = LoggingConfig()
-    
+
     # 应用特定配置
     app_name: str = "Stock Scanner"
     app_version: str = "1.0.0"
     timezone: str = "Asia/Shanghai"
-    
+
     # 文件路径配置
     base_dir: str = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     data_dir: str = os.path.join(base_dir, "data")
     logs_dir: str = os.path.join(base_dir, "logs")
     models_dir: str = os.path.join(base_dir, "backend", "ml", "models")
     results_dir: str = os.path.join(base_dir, "results")
-    
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
@@ -144,7 +145,7 @@ class AppConfig(BaseSettings):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._ensure_directories()
-    
+
     def _ensure_directories(self):
         """确保必要的目录存在"""
         directories = [
@@ -153,29 +154,29 @@ class AppConfig(BaseSettings):
             self.models_dir,
             self.results_dir
         ]
-        
+
         for directory in directories:
             if not os.path.exists(directory):
                 os.makedirs(directory, exist_ok=True)
-    
+
     def get_database_url(self) -> str:
         """获取数据库连接URL"""
         return f"mysql+pymysql://{self.database.user}:{self.database.password}@{self.database.host}:{self.database.port}/{self.database.database}"
-    
+
     def get_redis_url(self) -> str:
         """获取Redis连接URL"""
         if self.redis.password:
             return f"redis://:{self.redis.password}@{self.redis.host}:{self.redis.port}/{self.redis.db}"
         return f"redis://{self.redis.host}:{self.redis.port}/{self.redis.db}"
-    
+
     def is_production(self) -> bool:
         """判断是否为生产环境"""
         return self.environment.lower() == "production"
-    
+
     def is_development(self) -> bool:
         """判断是否为开发环境"""
         return self.environment.lower() == "development"
-    
+
     def get_config_dict(self) -> Dict[str, Any]:
         """获取配置字典"""
         return {
@@ -214,4 +215,4 @@ def reload_config() -> AppConfig:
     """重新加载配置"""
     global _config
     _config = AppConfig()
-    return _config 
+    return _config

@@ -40,7 +40,7 @@ async def run_backtest(
     try:
         if params is None:
             params = {}
-            
+
         result = await backtest_service.run_backtest(
             strategy=strategy,
             start_date=start_date,

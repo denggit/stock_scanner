@@ -71,7 +71,8 @@ def main():
             help="选择要回测的股票池范围"
         )
         ipo_date = st.date_input("最晚上市日期", value=one_year_ago, help="默认一年前").strftime("%Y-%m-%d")
-        min_amount = st.number_input("5日最小成交额", min_value=0, value=100000000, help="排除五日平均交易额低于该值股票")
+        min_amount = st.number_input("5日最小成交额", min_value=0, value=100000000,
+                                     help="排除五日平均交易额低于该值股票")
         params = {"stock_pool": stock_pool, "ipo_date": ipo_date, "min_amount": min_amount}
 
         # 策略参数设置
@@ -697,7 +698,7 @@ def main():
                     step=1,
                     help="判断pivot low的宽度参数 (m左m右更高)"
                 )
-            
+
             with col2:
                 params['gain_trigger'] = st.number_input(
                     "重锚涨幅触发 (gain_trigger)",
@@ -731,7 +732,7 @@ def main():
                     step=1,
                     help="连续n次重锚仍突破/跌破时进入极端状态"
                 )
-            
+
             # 质量参数
             st.subheader("质量参数设置")
             col1, col2, col3 = st.columns(3)
@@ -752,7 +753,7 @@ def main():
                     step=0.05,
                     help="最小回归拟合优度，低于此视为无效通道"
                 )
-            
+
             with col2:
                 params['width_pct_min'] = st.number_input(
                     "通道宽度下限 (width_pct_min)",
@@ -770,7 +771,7 @@ def main():
                     step=0.01,
                     help="通道宽度上限，超过此视为过宽"
                 )
-            
+
             with col3:
                 params['min_signal_score'] = st.number_input(
                     "最小信号分数 (min_signal_score)",
@@ -788,7 +789,7 @@ def main():
                     step=0.05,
                     help="最小R²值，用于最终筛选"
                 )
-            
+
             # 筛选条件
             st.subheader("筛选条件设置")
             col1, col2, col3 = st.columns(3)
@@ -809,7 +810,7 @@ def main():
                     step=0.1,
                     help="最小斜率角度，低于此视为趋势过弱"
                 )
-            
+
             with col2:
                 params['max_volatility'] = st.number_input(
                     "最大波动率 (max_volatility)",
@@ -819,7 +820,7 @@ def main():
                     step=0.01,
                     help="最大波动率，超过此视为风险过高"
                 )
-            
+
             # 评分权重设置
             st.subheader("评分权重设置")
             weights = {}
@@ -860,14 +861,14 @@ def main():
                     format="%.2f",
                     help='成交量分析对综合得分的影响权重'
                 )
-            
+
             # 检查权重和是否为1
             total_weight = sum(weights.values())
             if abs(total_weight - 1.0) > 0.01:
                 st.warning(f"权重总和应为1.0，当前为{total_weight:.2f}")
             else:
                 st.success("权重设置正确")
-            
+
             params['weights'] = weights
 
     # 主界面
@@ -918,7 +919,7 @@ def main():
         results = st.session_state.scan_results['results']
         start_time = st.session_state.scan_results['start_time']
         end_time = st.session_state.scan_results['end_time']
-        
+
         # 不要立即清空scan_results，让用户可以看到结果
         # st.session_state.scan_results = None  # 注释掉这行
 
@@ -1097,23 +1098,23 @@ def main():
 
             # 添加股票代码点击跳转功能
             st.subheader("🔍 查看个股详情")
-            
+
             # 检查DataFrame是否有必要的字段
             if 'code' in df.columns and 'name' in df.columns:
                 # 生成股票选择选项
                 stock_options = [f"{row['code']} - {row['name']}" for _, row in df.iterrows()]
-                
+
                 selected_stock = st.selectbox(
                     "选择要查看的股票",
                     options=stock_options,
                     index=0,
                     help="选择股票后点击下方按钮查看详细数据"
                 )
-                
+
                 if selected_stock:
                     stock_code = selected_stock.split("-")[0].strip()
                     stock_name = selected_stock.split("-")[1].strip()
-                    
+
                     # 构建URL
                     import urllib.parse
                     query_params = {
@@ -1123,7 +1124,7 @@ def main():
                     }
                     query_string = urllib.parse.urlencode(query_params)
                     data_viewer_url = f"http://localhost:8501/data_viewer?{query_string}"
-                    
+
                     # 显示跳转按钮
                     st.link_button(
                         "🔗 直接跳转到数据查看器",

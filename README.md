@@ -16,6 +16,7 @@
 ## 🆕 最新更新
 
 ### 2025-08-01 - JSON序列化兼容性修复 & 突破策略实现
+
 - ✅ 修复了策略返回数据中包含无穷大(inf)和NaN值时导致的JSON序列化错误
 - ✅ 增强了`convert_to_python_types`函数，自动将特殊数值转换为None
 - ✅ 确保所有策略（放量上涨策略、均线回踩策略等）都能正常返回JSON响应
@@ -73,6 +74,7 @@ CREATE DATABASE stock_scanner;
 ### 3. 环境变量配置
 
 创建 `.env` 文件：
+
 ```env
 # 数据库配置
 MYSQL_HOST=localhost
@@ -119,12 +121,14 @@ python run_frontend.py
 ## 🎯 核心功能
 
 ### 1. 数据查看器
+
 - 股票K线图展示
 - 技术指标可视化 (MACD, RSI, 布林带等)
 - 成交量分析
 - 交互式图表
 
 ### 2. 策略扫描器
+
 - **爆发式选股策略**: 寻找短期暴涨潜力
 - **均线回踩策略**: 价格回踩均线买入机会
 - **波段交易策略**: 基于技术指标的波段操作
@@ -132,12 +136,14 @@ python run_frontend.py
 - **头肩底形态策略**: 识别经典技术形态
 
 ### 3. 回测系统
+
 - 历史数据回测
 - 性能指标计算 (收益率、最大回撤、夏普比率等)
 - 交易记录分析
 - 可视化结果展示
 
 ### 4. 机器学习模型
+
 - 集成多种ML算法
 - 特征工程和模型训练
 - 预测概率计算
@@ -146,6 +152,7 @@ python run_frontend.py
 ## 🛠️ 工具和组件
 
 ### 缓存系统
+
 ```python
 from backend.utils.cache_manager import stock_data_cache
 
@@ -155,6 +162,7 @@ def get_stock_data(code, start_date, end_date):
 ```
 
 ### 性能监控
+
 ```python
 from backend.utils.performance_monitor import get_performance_monitor
 
@@ -164,6 +172,7 @@ health = monitor.get_current_health()
 ```
 
 ### 配置管理
+
 ```python
 from backend.configs.app_config import get_config
 
@@ -175,6 +184,7 @@ strategy_config = config.strategy
 ## 📊 使用示例
 
 ### 策略扫描
+
 ```python
 from backend.strategies.explosive_stock import ExplosiveStockStrategy
 
@@ -191,6 +201,7 @@ print(f"买入建议: {signal['buy_signal']}")
 ```
 
 ### 回测分析
+
 ```python
 from backend.services.backtest_service import BacktestService
 
@@ -212,6 +223,7 @@ print(f"最大回撤: {results['summary']['max_drawdown']}%")
 ## 🔧 开发指南
 
 ### 添加新策略
+
 ```python
 from backend.strategies.base import BaseStrategy
 
@@ -232,6 +244,7 @@ class MyStrategy(BaseStrategy):
 ```
 
 ### 使用缓存装饰器
+
 ```python
 from backend.utils.cache_manager import strategy_result_cache
 
@@ -251,16 +264,19 @@ def run_strategy(strategy_name: str, params: dict):
 ## 🔍 监控和调试
 
 ### 系统健康检查
+
 ```bash
 curl http://localhost:8000/api/system/health
 ```
 
 ### 性能指标
+
 ```bash
 curl http://localhost:8000/api/system/metrics
 ```
 
 ### 缓存状态
+
 ```bash
 curl http://localhost:8000/api/cache/status
 ```
@@ -268,27 +284,32 @@ curl http://localhost:8000/api/cache/status
 ## 🆘 常见问题
 
 ### 1. 数据源连接失败
+
 - 检查网络连接
 - 验证API密钥
 - 查看错误日志
 
 ### 2. 数据库连接问题
+
 - 检查MySQL服务状态
 - 验证连接参数
 - 检查防火墙设置
 
 ### 3. 策略执行缓慢
+
 - 使用缓存装饰器
 - 优化算法逻辑
 - 减少数据量
 
 ### 4. JSON序列化错误 (已修复)
+
 - **问题**: 策略返回数据时出现"Out of range float values are not JSON compliant"错误
 - **原因**: 数据中包含无穷大(inf)或NaN值，这些值无法被JSON序列化
 - **解决方案**: 系统已自动处理，将特殊数值转换为None
 - **影响**: 所有策略现在都能正常返回JSON响应
 
 ### 5. 突破策略返回None错误 (已修复)
+
 - **问题**: 突破策略使用时出现"策略扫描出来的结果形态不支持：<class 'NoneType'>"错误
 - **原因**: 突破策略的`generate_signal`方法没有实现，返回了None
 - **解决方案**: 完整实现了突破策略，包括阻力位识别、突破检测、信号评分等功能
@@ -315,6 +336,7 @@ curl http://localhost:8000/api/cache/status
 ## 🙏 致谢
 
 感谢以下开源项目的支持：
+
 - [Baostock](http://baostock.com/baostock/index.php)
 - [AKShare](https://akshare.akfamily.xyz/)
 - [FastAPI](https://fastapi.tiangolo.com/)

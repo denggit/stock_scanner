@@ -8,8 +8,8 @@
 """
 from typing import Optional, List, Dict, Any
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from backend.data.stock_data_fetcher import StockDataFetcher
 from backend.utils import format_info
@@ -67,17 +67,17 @@ class StockService:
 
             # 处理无穷大和NaN值，确保JSON序列化兼容
             df = df.replace([np.inf, -np.inf], np.nan)
-            
+
             # 处理超出JSON范围的浮点数值
             numeric_columns = df.select_dtypes(include=[np.number]).columns
             for col in numeric_columns:
                 if col in df.columns:
                     # 将超出范围的数值替换为None
                     df[col] = df[col].apply(lambda x: None if pd.isna(x) or abs(x) > 1e308 else x)
-            
+
             # 将NaN替换为None，这样JSON序列化时会被转换为null
             df = df.where(pd.notna(df), None)
-            
+
             # 处理日期字段，确保JSON序列化兼容
             for col in df.columns:
                 if df[col].dtype == 'object':
@@ -86,14 +86,14 @@ class StockService:
                     if hasattr(sample_value, 'strftime'):
                         # 将日期对象转换为字符串
                         df[col] = df[col].apply(lambda x: x.strftime('%Y-%m-%d') if x is not None else None)
-            
+
             # 确保所有数值都是JSON兼容的
             for col in df.columns:
                 if pd.api.types.is_numeric_dtype(df[col]):
                     df[col] = df[col].astype(float)
                     # 处理特殊数值
                     df[col] = df[col].apply(lambda x: None if pd.isna(x) or np.isinf(x) or abs(x) > 1e308 else float(x))
-            
+
             # 确保所有字符串字段都是字符串类型
             for col in df.columns:
                 if df[col].dtype == 'object':

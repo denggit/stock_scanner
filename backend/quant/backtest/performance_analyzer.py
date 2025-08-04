@@ -381,7 +381,7 @@ class FactorAnalyzer:
             # 多空组合收益（顶层组减底层组）
             long_short = self.group_returns.loc[num_quantiles] - self.group_returns.loc[1]
             self.group_returns.loc['long_short'] = long_short
-            
+
             # 纯多头收益（顶层组绝对收益）
             top_group = self.group_returns.loc[num_quantiles]
             self.group_returns.loc['top_group'] = top_group

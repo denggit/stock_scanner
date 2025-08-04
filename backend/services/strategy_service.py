@@ -14,14 +14,14 @@ from tqdm import tqdm
 
 from backend.data.stock_data_fetcher import StockDataFetcher
 from backend.strategies.breakout import BreakoutStrategy
+from backend.strategies.continuous_rise import ContinuousRiseStrategy
 from backend.strategies.double_up import DoubleUpStrategy
 from backend.strategies.explosive_stock import ExplosiveStockStrategy
 from backend.strategies.hs_bottom import HSBottom
 from backend.strategies.long_term_uptrend import LongTermUpTrendStrategy
 from backend.strategies.ma_pullback import MAPullbackStrategy
-from backend.strategies.swing_trading import SwingTradingStrategy
-from backend.strategies.continuous_rise import ContinuousRiseStrategy
 from backend.strategies.rising_channel import RisingChannelStrategy
+from backend.strategies.swing_trading import SwingTradingStrategy
 from backend.utils.api_response import convert_to_python_types
 from backend.utils.logger import setup_logger
 
@@ -92,7 +92,8 @@ class StrategyService:
             stock_pool = self.pool_trans.get(stock_pool)
             params["stock_pool"] = stock_pool
         # 获取股票列表
-        stocks = self.data_fetcher.get_stock_list_with_cond(pool_name=stock_pool, ipo_date=ipo_date, min_amount=min_amount)
+        stocks = self.data_fetcher.get_stock_list_with_cond(pool_name=stock_pool, ipo_date=ipo_date,
+                                                            min_amount=min_amount)
         results = []
 
         # 获取足量数据

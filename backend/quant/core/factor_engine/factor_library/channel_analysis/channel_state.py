@@ -90,18 +90,18 @@ class ChannelState:
         width_pct = None
         if self.mid_today and self.mid_today > 0:
             width_pct = (self.upper_today - self.lower_today) / self.mid_today
-        
+
         # 计算斜率角度
         slope_deg = None
         if self.beta:
             import numpy as np
             slope_deg = np.degrees(np.arctan(self.beta))
-        
+
         # 计算波动率
         volatility = None
         if self.sigma and self.mid_today and self.mid_today > 0:
             volatility = self.sigma / self.mid_today
-        
+
         return {
             "beta": self.beta,
             "sigma": self.sigma,
@@ -122,7 +122,8 @@ class ChannelState:
             "cumulative_gain": self.cumulative_gain,
             "last_update": pd.Timestamp(self.last_update).isoformat(),
             "window_size": len(self.window_df) if hasattr(self, 'window_df') and not self.window_df.empty else 0,
-            "days_since_anchor": (self.last_update - self.anchor_date).days if self.last_update and self.anchor_date else None,
+            "days_since_anchor": (
+                        self.last_update - self.anchor_date).days if self.last_update and self.anchor_date else None,
             "width_pct": width_pct,  # 通道宽度百分比
             "slope_deg": slope_deg,  # 斜率角度
             "volatility": volatility  # 波动率
@@ -183,14 +184,14 @@ class ChannelState:
             self.anchor_date = pd.to_datetime(self.anchor_date)
         if not isinstance(self.last_update, pd.Timestamp):
             self.last_update = pd.to_datetime(self.last_update)
-        
+
         # 计算今日中轴价格（使用回归线）
         self.mid_today = self._calculate_mid_price()
-        
+
         # 计算通道边界
         self.upper_today = self.mid_today + k * sigma
         self.lower_today = self.mid_today - k * sigma
-        
+
         # 计算明日预测（使用回归线斜率）
         self.mid_tomorrow = self.mid_today + beta
         self.upper_tomorrow = self.mid_tomorrow + k * sigma
@@ -209,21 +210,21 @@ class ChannelState:
             self.anchor_date = pd.to_datetime(self.anchor_date)
         if not isinstance(self.last_update, pd.Timestamp):
             self.last_update = pd.to_datetime(self.last_update)
-        
+
         days_since_anchor = (self.last_update - self.anchor_date).days
-        
+
         # 计算回归线的intercept
         # 回归线公式：y = intercept + slope * x
         # 在锚点日期（x=0）时：anchor_price = intercept + slope * 0 = intercept
         # 但实际上回归线不一定会穿过锚点，所以需要重新计算intercept
-        
+
         # 使用窗口数据重新计算回归线
         if hasattr(self, 'window_df') and not self.window_df.empty:
             dates = pd.to_datetime(self.window_df['trade_date'])
             anchor_date = pd.to_datetime(self.anchor_date)
             days_since_anchor_all = (dates - anchor_date).dt.days
             prices = self.window_df['close'].values
-            
+
             if len(days_since_anchor_all) >= 2:
                 try:
                     from scipy import stats
@@ -232,7 +233,7 @@ class ChannelState:
                     return intercept + slope * days_since_anchor
                 except Exception:
                     pass
-        
+
         # 如果无法重新计算，使用原来的方法作为fallback
         return self.anchor_price + self.beta * days_since_anchor
 

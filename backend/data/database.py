@@ -646,25 +646,25 @@ class DatabaseManager:
             包含5分钟K线数据的DataFrame
         """
         self._ensure_connection()
-        
+
         # 确定查询的年份范围
         start_year = pd.to_datetime(start_date).year
         end_year = pd.to_datetime(end_date).year
-            
+
         # 准备存储所有年份数据的DataFrame
         all_data = []
-        
+
         # 遍历每一年获取数据
         for year in range(start_year, end_year + 1):
             # 确定表名
             table_suffix = f"back_{year}" if adjust == '1' else str(year)
             table_name = f"stock_5min_{table_suffix}"
-            
+
             # 检查表是否存在
             if not self._table_exists(table_name):
                 logging.warning(f"表 {table_name} 不存在，跳过")
                 continue
-                
+
             # 构建SQL查询
             query = f"""
             SELECT * FROM {table_name}
@@ -678,14 +678,13 @@ class DatabaseManager:
                 if result:
                     df = pd.DataFrame(result, columns=[desc[0] for desc in cursor.description])
                     all_data.append(df)
-        
+
         # 合并所有年份的数据
         if all_data:
             return pd.concat(all_data, ignore_index=True)
         else:
             # 返回空DataFrame
             return pd.DataFrame()
-
 
     def _save_financial_data(self, df: pd.DataFrame, table_name: str, columns: list):
         """通用的财务数据保存方法"""
