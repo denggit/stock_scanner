@@ -11,7 +11,7 @@ from typing import Dict, Any, List
 
 import pandas as pd
 
-from backend.data.stock_data_fetcher import StockDataFetcher
+from backend.data.data_fetcher import StockDataFetcher
 from backend.utils.logger import setup_logger
 
 logger = setup_logger("backtest_service")

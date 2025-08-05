@@ -3,7 +3,7 @@
 """
 @Author     : Zijun Deng
 @Date       : 1/29/2025 6:33 PM
-@File       : stock_data_fetcher.py
+@File       : data_fetcher.py
 @Description: 
 """
 import datetime
@@ -13,8 +13,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from backend.data.database import DatabaseManager
-from backend.data_source.baostock_source import BaostockSource
+from backend.data.data_manager import DatabaseManager
+from backend.data.source.baostock_src import BaostockSource
 
 
 class StockDataFetcher:

@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
-from backend.data.stock_data_fetcher import StockDataFetcher
+from backend.data.data_fetcher import StockDataFetcher
 from backend.utils.indicators import CalIndicators
 
 # 设置中文字体

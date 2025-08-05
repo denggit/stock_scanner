@@ -108,7 +108,7 @@ class DirectoryStructureUpdater:
                 'logs': '日志文件目录',
                 'results': '结果输出目录',
                 'strategies': '交易策略模块',
-                'data_source': '数据源模块',
+                'source': '数据源模块',
                 'services': '业务服务层',
                 'utils': '工具模块',
                 'configs': '配置模块',
@@ -148,8 +148,8 @@ class DirectoryStructureUpdater:
             'hs_bottom.py': '底部策略',
             'breakout.py': '突破策略',
             'rising_channel.py': '上升通道策略',
-            'baostock_source.py': '宝硕数据源',
-            'akshare_source.py': 'AKShare数据源',
+            'baostock_src.py': '宝硕数据源',
+            'akshare_src.py': 'AKShare数据源',
             'strategy_service.py': '策略服务',
             'stock_service.py': '股票服务',
             'backtest_service.py': '回测服务',
@@ -162,9 +162,9 @@ class DirectoryStructureUpdater:
             'file_check.py': '文件检查',
             'app_config.py': '应用配置',
             'pe_validation.yaml': 'PE验证配置',
-            'database.py': '数据库操作',
-            'stock_data_fetcher.py': '股票数据获取',
-            'data_manager.py': '数据管理器',
+            'data_manager.py': '数据库操作',
+            'data_fetcher.py': '股票数据获取',
+            'data_update.py': '数据管理器',
             'strategy_interface.py': '策略接口',
             'backtest_interface.py': '回测接口',
             'stock_interface.py': '股票接口',
@@ -325,7 +325,7 @@ class DirectoryStructureUpdater:
 ### 🏗️ **核心架构**
 - **后端** (`backend/`): 基于Python的量化交易核心引擎
 - **前端** (`pages/`): Streamlit构建的Web界面
-- **数据层** (`data_source/`, `data/`): 多数据源集成和数据库管理
+- **数据层** (`source/`, `data/`): 多数据源集成和数据库管理
 - **策略层** (`strategies/`): 多种交易策略实现
 - **服务层** (`services/`): 业务逻辑服务封装
 

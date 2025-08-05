@@ -6,1081 +6,868 @@
 @File       : data_manager.py
 @Description: 
 """
-import datetime as dt
 import logging
-import multiprocessing
-import queue
-import threading
 import time
-from concurrent.futures import ProcessPoolExecutor
-from typing import Optional, Dict, Callable, Any
 
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
+import pymysql as mysql
 
-from backend.data.database import DatabaseManager
-from backend.data_source.baostock_source import BaostockSource
-from backend.data_source.base import DataSource
+from backend.configs.database.database import config
 
 
-class DataUpdateManager:
-    """数据更新管理器，负责管理和协调所有数据的更新操作
-    
-    该类提供了以下主要功能：
-    1. 股票日线数据的更新
-    2. 财务数据的更新（包括利润表、资产负债表等）
-    3. 数据更新进度追踪
-    4. 错误重试和异常处理
-    
-    Attributes:
-        db (DatabaseManager): 数据库管理器实例
-        data_source (DataSource): 数据源实例
-        data_queue (queue.Queue): 数据更新队列
-        producer_done (threading.Event): 生产者完成标志
-        stats_lock (threading.Lock): 统计信息线程锁
-    """
-    DEFAULT_CALENDAR_START: str = "2015-01-01"
-    MAX_QUEUE_SIZE: int = 100
-    MAX_RETRIES: int = 3
-    RETRY_DELAY: int = 5
-    QUEUE_TIMEOUT: int = 5
+class DatabaseManager:
+    BIG_PERIODS = ('daily', 'monthly', 'weekly', 'd', 'w', 'm')
 
-    def __init__(self, data_source: Optional[DataSource] = None):
-        """初始化数据更新管理器
+    def __init__(self):
+        self.config = config
+        self.conn = self._create_connection()
+        self._init_database()
+
+    def close(self):
+        """关闭数据库连接"""
+        if hasattr(self, "conn"):
+            self.conn.close()
+
+    def _create_connection(self):
+        """创建数据库连接"""
+        for attempt in range(self.config.MAX_RETRIES):
+            try:
+                conn = mysql.connect(
+                    host=self.config.MYSQL_HOST,
+                    port=self.config.MYSQL_PORT,
+                    user=self.config.MYSQL_USER,
+                    password=self.config.MYSQL_PASSWORD,
+                    database=self.config.MYSQL_DATABASE,
+                    charset='utf8mb4',
+                    connect_timeout=10,
+                    autocommit=True,
+                )
+                return conn
+            except Exception as e:
+                if attempt == self.config.MAX_RETRIES - 1:
+                    raise Exception("Failed to connect to database after multiple attempts")
+                logging.warning(f"Failed to connect to database: {e}")
+                time.sleep(self.config.RETRY_DELAY)
+
+    def _ensure_connection(self):
+        """确保数据库连接可用"""
+        try:
+            self.conn.ping(reconnect=True)
+        except:
+            self.conn = self._create_connection()
+
+    def _init_database(self):
+        """初始化数据库"""
+        cursor = self.conn.cursor()
+        cursor.execute(""" 
+        CREATE TABLE IF NOT EXISTS stock_list(
+            code VARCHAR(10) PRIMARY KEY,
+            name VARCHAR(100),
+            ipo_date DATE,
+            out_date DATE,
+            type CHAR(1),
+            status CHAR(1),
+            update_time_daily TIMESTAMP,
+            update_time_daily_back TIMESTAMP,  # 后复权数据更新时间
+            update_time_5min TIMESTAMP,  # 5分钟数据更新时间
+            update_time_5min_back TIMESTAMP,  # 后复权5分钟数据更新时间
+            INDEX idx_status(status),
+            INDEX idx_type(type))
+        """)
+        # 创建财务报表相关表
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_profit(
+            code VARCHAR(10),
+            pubDate DATE,
+            statDate DATE,
+            roeAvg DECIMAL(15,4),
+            npMargin DECIMAL(15,4),
+            gpMargin DECIMAL(15,4),
+            netProfit DECIMAL(20,4),
+            epsTTM DECIMAL(15,4),
+            MBRevenue DECIMAL(20,4),
+            totalShare DECIMAL(20,4),
+            liqaShare DECIMAL(20,4),
+            PRIMARY KEY (code, statDate)
+        )""")
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_balance(
+            code VARCHAR(10),
+            pubDate DATE,
+            statDate DATE,
+            currentRatio DECIMAL(15,4),
+            quickRatio DECIMAL(15,4),
+            cashRatio DECIMAL(15,4),
+            YOYLiability DECIMAL(15,4),
+            liabilityToAsset DECIMAL(15,4),
+            assetToEquity DECIMAL(15,4),
+            PRIMARY KEY (code, statDate)
+        )""")
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_cashflow(
+            code VARCHAR(10),
+            pubDate DATE,
+            statDate DATE,
+            CAToAsset DECIMAL(15,4),
+            NCAToAsset DECIMAL(15,4),
+            tangibleAssetToAsset DECIMAL(15,4),
+            ebitToInterest DECIMAL(15,4),
+            CFOToOR DECIMAL(15,4),
+            CFOToNP DECIMAL(15,4),
+            CFOToGr DECIMAL(15,4),
+            PRIMARY KEY (code, statDate)
+        )""")
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_growth(
+            code VARCHAR(10),
+            pubDate DATE,
+            statDate DATE,
+            YOYEquity DECIMAL(15,4),
+            YOYAsset DECIMAL(15,4),
+            YOYNI DECIMAL(15,4),
+            YOYEPSBasic DECIMAL(15,4),
+            YOYPNI DECIMAL(15,4),
+            PRIMARY KEY (code, statDate)
+        )""")
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_operation(
+            code VARCHAR(10),
+            pubDate DATE,
+            statDate DATE,
+            NRTurnRatio DECIMAL(15,4),
+            NRTurnDays DECIMAL(15,4),
+            INVTurnRatio DECIMAL(15,4),
+            INVTurnDays DECIMAL(15,4),
+            CATurnRatio DECIMAL(15,4),
+            AssetTurnRatio DECIMAL(15,4),
+            PRIMARY KEY (code, statDate)
+        )""")
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_dupont(
+            code VARCHAR(10),
+            pubDate DATE,
+            statDate DATE,
+            dupontROE DECIMAL(15,4),
+            dupontAssetStoEquity DECIMAL(15,4),
+            dupontAssetTurn DECIMAL(15,4),
+            dupontPnitoni DECIMAL(15,4),
+            dupontNitogr DECIMAL(15,4),
+            dupontTaxBurden DECIMAL(15,4),
+            dupontIntburden DECIMAL(15,4),
+            dupontEbittogr DECIMAL(15,4),
+            PRIMARY KEY (code, statDate)
+        )""")
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_dividend(
+            code VARCHAR(10),
+            dividPreNoticeDate DATE,
+            dividAgmPumDate DATE,
+            dividPlanAnnounceDate DATE,
+            dividPlanDate DATE,
+            dividRegistDate DATE,
+            dividOperateDate DATE,
+            dividPayDate DATE,
+            dividStockMarketDate DATE,
+            dividCashPsBeforeTax DECIMAL(15,4),
+            dividCashPsAfterTax DECIMAL(15,4),
+            dividStocksPs DECIMAL(15,4),
+            dividCashStock DECIMAL(15,4),
+            dividReserveToStockPs DECIMAL(15,4),
+            PRIMARY KEY (code, dividOperateDate)
+        )""")
+
+        self.conn.commit()
+        cursor.close()
+
+    def _table_exists(self, table_name: str) -> bool:
+        """检查表是否存在"""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM information_schema.tables
+            WHERE table_schema = %s 
+            AND table_name = %s
+        """, (self.config.MYSQL_DATABASE, table_name))
+        cursor.close()
+        return cursor.fetchone()[0] > 0
+
+    def _ensure_kline_table(self, period: str, year: int, adjust: str = '3'):
+        """确保特定周期和年份的K线数据表存在
         
         Args:
-            data_source (Optional[DataSource]): 数据源，默认使用 BaostockSource
+            period: 周期，如 '5min', '15min', '30min', '60min', 'daily'
+            year: 年份
+            adjust: 复权类型，'1':后复权，'2':前复权，'3':不复权
         """
-        self.db = DatabaseManager()
-        self.data_source = data_source or BaostockSource()
-        self._init_connection()
+        # 确定表名
+        table_suffix = f"back_{year}" if adjust == '1' else str(year)
+        table_name = f"stock_{period}_{table_suffix}"
 
-        # 下面这些是给更新股票行情数据用的，多线程
-        self.data_queue = queue.Queue(maxsize=self.MAX_QUEUE_SIZE)  # 限制队列大小以控制内存使用
-        self.producer_done = threading.Event()
-        self.stats_lock = threading.Lock()  # 添加线程锁用于保护统计信息
+        # 检查表是否已存在
+        if not self._table_exists(table_name):
+            cursor = self.conn.cursor()
 
-    def _init_connection(self):
-        if not self.data_source.connect():
-            raise Exception("Failed to connect to data source")
+            if period == 'daily':
+                # 日线表有额外的字段
+                cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {table_name}(
+                    code VARCHAR(10),
+                    trade_date DATE,
+                    open DECIMAL(10, 2),
+                    high DECIMAL(10, 2),
+                    low DECIMAL(10, 2),
+                    close DECIMAL(10, 2),
+                    preclose DECIMAL(10, 2),
+                    volume BIGINT,
+                    amount DECIMAL(16, 2),
+                    turn DECIMAL(10, 2),
+                    tradestatus SMALLINT,
+                    pct_chg DECIMAL(10, 2),
+                    pe_ttm DECIMAL(10, 2),
+                    pb_mrq DECIMAL(10, 2),
+                    ps_ttm DECIMAL(10, 2),
+                    pcf_ncf_ttm DECIMAL(10, 2),
+                    is_st SMALLINT,
+                    vwap DECIMAL(10, 2),
+                    PRIMARY KEY (code, trade_date)
+                ) PARTITION BY RANGE (MONTH(trade_date)) (
+                    PARTITION p1 VALUES LESS THAN (4),
+                    PARTITION p2 VALUES LESS THAN (7),
+                    PARTITION p3 VALUES LESS THAN (10),
+                    PARTITION p4 VALUES LESS THAN (13)
+                )
+                """)
+            else:
+                # 分钟级别的表结构相同
+                cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {table_name}(
+                    code VARCHAR(10),
+                    trade_date DATE,
+                    time TIME,
+                    open DECIMAL(10, 2),
+                    high DECIMAL(10, 2),
+                    low DECIMAL(10, 2),
+                    close DECIMAL(10, 2),
+                    volume BIGINT,
+                    amount DECIMAL(16, 2),
+                    vwap DECIMAL(10, 2),
+                    PRIMARY KEY (code, trade_date, time)
+                ) PARTITION BY RANGE (MONTH(trade_date)) (
+                    PARTITION p1 VALUES LESS THAN (4),
+                    PARTITION p2 VALUES LESS THAN (7),
+                    PARTITION p3 VALUES LESS THAN (10),
+                    PARTITION p4 VALUES LESS THAN (13)
+                )
+                """)
 
-    @staticmethod
-    def _retry_operation(operation, max_retries: int = MAX_RETRIES, retry_delay: int = RETRY_DELAY, **kwargs):
-        for i in range(max_retries):
-            try:
-                return operation(**kwargs)
-            except Exception as e:
-                logging.warning(
-                    f"Operation {operation.__name__} with params {kwargs} failed: {e}. "
-                    f"Retrying in {retry_delay} seconds...")
-                if i == max_retries - 1:
-                    logging.exception(f"Operation {operation.__name__} with params {kwargs} failed: \n{e}.")
+            self.conn.commit()
+            cursor.close()
 
-                time.sleep(retry_delay)
-        raise Exception("Operation failed after multiple retries")
+        return table_name
 
-    def get_stock_list(self) -> pd.DataFrame:
-        """获取股票列表"""
-        return self._retry_operation(self.data_source.get_stock_list)
-
-    def update_stock_list(self, stock_list: pd.DataFrame):
-        """更新股票列表"""
-        self._retry_operation(self.db.save_stock_basic, stock_basic=stock_list)
-
-    def update_all_stocks(self, force_full_update: bool = False, frequency='daily', progress_callback=None):
-        """更新所有股票数据
-
+    def _calculate_vwap(self, stock_df: pd.DataFrame) -> pd.DataFrame:
+        """计算标准VWAP: 累计(价格×成交量)/累计成交量
+        
         Args:
-            force_full_update (bool): 是否强制全量更新
-            frequency: 更新股票数据的频率，默认为 'daily'
-            progress_callback (callable): 进度回调函数
-
+            stock_df: 包含OHLCV数据的DataFrame
+            
         Returns:
-            Dict: 更新统计信息
+            添加了vwap列的DataFrame
         """
-        stock_list = self.get_stock_list()
-        total_stocks = len(stock_list)
-        update_stats = {
-            "updated": 0,
-            "failed": 0,
-            "failed_codes": []
-        }
+        # 初始化vwap列
+        stock_df['vwap'] = 0.0
 
-        # 获取最新日期
-        latest_dates = {} if force_full_update else self._retry_operation(self.db.get_all_update_time,
-                                                                          frequency=frequency, adjust='3')
-        latest_dates_back = {} if force_full_update else self._retry_operation(self.db.get_all_update_time,
-                                                                               frequency=frequency, adjust='1')
+        # 按交易日期排序
+        stock_df = stock_df.sort_values(['trade_date', 'time'] if 'time' in stock_df.columns else ['trade_date'])
 
-        # 启动消费者线程
-        consumer = threading.Thread(
-            target=self._consume_stock_data,
-            kwargs={
-                'update_stats': update_stats,
-                'progress_callback': progress_callback
-            }
-        )
-        consumer.start()
+        # 按日期分组计算VWAP
+        for date, group in stock_df.groupby('trade_date'):
+            # 计算价格×成交量 (使用收盘价)
+            price_volume = group['close'] * group['volume']
 
-        trading_calendar = self.data_source.get_trading_calendar(start_date=self.DEFAULT_CALENDAR_START)
+            # 计算累计值
+            cum_price_volume = price_volume.cumsum()
+            cum_volume = group['volume'].cumsum()
 
-        # 生产者：获取股票数据
-        try:
-            for code in stock_list['code']:
-                try:
-                    # 获取不复权数据
-                    df = self.__fetch_stock_data(code, force_full_update, trading_calendar, latest_dates.get(code),
-                                                 frequency=frequency, adjust='3')
-                    self.__queue_stock_data(code, df, frequency, '3', progress_callback)
-                    # 获取后复权数据
-                    df_back = self.__fetch_stock_data(code, force_full_update, trading_calendar,
-                                                      latest_dates_back.get(code),
-                                                      frequency=frequency, adjust='1')
-                    self.__queue_stock_data(code, df_back, frequency, '1', progress_callback)
-                except Exception as e:
-                    with self.stats_lock:  # 使用线程锁保护统计信息的更新
-                        update_stats["failed"] += 1
-                        update_stats["failed_codes"].append(code)
-                    # 即使获取数据失败也需要回复进度
-                    if progress_callback:
-                        progress_callback()
-                    logging.exception(f"获取股票 {code} 数据失败: {e}")
-                    if not self.data_source.is_connected():
-                        self._init_connection()
-        finally:
-            # 标记生产者完成
-            self.producer_done.set()
+            # 计算VWAP，避免除零错误
+            vwap = np.where(cum_volume > 0, cum_price_volume / cum_volume, 0)
 
-        # 等待消费者处理完所有数据
-        consumer.join()
+            # 更新回原始DataFrame
+            stock_df.loc[group.index, 'vwap'] = vwap
 
-        update_stats["total"] = total_stocks
-        return update_stats
+        return stock_df
 
-    def _consume_stock_data(self, update_stats: Dict, progress_callback=None):
-        """消费者：处理股票数据并保存到数据库
-
+    def update_stock_kline(self, period: str, code: str, stock_df: pd.DataFrame, adjust: str = '3'):
+        """通用的K线数据更新方法
+        
         Args:
-            update_stats (Dict): 更新统计信息
-            progress_callback (callable): 进度回调函数
+            period: 周期，如 '5min', '15min', '30min', '60min', 'daily'
+            code: 股票代码
+            stock_df: 股票数据
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
         """
-        while not (self.producer_done.is_set() and self.data_queue.empty()):
-            try:
-                # 等待5秒获取数据，如果超时则检查生产者是否完成
-                code, df, frequency, adjust = self.data_queue.get(timeout=self.QUEUE_TIMEOUT)
-                try:
-                    if frequency == 'daily':
-                        self.db.update_stock_daily(code, df, adjust)
+        if stock_df.empty:
+            return
 
-                    # TODO: 暂未实现除日线行情外的数据
-                    # elif frequency == 'weekly':
-                    #     self.db.update_stock_weekly(code, df, adjust)
-                    # elif frequency == 'monthly':
-                    #     self.db.update_stock_monthly(code, df, adjust)
-                    elif frequency == '5min':
-                        self.db.update_stock_5min(code, df, adjust)
-                    elif frequency == '15min':
-                        self.db.update_stock_15min(code, df, adjust)
-                    elif frequency == '30min':
-                        self.db.update_stock_30min(code, df, adjust)
-                    elif frequency == '60min':
-                        self.db.update_stock_60min(code, df, adjust)
-
-                    with self.stats_lock:  # 使用线程锁保护统计信息的更新
-                        update_stats["updated"] += 1
-                except Exception as e:
-                    with self.stats_lock:  # 使用线程锁保护统计信息的更新
-                        update_stats["failed"] += 1
-                        update_stats["failed_codes"].append(code)
-                    logging.exception(f"保存股票 {code} 数据失败: {e}")
-                finally:
-                    if progress_callback:
-                        progress_callback()
-                    self.data_queue.task_done()
-            except queue.Empty:
-                logging.debug("队列为空，等待数据...")
-                continue
-
-    def __queue_stock_data(self, code, df, frequency, adjust, progress_callback=None):
-        """将股票数据放入队列"""
-        if not df.empty:
-            self.data_queue.put((code, df, frequency, adjust))
-        elif progress_callback:
-            # 如果数据为空，也回复进度
-            progress_callback()
-
-    def __fetch_stock_data(self, code: str, force_full_update: bool = False,
-                           trading_calendar: pd.DataFrame = pd.DataFrame(),
-                           latest_date: Optional[str] = None, frequency: str = 'daily',
-                           adjust: str = '3') -> pd.DataFrame:
-        """获取单只股票的数据"""
-        if isinstance(latest_date, str):
-            latest_date = dt.datetime.strptime(latest_date, '%Y-%m-%d %H:%M:%S')
-        latest_date = None if latest_date is None else latest_date.date()
-        if force_full_update or latest_date is None:
-            # 如果强制全量更新或者是新股票（没有历史数据），则从5年前开始更新
-            start_date = dt.date.today() - dt.timedelta(days=5 * 365)
-        elif latest_date == dt.date.today():
-            # 今日数据已更新，不许更新
-            logging.warning(f"股票 {code}_{adjust} 今日已经更新，无需重复更新")
-            return pd.DataFrame()
+        # 根据周期确定所需列和清洁函数
+        if period in self.BIG_PERIODS:
+            required_columns = ['code', 'trade_date', 'open', 'high', 'low', 'close', 'preclose', 'volume', 'amount',
+                                'turn', 'tradestatus', 'pct_chg', 'pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm', 'is_st']
+            # 清洁日线数据
+            stock_df = self.__clean_data(stock_df)
         else:
-            start_date = latest_date + dt.timedelta(days=1)
+            required_columns = ['code', 'trade_date', 'time', 'open', 'high', 'low', 'close', 'volume', 'amount']
+            # 清洁分钟线数据
+            stock_df = self.__clean_min_data(stock_df)
 
-        end_date = dt.date.today()
+        # 检查缺失列
+        missing_columns = [col for col in required_columns if col not in stock_df.columns]
+        if missing_columns:
+            raise ValueError(f"Missing required columns in stock_df for code: {code}. Columns: {missing_columns}")
 
-        total_days = (end_date - start_date).days + 1
-        # 如果所有交易日都是非交易日，那就没必要获取数据
-        if total_days < 10:
-            for i in range(total_days):
-                date = (start_date + dt.timedelta(days=i)).strftime("%Y-%m-%d")
-                this_day = trading_calendar[trading_calendar['calendar_date'] == date]
-                if this_day.empty or this_day.is_trading_day.values[0] == '0':
-                    # 如果不是交易日，则跳过
-                    start_date = start_date + dt.timedelta(days=1)
+        # 检查NaN值并填充
+        for col in required_columns:
+            nan_count = stock_df[col].isna().sum()
+            if nan_count > 0:
+                logging.debug(f"NaN values found in {col} for code: {code}")
+                # 根据列类型进行填充
+                if period == 'daily':
+                    # 日线数据的NaN处理
+                    if col in ["volume", "amount", "turn", "tradestatus", "is_st"]:
+                        stock_df[col] = stock_df[col].fillna(0)
+                    elif col in ['pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm']:
+                        stock_df[col] = stock_df[col].fillna(0)
+                    elif col == 'pct_chg':
+                        # 使用向量化操作计算涨跌幅
+                        mask = stock_df[col].isna() & stock_df['close'].notna() & stock_df['preclose'].notna()
+                        stock_df.loc[mask, col] = (stock_df.loc[mask, 'close'] - stock_df.loc[mask, 'preclose']) / \
+                                                  stock_df.loc[mask, 'preclose'] * 100
+                        stock_df[col] = stock_df[col].fillna(0)
+                    elif col in ['open', 'high', 'low', 'close', 'preclose']:
+                        stock_df[col] = stock_df[col].fillna(method='ffill')
+                        stock_df[col] = stock_df[col].fillna(method='bfill')
+                        stock_df[col] = stock_df[col].fillna(0)
                 else:
-                    # 如果是交易日，则更新
-                    break
+                    # 分钟级数据的NaN处理
+                    if col in ["volume", "amount"]:
+                        stock_df[col] = stock_df[col].fillna(0)
+                    elif col in ['open', 'high', 'low', 'close']:
+                        stock_df[col] = stock_df[col].fillna(method='ffill')
+                        stock_df[col] = stock_df[col].fillna(method='bfill')
+                        stock_df[col] = stock_df[col].fillna(0)
 
-        # 如果开始日期晚于结束日期，返回空值
-        if start_date > end_date:
-            logging.debug(
-                f"股票 {code}_{adjust} 的开始日期 {start_date} 晚于结束日期 {end_date}。")
-            return pd.DataFrame()
+        # 对分钟级别数据计算VWAP
+        if period not in self.BIG_PERIODS:
+            stock_df = self._calculate_vwap(stock_df)
+            required_columns.append('vwap')
 
-        start_date = start_date.strftime('%Y-%m-%d')
-        end_date = end_date.strftime('%Y-%m-%d')
-        df = self._retry_operation(self.data_source.get_stock_data, code=code, start_date=start_date, end_date=end_date,
-                                   frequency=frequency, adjust=adjust)
+        # 按年份分组处理数据
+        stock_df['year'] = pd.to_datetime(stock_df['trade_date']).dt.year
+        total_records = 0
 
-        if df.empty:
-            logging.warning(f"股票 {code}_{adjust} 在{start_date} - {end_date}日期内没有更新数据")
-            return pd.DataFrame()
-
-        return df
-
-    def update_all_financial_data(self, start_year: int, end_year: int = None) -> Dict[str, Dict[str, Any]]:
-        """更新所有股票的财务数据
-
-        Args:
-            start_year: 开始年份
-            end_year: 结束年份（默认为当前年份）
-        """
-        if end_year is None or end_year > dt.date.today().year:
-            end_year = dt.date.today().year
-
-        stock_list = self.db.get_stock_list()
-        total_stocks = len(stock_list)
-        years_count = end_year - start_year + 1
-        # 每一年一份数据，7个财务表
-        total_updates = total_stocks * years_count * 7
-
-        # 创建共享队列用于进度更新
-        manager = multiprocessing.Manager()
-        progress_queue = manager.Queue()
-        update_queue = manager.Queue()
-        progress_done = threading.Event()
-
-        # 启动进度监听线程
-        progress_thread = threading.Thread(
-            target=self._handle_progress_updates,
-            kwargs={
-                "progress_queue": progress_queue,
-                "total": total_updates,
-                "progress_done": progress_done
-            }
-        )
-        progress_thread.start()
-
-        results = {}
-
-        # 启动更新财务数据时间的进程
-        update_time_process = multiprocessing.Process(
-            target=self._update_financial_update_time,
-            kwargs={"update_queue": update_queue}
-        )
-        update_time_process.start()
-
-        # 创建进程池来并行更新不同类型的财务数据
-        with ProcessPoolExecutor() as executor:
-            # 定义要更新的所有财务数据类型及其对应的更新方法
-            update_tasks = [
-                (self._update_profit_data, "利润表"),
-                (self._update_balance_data, "资产负债表"),
-                (self._update_cashflow_data, "现金流量表"),
-                (self._update_growth_data, "成长能力"),
-                (self._update_operation_data, "营运能力"),
-                (self._update_dupont_data, "杜邦分析"),
-                (self._update_dividend_data, "分红数据")
-            ]
-
-            # 提交所有任务到进程池
-            futures = []
-            for update_func, data_type in update_tasks:
-                future = executor.submit(
-                    update_func,
-                    stock_list=stock_list,
-                    start_year=start_year,
-                    end_year=end_year,
-                    progress_queue=progress_queue,  # 传递共享队列
-                    update_queue=update_queue  # 传递共享队列
-                )
-                futures.append((future, data_type))
-
-            # 等待所有任务完成
-            for future, data_type in futures:
-                try:
-                    results[data_type] = future.result()  # 等待任务完成
-                    logging.info(f"{data_type}数据更新完成")
-                except Exception as e:
-                    logging.exception(f"更新{data_type}数据时发生错误: {e}")
-
-        # 任务已完成
-        # 终止更新时间的进程
-        update_time_process.terminate()
-
-        # 等待进度监听线程完成
-        progress_done.set()
-        progress_thread.join()
-
-        for data_type, result in results.items():
-            logging.info(f"{data_type} 数据更新结果：")
-            for key, value in result.items():
-                logging.info(f"{key}: {value}")
-
-        return results
-
-    @staticmethod
-    def _handle_progress_updates(progress_queue: multiprocessing.Queue, total: int, progress_done: threading.Event):
-        """处理进度更新的线程函数"""
-        with tqdm(total=total, desc="更新财务数据") as pbar:
-            while not (progress_done.is_set() and progress_queue.empty()):
-                try:
-                    # 从队列获取更新信号
-                    msg = progress_queue.get(timeout=5)
-                    if msg == "COMPLETE":
-                        # 但这里目前是不会运行到的，因为有7个不同的进程同时发送queue过来，等progress_done.is_set()再退出
-                        break
-                    pbar.update(1)
-                except queue.Empty:
-                    continue
-            pbar.close()
-
-    @staticmethod
-    def __fetch_all_financial_data(data_source: DataSource, stock_list: pd.DataFrame, data_type: str, fetcher,
-                                   start_year: int, end_year: int,
-                                   data_queue: queue.Queue, update_stats: dict,
-                                   update_queue: multiprocessing.Queue = None,
-                                   progress_queue: multiprocessing.Queue = None):
-        """财务数据生产者：通过fetcher来获取每一只股票的财务数据"""
-        current_year = dt.date.today().year
-        for _, row in stock_list.iterrows():
-            code, updated_year = row.code, row.get(f"update_time_{data_type}")
+        for year, group in stock_df.groupby('year'):
             try:
-                for year in range(start_year, end_year + 1):
-                    # 如果当天停止重新扫描就用这个，省时间
-                    # if updated_year is not None and year <= updated_year:
-                    if updated_year is not None and year < updated_year:
-                        # 如果已经这一年已经更新过也可以覆盖更新，避免遗漏季度，但过去的年份无需重新更新
-                        logging.debug(f"该数据过去已更新，无需重复更新：{code}_{year}_{data_type}")
-                        if progress_queue:
-                            progress_queue.put(1)
-                        continue
-                    profit_data = fetcher(data_source, code, year)
-                    if not profit_data.empty:
-                        data_queue.put((code, profit_data, year))
-                        with threading.Lock():
-                            update_stats["updated"] += 1
-                    else:
-                        logging.debug(f"该数据为空: {code}_{year}_{data_type}")
-                        # 尽管数据为空也已经更新过了
-                        if year < current_year:
-                            update_queue.put((code, year, data_type))
-                        else:
-                            # 避免前一年的季度数据还未更新
-                            update_queue.put((code, year - 1, data_type))
-                    if progress_queue:
-                        progress_queue.put(1)
+                # 根据周期和调整类型确定表名
+                if adjust == '1':
+                    table_name = f"stock_{period}_back_{year}"
+                else:
+                    table_name = f"stock_{period}_{year}"
+
+                # 确保表存在
+                self._ensure_kline_table(period, year, adjust)
+
+                # 准备SQL语句
+                # 避免新增的year列所以舍弃最后一个值
+                columns = stock_df.copy().columns.to_list()[:-1]
+                columns_str = ','.join(columns)
+                placeholders = ','.join(['%s'] * len(columns))
+
+                # 确定不包含在UPDATE中的主键列
+                pk_columns = ['code', 'trade_date']
+                if period not in self.BIG_PERIODS:
+                    # 分钟级别时间带time
+                    pk_columns.append('time')
+
+                # 构建UPDATE部分
+                update_cols = [f'{col} = VALUES({col})' for col in columns if col not in pk_columns]
+                update_part = ', '.join(update_cols)
+
+                insert_sql = f"INSERT INTO {table_name} ({columns_str}) VALUES ({placeholders}) ON DUPLICATE KEY UPDATE {update_part}"
+
+                # 准备数据
+                values = []
+                for _, row in group.iterrows():
+                    value = tuple(row[col] for col in columns)
+                    values.append(value)
+
+                # 执行更新
+                with self.conn.cursor() as cursor:
+                    cursor.executemany(insert_sql, values)
+
+                self.conn.commit()
+                total_records += len(values)
+                logging.debug(f"Updated {len(values)} records for {code} in {year}")
             except Exception as e:
-                logging.exception(f"获取股票 {code} 利润表数据失败: {e}")
-                with threading.Lock():
-                    update_stats["failed"] += 1
-                    update_stats["failed_codes"].append(code)
-                if progress_queue:
-                    progress_queue.put(1)
-        logging.info(f"{data_type}所有数据已获取完毕")
+                logging.error(f"Failed to update {code}_{adjust} in {year}: {e}")
+                logging.error(f"问题数据实例：{group.head().to_dict('records')}")
+                raise
 
-    @staticmethod
-    def __consume_financial_data(producer_done: threading.Event, data_queue: queue.Queue,
-                                 data_saver: Callable, data_type: str,
-                                 update_stats: dict, progress_queue: multiprocessing.Queue = None,
-                                 update_queue: multiprocessing.Queue = None):
-        """财务数据消费者：消费对应data_queue里的财务数据
+        logging.info(f"Total records updated for {code}_{adjust}: {total_records}")
+
+        # 更新股票列表中的更新时间
+        update_time = stock_df['trade_date'].max()
+        self.update_stock_update_time(pd.DataFrame({'code': [code], 'update_time': [update_time]}), frequency=period,
+                                      adjust=adjust)
+
+    def _ensure_5min_table(self, year: int, adjust: str = '3'):
+        """确保特定年份的5分钟数据表存在"""
+        return self._ensure_kline_table('5min', year, adjust)
+
+    def _ensure_15min_table(self, year: int, adjust: str = '3'):
+        """确保特定年份的15分钟数据表存在"""
+        return self._ensure_kline_table('15min', year, adjust)
+
+    def _ensure_30min_table(self, year: int, adjust: str = '3'):
+        """确保特定年份的30分钟数据表存在"""
+        return self._ensure_kline_table('30min', year, adjust)
+
+    def _ensure_60min_table(self, year: int, adjust: str = '3'):
+        """确保特定年份的60分钟数据表存在"""
+        return self._ensure_kline_table('60min', year, adjust)
+
+    def _ensure_daily_table(self, year: int, adjust: str = '3'):
+        """确保特定年份的日线数据表存在"""
+        return self._ensure_kline_table('daily', year, adjust)
+
+    def update_stock_daily(self, code: str, stock_df: pd.DataFrame, adjust: str = '3'):
+        """更新股票日线数据
+        
+        Args:
+            code: 股票代码
+            stock_df: 股票数据
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
+        """
+        return self.update_stock_kline('daily', code, stock_df, adjust)
+
+    def update_stock_5min(self, code: str, stock_df: pd.DataFrame, adjust: str = '3'):
+        """更新股票5分钟数据
+        
+        Args:
+            code: 股票代码
+            stock_df: 股票数据
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
+        """
+        return self.update_stock_kline('5min', code, stock_df, adjust)
+
+    def update_stock_15min(self, code: str, stock_df: pd.DataFrame, adjust: str = '3'):
+        """更新股票15分钟数据
+        
+        Args:
+            code: 股票代码
+            stock_df: 股票数据
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
+        """
+        return self.update_stock_kline('15min', code, stock_df, adjust)
+
+    def update_stock_30min(self, code: str, stock_df: pd.DataFrame, adjust: str = '3'):
+        """更新股票30分钟数据
+        
+        Args:
+            code: 股票代码
+            stock_df: 股票数据
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
+        """
+        return self.update_stock_kline('30min', code, stock_df, adjust)
+
+    def update_stock_60min(self, code: str, stock_df: pd.DataFrame, adjust: str = '3'):
+        """更新股票60分钟数据
+        
+        Args:
+            code: 股票代码
+            stock_df: 股票数据
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
+        """
+        return self.update_stock_kline('60min', code, stock_df, adjust)
+
+    def update_stock_update_time(self, df: pd.DataFrame, frequency: str = 'daily', adjust: str = '3'):
+        """保存股票行情数据更新时间
+        
+        Args:
+            df: 包含code和update_time的DataFrame
+            frequency: 周期，'daily', '5min'
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
+        """
+        cursor = self.conn.cursor()
+        time_field = f'update_time_{frequency}_back' if adjust == '1' else f'update_time_{frequency}'
+
+        for _, row in df.iterrows():
+            cursor.execute(f"""
+            INSERT INTO stock_list (code, {time_field})
+            VALUES (%s, %s)
+            ON DUPLICATE KEY UPDATE {time_field} = VALUES({time_field})
+            """, (row['code'], row['update_time']))
+        self.conn.commit()
+        cursor.close()
+
+    def update_financial_update_time(self, df: pd.DataFrame, data_type: str):
+        """保存股票行情数据更新时间
 
         Args:
-            producer_done (threading.Event): 生产者完成标志
-            data_queue (queue.Queue): 财务数据队列
-            data_saver (callable): 数据保存方法
-            data_type (str): 数据类型（profit/balance/cashflow等）
-            update_stats (dict): 更新统计信息
-            progress_queue (Queue): 共享队列，用于更新财务数据的时间
-            update_queue (Queue): 共享队列，用于更新财务数据的时间
+            df: 包含code和update_time的DataFrame
+            data_type: 财务数据类型 -> [dividend, dupont, growth, operation, profit, balance, cashflow]
         """
-        while not (producer_done.is_set() and data_queue.empty()):
-            try:
-                code, data, year = data_queue.get(timeout=5)
-                try:
-                    data_saver(data)
-                    with threading.Lock():
-                        update_stats["updated"] += 1
-                    logging.debug(f"成功保存 {code} {year}年 {data_type} 数据")
-                    # 将更新信息放入共享队列
-                    update_queue.put((code, year, data_type))
-                except Exception as e:
-                    logging.exception(f"保存数据失败：{e}")
-                    with threading.Lock():
-                        update_stats["failed"] += 1
-                        update_stats["failed_codes"].append(code)
-                finally:
-                    data_queue.task_done()
-                    if progress_queue:
-                        progress_queue.put(1)
-            except queue.Empty:
-                logging.debug(f"{data_type}数据队列为空，等待数据...")
-                continue
-        logging.info(f"{data_type}所有数据已消费完毕")
+        cursor = self.conn.cursor()
+        column = f"update_time_{data_type}"
 
-    @staticmethod
-    def _update_financial_update_time(update_queue: multiprocessing.Queue):
-        """进程：更新财务数据的更新时间
+        for _, row in df.iterrows():
+            cursor.execute(f"""
+                INSERT INTO stock_list (code, {column})
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE {column} = VALUES({column})
+                """, (row['code'], row['year']))
+        self.conn.commit()
+        cursor.close()
 
+    def save_stock_basic(self, stock_basic: pd.DataFrame):
+        """保存股票基本信息"""
+        cursor = self.conn.cursor()
+        for _, row in stock_basic.iterrows():
+            # 处理日期字段的 NaT 值
+            ipo_date = row['ipo_date'] if not pd.isna(row['ipo_date']) else None
+            out_date = row['out_date'] if not pd.isna(row['out_date']) else None
+
+            cursor.execute("""
+            INSERT INTO stock_list (code, name, ipo_date, out_date, type, status)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE name = VALUES(name), ipo_date = VALUES(ipo_date), out_date = VALUES(out_date), type = VALUES(type), status = VALUES(status)
+            """, (row['code'], row['name'], ipo_date, out_date, row['type'], row['status']))
+            logging.debug(f"Saved stock basic info for {row['code']}")
+        self.conn.commit()
+        cursor.close()
+
+    def get_all_update_time(self, frequency: str = 'daily', adjust: str = '3') -> dict:
+        """获取所有股票更新时间
+        
         Args:
-            update_queue (Queue): 共享队列，包含需要更新的数据
+            frequency: 周期，'daily', '5min'
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
+            
+        Returns:
+            股票代码到更新时间的映射字典
         """
-        # 在子进程中创建新的数据库连接
-        db = DatabaseManager()
-
         try:
-            while True:
-                try:
-                    # 从队列中获取数据
-                    code, year, data_type = update_queue.get(timeout=5)
-                    # 调用数据库方法更新数据
-                    db.update_financial_update_time(
-                        pd.DataFrame([{"code": code, "year": year}]),
-                        data_type=data_type
-                    )
-                except queue.Empty:
-                    if not multiprocessing.parent_process().is_alive():
-                        logging.info("父进程已终止，更新时间进程退出")
-                        break
-                    logging.debug("财务更新时间队列为空，等待数据...")
-                    continue
-                except (ValueError, KeyError) as e:
-                    logging.error(f"数据格式错误: {e}")
-                except pd.errors.EmptyDataError:
-                    logging.error("更新数据为空")
+            cursor = self.conn.cursor()
+            time_field = f'update_time_{frequency}_back' if adjust == '1' else f'update_time_{frequency}'
+
+            cursor.execute(f"SELECT code, {time_field} FROM stock_list")
+            data = cursor.fetchall()
+            cursor.close()
+            result = {}
+            for row in data:
+                if pd.isnull(row[1]):
+                    result[row[0]] = None
+                else:
+                    result[row[0]] = row[1].strftime('%Y-%m-%d %H:%M:%S')
+
+            return result
         except Exception as e:
-            logging.exception(f"更新财务数据时间时发生错误: {e}")
-        finally:
-            # 确保关闭数据库连接
-            db.close()
+            logging.exception(f"Failed to get all update time: {e}")
+            return {}
 
-    @staticmethod
-    def _update_profit_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
-                            update_queue: multiprocessing.Queue, progress_queue: multiprocessing.Queue = None):
-        """更新单个股票的利润数据"""
-        producer_done = threading.Event()
-        data_queue = queue.Queue(maxsize=100)
-        update_stats = {
-            "updated": 0,
-            "failed": 0,
-            "failed_codes": []
-        }
-        db = DatabaseManager()
-
-        # 启动消费者线程
-        consumer = threading.Thread(
-            target=DataUpdateManager.__consume_financial_data,
-            kwargs={
-                'producer_done': producer_done,
-                'data_queue': data_queue,
-                'data_saver': db.save_profit_data,
-                'data_type': "profit",
-                'update_stats': update_stats,
-                'progress_queue': progress_queue,
-                'update_queue': update_queue
-            }
-        )
-        consumer.start()
-
+    def get_stock_list(self, fields='*') -> pd.DataFrame:
+        """获取股票列表"""
         try:
-            data_source = BaostockSource()
-            DataUpdateManager.__fetch_all_financial_data(
-                data_source=data_source,
-                stock_list=stock_list,
-                data_type="profit",
-                fetcher=DataUpdateManager.__fetch_profit_data,
-                start_year=start_year,
-                end_year=end_year,
-                data_queue=data_queue,
-                update_stats=update_stats,
-                update_queue=update_queue,
-                progress_queue=progress_queue
-            )
-        finally:
-            # 标记生产者完成
-            producer_done.set()
+            if fields != "*":
+                fields = ",".join(fields) if isinstance(fields, (list, tuple)) else fields
+            cursor = self.conn.cursor()
+            cursor.execute(f"SELECT {fields} FROM stock_list")
+            result = cursor.fetchall()
+            cursor.close()
+            if result:  # 检查data是否为空
+                return pd.DataFrame(result, columns=[desc[0] for desc in cursor.description])
+            else:
+                return pd.DataFrame()
+        except Exception as e:
+            logging.error(f"Failed to get stock list: {e}")
+            return pd.DataFrame()
 
-        # 等待消费者处理完所有数据
-        consumer.join()
+    def get_stock_daily(self, code: str, start_date: str, end_date: str, adjust: str = '3') -> pd.DataFrame:
+        """获取股票日线数据"""
+        start_year = pd.to_datetime(start_date).year
+        end_year = pd.to_datetime(end_date).year
 
-        return update_stats
+        # 获取所有年份的数据
+        all_data = []
+        for year in range(start_year, end_year + 1):
+            if adjust == '1':
+                table_name = f"stock_daily_back_{year}"
+            elif adjust == '2':
+                table_name = f"stock_daily_forward_{year}"
+            else:
+                table_name = f"stock_daily_{year}"
 
-    @staticmethod
-    def _update_balance_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
-                             update_queue: multiprocessing.Queue, progress_queue: multiprocessing.Queue = None):
-        """更新单个股票的资产负债表数据"""
-        producer_done = threading.Event()
-        data_queue = queue.Queue(maxsize=100)
-        update_stats = {
-            "updated": 0,
-            "failed": 0,
-            "failed_codes": []
-        }
-        db = DatabaseManager()
+            # 确保年份表存在
+            if not self._table_exists(table_name):
+                logging.warning(f"Table {table_name} does not exist")
+                continue
 
-        # 启动消费者线程
-        consumer = threading.Thread(
-            target=DataUpdateManager.__consume_financial_data,
-            kwargs={
-                'producer_done': producer_done,
-                'data_queue': data_queue,
-                'data_saver': db.save_balance_data,
-                'data_type': "balance",
-                'update_stats': update_stats,
-                'progress_queue': progress_queue,
-                'update_queue': update_queue
-            }
-        )
-        consumer.start()
+            # 获取年份表中的数据
+            query = f"SELECT * FROM {table_name} WHERE code = %s AND trade_date BETWEEN %s AND %s ORDER BY trade_date ASC"
+            with self.conn.cursor() as cursor:
+                cursor.execute(query, (code, start_date, end_date))
+                result = cursor.fetchall()
+                if result:
+                    df = pd.DataFrame(result, columns=[desc[0] for desc in cursor.description])
+                    all_data.append(df)
 
-        try:
-            data_source = BaostockSource()
-            DataUpdateManager.__fetch_all_financial_data(
-                data_source=data_source,
-                stock_list=stock_list,
-                data_type="balance",
-                fetcher=DataUpdateManager.__fetch_balance_data,
-                start_year=start_year,
-                end_year=end_year,
-                data_queue=data_queue,
-                update_stats=update_stats,
-                update_queue=update_queue,
-                progress_queue=progress_queue
-            )
-        finally:
-            # 标记生产者完成
-            producer_done.set()
+        # 合并所有年份的数据
+        if all_data:
+            return pd.concat(all_data, ignore_index=True)
+        else:
+            return pd.DataFrame()
 
-        # 等待消费者处理完所有数据
-        consumer.join()
-
-        return update_stats
-
-    @staticmethod
-    def _update_cashflow_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
-                              update_queue: multiprocessing.Queue, progress_queue: multiprocessing.Queue = None):
-        """更新单个股票的现金流量表数据"""
-        producer_done = threading.Event()
-        data_queue = queue.Queue(maxsize=100)
-        update_stats = {
-            "updated": 0,
-            "failed": 0,
-            "failed_codes": []
-        }
-        db = DatabaseManager()
-
-        # 启动消费者线程
-        consumer = threading.Thread(
-            target=DataUpdateManager.__consume_financial_data,
-            kwargs={
-                'producer_done': producer_done,
-                'data_queue': data_queue,
-                'data_saver': db.save_cashflow_data,
-                'data_type': "cashflow",
-                'update_stats': update_stats,
-                'progress_queue': progress_queue,
-                'update_queue': update_queue
-            }
-        )
-        consumer.start()
-
-        try:
-            data_source = BaostockSource()
-            DataUpdateManager.__fetch_all_financial_data(
-                data_source=data_source,
-                stock_list=stock_list,
-                data_type="cashflow",
-                fetcher=DataUpdateManager.__fetch_cashflow_data,
-                start_year=start_year,
-                end_year=end_year,
-                data_queue=data_queue,
-                update_stats=update_stats,
-                update_queue=update_queue,
-                progress_queue=progress_queue
-            )
-        finally:
-            # 标记生产者完成
-            producer_done.set()
-
-        # 等待消费者处理完所有数据
-        consumer.join()
-
-        return update_stats
-
-    @staticmethod
-    def _update_growth_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
-                            update_queue: multiprocessing.Queue, progress_queue: multiprocessing.Queue = None):
-        """更新单个股票的成长数据"""
-        producer_done = threading.Event()
-        data_queue = queue.Queue(maxsize=100)
-        update_stats = {
-            "updated": 0,
-            "failed": 0,
-            "failed_codes": []
-        }
-        db = DatabaseManager()
-
-        # 启动消费者线程
-        consumer = threading.Thread(
-            target=DataUpdateManager.__consume_financial_data,
-            kwargs={
-                'producer_done': producer_done,
-                'data_queue': data_queue,
-                'data_saver': db.save_growth_data,
-                'data_type': 'growth',
-                'update_stats': update_stats,
-                'progress_queue': progress_queue,
-                'update_queue': update_queue
-            }
-        )
-        consumer.start()
-
-        try:
-            data_source = BaostockSource()
-            DataUpdateManager.__fetch_all_financial_data(
-                data_source=data_source,
-                stock_list=stock_list,
-                data_type="growth",
-                fetcher=DataUpdateManager.__fetch_growth_data,
-                start_year=start_year,
-                end_year=end_year,
-                data_queue=data_queue,
-                update_stats=update_stats,
-                update_queue=update_queue,
-                progress_queue=progress_queue
-            )
-        finally:
-            # 标记生产者完成
-            producer_done.set()
-
-        # 等待消费者处理完所有数据
-        consumer.join()
-
-        return update_stats
-
-    @staticmethod
-    def _update_operation_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
-                               update_queue: multiprocessing.Queue, progress_queue: multiprocessing.Queue = None):
-        """更新单个股票的经营数据"""
-        producer_done = threading.Event()
-        data_queue = queue.Queue(maxsize=100)
-        update_stats = {
-            "updated": 0,
-            "failed": 0,
-            "failed_codes": []
-        }
-        db = DatabaseManager()
-
-        # 启动消费者线程
-        consumer = threading.Thread(
-            target=DataUpdateManager.__consume_financial_data,
-            kwargs={
-                'producer_done': producer_done,
-                'data_queue': data_queue,
-                'data_saver': db.save_operation_data,
-                'data_type': 'operation',
-                'update_stats': update_stats,
-                'progress_queue': progress_queue,
-                'update_queue': update_queue
-            }
-        )
-        consumer.start()
-
-        try:
-            data_source = BaostockSource()
-            DataUpdateManager.__fetch_all_financial_data(
-                data_source=data_source,
-                stock_list=stock_list,
-                data_type="operation",
-                fetcher=DataUpdateManager.__fetch_operation_data,
-                start_year=start_year,
-                end_year=end_year,
-                data_queue=data_queue,
-                update_stats=update_stats,
-                update_queue=update_queue,
-                progress_queue=progress_queue
-            )
-        finally:
-            # 标记生产者完成
-            producer_done.set()
-
-        # 等待消费者处理完所有数据
-        consumer.join()
-
-        return update_stats
-
-    @staticmethod
-    def _update_dupont_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
-                            update_queue: multiprocessing.Queue, progress_queue: multiprocessing.Queue = None):
-        """更新单个股票的杜邦分析数据"""
-        producer_done = threading.Event()
-        data_queue = queue.Queue(maxsize=100)
-        update_stats = {
-            "updated": 0,
-            "failed": 0,
-            "failed_codes": []
-        }
-        db = DatabaseManager()
-
-        # 启动消费者线程
-        consumer = threading.Thread(
-            target=DataUpdateManager.__consume_financial_data,
-            kwargs={
-                'producer_done': producer_done,
-                'data_queue': data_queue,
-                'data_saver': db.save_dupont_data,
-                'data_type': 'dupont',
-                'update_stats': update_stats,
-                'progress_queue': progress_queue,
-                'update_queue': update_queue
-            }
-        )
-        consumer.start()
-
-        try:
-            data_source = BaostockSource()
-            DataUpdateManager.__fetch_all_financial_data(
-                data_source=data_source,
-                stock_list=stock_list,
-                data_type="dupont",
-                fetcher=DataUpdateManager.__fetch_dupont_data,
-                start_year=start_year,
-                end_year=end_year,
-                data_queue=data_queue,
-                update_stats=update_stats,
-                update_queue=update_queue,
-                progress_queue=progress_queue
-            )
-        finally:
-            # 标记生产者完成
-            producer_done.set()
-
-        # 等待消费者处理完所有数据
-        consumer.join()
-
-        return update_stats
-
-    @staticmethod
-    def _update_dividend_data(stock_list: pd.DataFrame, start_year: int, end_year: int,
-                              update_queue: multiprocessing.Queue, progress_queue: multiprocessing.Queue = None):
-        """更新单个股票的分红数据"""
-        producer_done = threading.Event()
-        data_queue = queue.Queue(maxsize=100)
-        update_stats = {
-            "updated": 0,
-            "failed": 0,
-            "failed_codes": []
-        }
-        db = DatabaseManager()
-
-        # 启动消费者线程
-        consumer = threading.Thread(
-            target=DataUpdateManager.__consume_financial_data,
-            kwargs={
-                'producer_done': producer_done,
-                'data_queue': data_queue,
-                'data_saver': db.save_dividend_data,
-                'data_type': 'dividend',
-                'update_stats': update_stats,
-                'progress_queue': progress_queue,
-                'update_queue': update_queue
-            }
-        )
-        consumer.start()
-
-        try:
-            data_source = BaostockSource()
-            DataUpdateManager.__fetch_all_financial_data(
-                data_source=data_source,
-                stock_list=stock_list,
-                data_type="dividend",
-                fetcher=DataUpdateManager.__fetch_dividend_data,
-                start_year=start_year,
-                end_year=end_year,
-                data_queue=data_queue,
-                update_stats=update_stats,
-                update_queue=update_queue,
-                progress_queue=progress_queue
-            )
-        finally:
-            # 标记生产者完成
-            producer_done.set()
-
-        # 等待消费者处理完所有数据
-        consumer.join()
-
-        return update_stats
-
-    @staticmethod
-    def __format_financial_df(df: pd.DataFrame, numeric_columns: list) -> pd.DataFrame:
-        """格式化财务数据DataFrame"""
-        if df.empty:
-            return df
-
-        # 创建一个新的 DataFrame 来存储转换后的数据
-        result_df = df.copy()
-
-        # 转换日期列
-        date_columns = [col for col in result_df.columns if 'Date' in col]
-        for col in date_columns:
-            # 将 NaT 转换为 None
-            result_df[col] = pd.to_datetime(result_df[col], errors='coerce')
-            result_df[col] = result_df[col].apply(lambda x: x.date() if pd.notna(x) else None)
-
-        # 只处理指定的数值列
-        for col in numeric_columns:
-            if col in result_df.columns:
-                # 将列转换为数值类型，无效值变为 NaN
-                result_df[col] = pd.to_numeric(result_df[col], errors='coerce')
-
-                # 将无效的数值转换为 None
-                result_df[col] = result_df[col].apply(
-                    lambda x: float(x) if pd.notna(x) and not np.isinf(x) else None
-                )
-
-        # 最后的安全检查：确保数值列没有任何 NaN 或 inf 值
-        for col in numeric_columns:
-            if col in result_df.columns:
-                result_df[col] = result_df[col].replace([np.inf, -np.inf, np.nan], None)
-
-        return result_df
-
-    @staticmethod
-    def __fetch_profit_data(data_source, code: str, year: int, quarter: int = None) -> pd.DataFrame:
-        """获取单个股票的利润数据"""
-        profit_data = DataUpdateManager._retry_operation(
-            data_source.get_profit_data,
-            code=code,
-            year=year,
-            quarter=quarter
-        )
-        profit_data = DataUpdateManager.__format_financial_df(profit_data, [
-            'roeAvg', 'npMargin', 'gpMargin', 'netProfit',
-            'epsTTM', 'MBRevenue', 'totalShare', 'liqaShare'
-        ])
-        return profit_data
-
-    @staticmethod
-    def __fetch_balance_data(data_source, code: str, year: int, quarter: int = None) -> pd.DataFrame:
-        """获取单个股票的资产负债表数据"""
-        balance_data = DataUpdateManager._retry_operation(
-            data_source.get_balance_data,
-            code=code,
-            year=year,
-            quarter=quarter
-        )
-        balance_data = DataUpdateManager.__format_financial_df(balance_data, [
-            'currentRatio', 'quickRatio', 'cashRatio',
-            'YOYLiability', 'liabilityToAsset', 'assetToEquity'
-        ])
-        return balance_data
-
-    @staticmethod
-    def __fetch_cashflow_data(data_source, code: str, year: int, quarter: int = None) -> pd.DataFrame:
-        """获取单个股票的现金流量表数据"""
-        cashflow_data = DataUpdateManager._retry_operation(
-            data_source.get_cashflow_data,
-            code=code,
-            year=year,
-            quarter=quarter
-        )
-        cashflow_data = DataUpdateManager.__format_financial_df(cashflow_data, [
-            'CAToAsset', 'NCAToAsset', 'tangibleAssetToAsset',
-            'ebitToInterest', 'CFOToOR', 'CFOToNP', 'CFOToGr'
-        ])
-        return cashflow_data
-
-    @staticmethod
-    def __fetch_growth_data(data_source, code: str, year: int, quarter: int = None) -> pd.DataFrame:
-        """获取单个股票的成长数据"""
-        growth_data = DataUpdateManager._retry_operation(
-            data_source.get_growth_data,
-            code=code,
-            year=year,
-            quarter=quarter
-        )
-        growth_data = DataUpdateManager.__format_financial_df(growth_data, [
-            'YOYEquity', 'YOYAsset', 'YOYNI',
-            'YOYEPSBasic', 'YOYPNI'
-        ])
-        return growth_data
-
-    @staticmethod
-    def __fetch_operation_data(data_source, code: str, year: int, quarter: int = None) -> pd.DataFrame:
-        """获取单个股票的经营数据"""
-        operation_data = DataUpdateManager._retry_operation(
-            data_source.get_operation_data,
-            code=code,
-            year=year,
-            quarter=quarter
-        )
-        operation_data = DataUpdateManager.__format_financial_df(operation_data, [
-            'NRTurnRatio', 'NRTurnDays', 'INVTurnRatio',
-            'INVTurnDays', 'CATurnRatio', 'AssetTurnRatio'
-        ])
-        return operation_data
-
-    @staticmethod
-    def __fetch_dupont_data(data_source, code: str, year: int, quarter: int = None) -> pd.DataFrame:
-        """获取单个股票的杜邦分析数据"""
-        dupont_data = DataUpdateManager._retry_operation(
-            data_source.get_dupont_data,
-            code=code,
-            year=year,
-            quarter=quarter
-        )
-        dupont_data = DataUpdateManager.__format_financial_df(dupont_data, [
-            'dupontROE', 'dupontAssetStoEquity', 'dupontAssetTurn',
-            'dupontPnitoni', 'dupontNitogr', 'dupontTaxBurden',
-            'dupontIntburden', 'dupontEbittogr'
-        ])
-        return dupont_data
-
-    @staticmethod
-    def __fetch_dividend_data(data_source, code: str, year: int, quarter=None) -> pd.DataFrame:
-        """获取单个股票的分红数据"""
-        dividend_data = DataUpdateManager._retry_operation(
-            data_source.get_dividend_data,
-            code=code,
-            year=year,
-        )
-        dividend_data = DataUpdateManager.__format_financial_df(dividend_data, [
-            'dividCashPsBeforeTax', 'dividCashPsAfterTax',
-            'dividStocksPs', 'dividCashStock', 'dividReserveToStockPs'
-        ])
-        return dividend_data
-
-    def update_daily_vwap(self, start_date: str = None, end_date: str = None, adjust: str = '3',
-                          progress_callback=None):
-        """更新日线数据的VWAP值
-
-        从5分钟数据中获取每日15:00:00的VWAP值，更新到日线数据中
-
+    def get_stock_5min(self, code: str, start_date: str, end_date: str, adjust: str = '3') -> pd.DataFrame:
+        """获取股票5分钟K线数据
+        
         Args:
-            start_date: 开始日期，格式：YYYY-MM-DD，默认为None（从最早数据开始）
-            end_date: 结束日期，格式：YYYY-MM-DD，默认为None（到最新数据结束）
-            adjust: 复权方式，默认为'3'（不复权）
-            progress_callback: 进度回调函数，默认为None
+            code: 股票代码
+            start_date: 开始日期，格式：YYYY-MM-DD
+            end_date: 结束日期，格式：YYYY-MM-DD
+            adjust: 复权类型，'1'表示后复权，'3'表示不复权
+            
+        Returns:
+            包含5分钟K线数据的DataFrame
         """
-        # 获取股票列表
-        stock_list = self.db.get_stock_list()
-        total_stocks = len(stock_list)
-        updated_count = 0
-        failed_count = 0
-        failed_codes = []
+        self._ensure_connection()
 
-        for code in stock_list.code.to_list():
-            try:
-                # 获取日线数据
-                daily_data = self.db.get_stock_daily(code=code, start_date=start_date, end_date=end_date, adjust=adjust)
-                if daily_data.empty:
-                    logging.warning(f"股票 {code} 没有日线数据")
-                    continue
+        # 确定查询的年份范围
+        start_year = pd.to_datetime(start_date).year
+        end_year = pd.to_datetime(end_date).year
 
-                # 检查vwap列是否存在，如果不存在则添加
-                if 'vwap' not in daily_data.columns:
-                    daily_data['vwap'] = None
+        # 准备存储所有年份数据的DataFrame
+        all_data = []
 
-                # 获取需要更新vwap的日期
-                dates_to_update = daily_data[daily_data['vwap'].isna()]['trade_date'].tolist()
+        # 遍历每一年获取数据
+        for year in range(start_year, end_year + 1):
+            # 确定表名
+            table_suffix = f"back_{year}" if adjust == '1' else str(year)
+            table_name = f"stock_5min_{table_suffix}"
 
-                if not dates_to_update:
-                    logging.debug(f"股票 {code}_{adjust} 的VWAP数据已是最新")
-                    continue
+            # 检查表是否存在
+            if not self._table_exists(table_name):
+                logging.warning(f"表 {table_name} 不存在，跳过")
+                continue
 
-                # 确定日期范围
-                min_date = min(dates_to_update).strftime('%Y-%m-%d')
-                max_date = max(dates_to_update).strftime('%Y-%m-%d')
+            # 构建SQL查询
+            query = f"""
+            SELECT * FROM {table_name}
+            WHERE code = %s AND trade_date BETWEEN %s AND %s 
+            ORDER BY trade_date, time ASC
+            """
 
-                try:
-                    # 使用db.get_stock_5min一次性获取整个日期范围的5分钟数据
-                    min5_data = self.db.get_stock_5min(
-                        code=code,
-                        start_date=min_date,
-                        end_date=max_date,
-                        adjust=adjust
-                    )
+            with self.conn.cursor() as cursor:
+                cursor.execute(query, (code, start_date, end_date))
+                result = cursor.fetchall()
+                if result:
+                    df = pd.DataFrame(result, columns=[desc[0] for desc in cursor.description])
+                    all_data.append(df)
 
-                    if not min5_data.empty:
-                        # 筛选出15:00:00的数据
-                        closing_data = min5_data[min5_data['time'].astype(str).str[-8:] == '15:00:00']
+        # 合并所有年份的数据
+        if all_data:
+            return pd.concat(all_data, ignore_index=True)
+        else:
+            # 返回空DataFrame
+            return pd.DataFrame()
 
-                        if not closing_data.empty:
-                            # 创建日期到vwap的映射
-                            vwap_map = dict(zip(closing_data['trade_date'], closing_data['vwap']))
+    def _save_financial_data(self, df: pd.DataFrame, table_name: str, columns: list):
+        """通用的财务数据保存方法"""
+        if df.empty:
+            return
 
-                            # 更新日线数据中的VWAP值
-                            for date in dates_to_update:
-                                if date in vwap_map:
-                                    daily_data.loc[daily_data['trade_date'] == date, 'vwap'] = vwap_map[date]
-                        else:
-                            logging.warning(
-                                f"股票 {code}_{adjust} 在日期范围 {min_date} 到 {max_date} 内vwap已全部完成更新")
-
-                except Exception as e:
-                    logging.error(f"获取股票 {code} 的5分钟数据时出错: {e}")
-
-                # 保存更新后的日线数据
-                self.db.update_stock_daily(code, daily_data, adjust)
-                updated_count += 1
-
-            except Exception as e:
-                logging.error(f"处理股票 {code} 的VWAP数据时出错: {e}")
-                failed_count += 1
-                failed_codes.append(code)
-            finally:
-                if progress_callback:
-                    progress_callback()
-
-        logging.info(f"VWAP数据更新完成：")
-        logging.info(f"总共处理：{total_stocks} 只股票")
-        logging.info(f"成功更新：{updated_count} 只")
-        logging.info(f"更新失败：{failed_count} 只")
-        if failed_codes:
-            logging.info(f"失败股票代码：{', '.join(failed_codes)}")
-
-        return {
-            "total": total_stocks,
-            "updated": updated_count,
-            "failed": failed_count,
-            "failed_codes": failed_codes
+        # 定义各字段合理范围
+        range_limits = {
+            'NRTurnRatio': (-1e10, 1e10),
+            'NRTurnDays': (-1e10, 1e10),
+            'INVTurnRatio': (-1e10, 1e10),
+            'INVTurnDays': (-1e10, 1e10),
+            'CATurnRatio': (-1e10, 1e10),
+            'CATurnDays': (-1e10, 1e10),
+            'AssetTurnRatio': (-1e10, 1e10),
+            'AssetTurnDays': (-1e10, 1e10),
+            'roeAvg': (-100, 100),
+            'npMargin': (-100, 100),
+            'gpMargin': (-100, 100),
+            'netProfit': (-1e15, 1e15),
+            'epsTTM': (-1e10, 1e10),
+            'MBRevenue': (-1e15, 1e15),
+            'totalShare': (-1e15, 1e15),
+            'liqaShare': (-1e15, 1e15),
+            'currentRatio': (-1e10, 1e10),
+            'quickRatio': (-1e10, 1e10),
+            'cashRatio': (-1e10, 1e10),
+            'YOYLiability': (-1e10, 1e10),
+            'liabilityToAsset': (-1e10, 1e10),
+            'assetToEquity': (-1e10, 1e10),
+            'dupontROE': (-1e10, 1e10),
+            'dupontAssetStoEquity': (-1e10, 1e10),
+            'dupontAssetTurn': (-1e10, 1e10),
+            'dupontPnitoni': (-1e10, 1e10),
+            'dupontNitogr': (-1e10, 1e10),
+            'dupontTaxBurden': (-1e10, 1e10),
+            'dupontIntburden': (-1e10, 1e10),
+            'dupontEbittogr': (-1e10, 1e10),
+            'dividCashPsBeforeTax': (-1e10, 1e10),
+            'dividCashPsAfterTax': (-1e10, 1e10),
+            'dividStocksPs': (-1e10, 1e10),
+            'dividCashStock': (-1e10, 1e10),
+            'dividReserveToStockPs': (-1e10, 1e10)
         }
 
+        # 清洗数据
+        for col in df.columns:
+            if col in range_limits:
+                min_val, max_val = range_limits[col]
+                # 确保列是浮点数类型
+                df[col] = df[col].astype('float64', errors='ignore')
 
-if __name__ == "__main__":
-    dm = DataUpdateManager()
-    dm.update_daily_vwap(start_date='2020-01-01', end_date='2025-03-15', adjust='3')
-    dm.update_daily_vwap(start_date='2020-01-01', end_date='2025-03-15', adjust='1')
+                # 先处理无穷大值
+                mask = np.isinf(df[col])
+                df.loc[mask, col] = np.nan
+
+                # 检查异常值并记录
+                outliers = df[(df[col] < min_val) | (df[col] > max_val)]
+                if not outliers.empty:
+                    logging.warning(f"在 {table_name} 表中发现 {len(outliers)} 条 {col} 异常数据：")
+                    for _, row in outliers.iterrows():
+                        logging.warning(f"代码：{row['code']}, 日期：{row.get('statDate', 'N/A')}, {col}：{row[col]}")
+
+                # 限制数值范围
+                df[col] = df[col].clip(lower=min_val, upper=max_val)
+
+        # 记录 NaN 值的数量
+        nan_count = df.isna().sum()
+        if nan_count.any():
+            logging.debug(f"在 {table_name} 表中发现 NaN 值:\n{nan_count[nan_count > 0]}")
+
+        # 将所有数值列的 NaN 转换为 None
+        numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
+        for col in numeric_cols:
+            df[col] = df[col].astype('float64', errors='ignore')  # 确保类型一致
+            df[col] = df[col].where(pd.notnull(df[col]), None)
+
+        # 过滤无效数据
+        if 'statDate' in df.columns:
+            df = df.dropna(subset=['code', 'statDate'], how='any')
+        else:
+            df = df.dropna(subset=['code'], how='any')
+
+        # 准备 SQL 语句
+        placeholders = ','.join(['%s'] * len(columns))
+        columns_str = ','.join(columns)
+        update_str = ','.join([f"{col}=VALUES({col})" for col in columns if col not in ['code', 'statDate']])
+
+        sql = f"""
+        INSERT INTO {table_name} ({columns_str})
+        VALUES ({placeholders})
+        ON DUPLICATE KEY UPDATE {update_str}
+        """
+
+        # 准备数据并确保没有 NaN
+        values = []
+        for _, row in df[columns].iterrows():
+            value = []
+            for v in row:
+                if isinstance(v, float) and np.isnan(v):
+                    value.append(None)
+                else:
+                    value.append(v)
+            values.append(tuple(value))
+
+        # 执行更新
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.executemany(sql, values)
+            self.conn.commit()
+        except Exception as e:
+            logging.error(f"保存到 {table_name} 失败: {str(e)}")
+            # 打印出问题数据的样本
+            if values:
+                logging.error(f"问题数据样本: {values[0]}")
+            raise
+
+    def save_profit_data(self, df: pd.DataFrame):
+        """保存利润表数据"""
+        columns = ['code', 'pubDate', 'statDate', 'roeAvg', 'npMargin', 'gpMargin',
+                   'netProfit', 'epsTTM', 'MBRevenue', 'totalShare', 'liqaShare']
+        self._save_financial_data(df, 'stock_profit', columns)
+
+    def save_balance_data(self, df: pd.DataFrame):
+        """保存资产负债表数据"""
+        columns = ['code', 'pubDate', 'statDate', 'currentRatio', 'quickRatio',
+                   'cashRatio', 'YOYLiability', 'liabilityToAsset', 'assetToEquity']
+        self._save_financial_data(df, 'stock_balance', columns)
+
+    def save_cashflow_data(self, df: pd.DataFrame):
+        """保存现金流量表数据"""
+        columns = ['code', 'pubDate', 'statDate', 'CAToAsset', 'NCAToAsset',
+                   'tangibleAssetToAsset', 'ebitToInterest', 'CFOToOR',
+                   'CFOToNP', 'CFOToGr']
+        self._save_financial_data(df, 'stock_cashflow', columns)
+
+    def save_growth_data(self, df: pd.DataFrame):
+        """保存成长能力数据"""
+        columns = ['code', 'pubDate', 'statDate', 'YOYEquity', 'YOYAsset',
+                   'YOYNI', 'YOYEPSBasic', 'YOYPNI']
+        self._save_financial_data(df, 'stock_growth', columns)
+
+    def save_operation_data(self, df: pd.DataFrame):
+        """保存营运能力数据"""
+        columns = ['code', 'pubDate', 'statDate', 'NRTurnRatio', 'NRTurnDays',
+                   'INVTurnRatio', 'INVTurnDays', 'CATurnRatio', 'AssetTurnRatio']
+        self._save_financial_data(df, 'stock_operation', columns)
+
+    def save_dupont_data(self, df: pd.DataFrame):
+        """保存杜邦分析数据"""
+        columns = ['code', 'pubDate', 'statDate', 'dupontROE', 'dupontAssetStoEquity',
+                   'dupontAssetTurn', 'dupontPnitoni', 'dupontNitogr', 'dupontTaxBurden',
+                   'dupontIntburden', 'dupontEbittogr']
+        self._save_financial_data(df, 'stock_dupont', columns)
+
+    def save_dividend_data(self, df: pd.DataFrame):
+        """保存分红数据"""
+        columns = ['code', 'dividPreNoticeDate', 'dividAgmPumDate', 'dividPlanAnnounceDate',
+                   'dividPlanDate', 'dividRegistDate', 'dividOperateDate', 'dividPayDate',
+                   'dividStockMarketDate', 'dividCashPsBeforeTax', 'dividCashPsAfterTax',
+                   'dividStocksPs', 'dividCashStock', 'dividReserveToStockPs']
+        self._save_financial_data(df, 'stock_dividend', columns)
+
+    @staticmethod
+    def __clean_data(stock_df):
+        """清洁数据"""
+        # 有的时候股票停牌，数据会为空
+        stock_df['volume'] = stock_df['volume'].replace('', 0)
+        stock_df['amount'] = stock_df['amount'].replace('', 0)
+        stock_df['turn'] = stock_df['turn'].replace('', 0)
+        stock_df['pct_chg'] = stock_df['pct_chg'].replace('', 0)
+        stock_df['pe_ttm'] = stock_df['pe_ttm'].replace('', np.nan)
+        stock_df['pb_mrq'] = stock_df['pb_mrq'].replace('', np.nan)
+        stock_df['ps_ttm'] = stock_df['ps_ttm'].replace('', np.nan)
+        stock_df['pcf_ncf_ttm'] = stock_df['pcf_ncf_ttm'].replace('', np.nan)
+
+        return stock_df
+
+    @staticmethod
+    def __clean_min_data(stock_df):
+        """清洁分钟级别数据"""
+        # 有的时候股票停牌，数据会为空
+        stock_df['volume'] = stock_df['volume'].replace('', 0)
+        stock_df['amount'] = stock_df['amount'].replace('', 0)
+
+        return stock_df

@@ -8,7 +8,7 @@
 """
 import pandas as pd
 
-from backend.data_source.akshare_source import AKShareSource
+from backend.data.source.akshare_src import AKShareSource
 from backend.strategies.base import BaseStrategy
 
 

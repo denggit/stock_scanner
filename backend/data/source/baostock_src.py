@@ -3,7 +3,7 @@
 """
 @Author     : Zijun Deng
 @Date       : 2/2/2025 1:45 AM
-@File       : baostock_source.py
+@File       : baostock_src.py
 @Description: 
 """
 import logging

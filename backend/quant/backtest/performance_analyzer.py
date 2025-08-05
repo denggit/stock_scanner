@@ -1265,7 +1265,7 @@ def analyze_single_factor(factor_data: Union[pd.Series, pd.DataFrame, Dict[str, 
 if __name__ == "__main__":
     # 使用示例代码 - 函数式编程方法计算因子
     from backend.quant.core.factor_engine.factor_generator import get_registered_factors
-    from backend.data.stock_data_fetcher import StockDataFetcher
+    from backend.data.data_fetcher import StockDataFetcher
     import pandas as pd
 
     # 创建股票数据获取器

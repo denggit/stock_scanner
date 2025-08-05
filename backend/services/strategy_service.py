@@ -12,7 +12,7 @@ from typing import Any, Dict, List
 import pandas as pd
 from tqdm import tqdm
 
-from backend.data.stock_data_fetcher import StockDataFetcher
+from backend.data.data_fetcher import StockDataFetcher
 from backend.strategies.breakout import BreakoutStrategy
 from backend.strategies.continuous_rise import ContinuousRiseStrategy
 from backend.strategies.double_up import DoubleUpStrategy

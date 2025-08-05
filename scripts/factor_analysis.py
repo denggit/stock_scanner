@@ -31,7 +31,7 @@ import argparse
 from typing import List, Optional
 import importlib
 
-from backend.data.stock_data_fetcher import StockDataFetcher
+from backend.data.data_fetcher import StockDataFetcher
 from backend.quant.backtest.performance_analyzer import analyze_single_factor
 from backend.quant.core.factor_engine.factor_generator import (
     get_registered_factors, FACTOR_REGISTRY

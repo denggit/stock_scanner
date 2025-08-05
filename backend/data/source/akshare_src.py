@@ -3,7 +3,7 @@
 """
 @Author     : Zijun Deng
 @Date       : 2/2/2025 1:45 AM
-@File       : akshare_source.py
+@File       : akshare_src.py
 @Description: AKShare数据源封装，提供股票市场相关数据的统一访问接口
 """
 import logging
@@ -12,7 +12,7 @@ import akshare as ak
 import pandas as pd
 
 from .base import DataSource
-from ..utils import format_info
+from backend.utils import format_info
 
 
 class AKShareSource(DataSource):

@@ -20,7 +20,7 @@ from xgboost import XGBClassifier
 from imblearn.over_sampling import SMOTE
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 
-from backend.data.stock_data_fetcher import StockDataFetcher
+from backend.data.data_fetcher import StockDataFetcher
 from backend.utils.logger import setup_logger
 from data_collector import ExplosiveStockDataCollector
 from model_trainer import ExplosiveStockModelTrainer
