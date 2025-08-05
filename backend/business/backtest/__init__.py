@@ -29,15 +29,16 @@ from .utils import (
     ReportUtils
 )
 
+
 # 便捷函数
 def run_backtest(
-    data,
-    strategy_class,
-    initial_cash: float = 100000.0,
-    commission: float = 0.0003,
-    strategy_params: dict = None,
-    strategy_name: str = "策略",
-    plot: bool = False
+        data,
+        strategy_class,
+        initial_cash: float = 100000.0,
+        commission: float = 0.0003,
+        strategy_params: dict = None,
+        strategy_name: str = "策略",
+        plot: bool = False
 ):
     """
     运行回测的便捷函数
@@ -66,10 +67,10 @@ def run_backtest(
 
 
 def run_multi_strategy_backtest(
-    data,
-    strategies: list,
-    initial_cash: float = 100000.0,
-    commission: float = 0.0003
+        data,
+        strategies: list,
+        initial_cash: float = 100000.0,
+        commission: float = 0.0003
 ):
     """
     运行多策略回测的便捷函数
@@ -92,12 +93,12 @@ def run_multi_strategy_backtest(
 
 
 def optimize_parameters(
-    data,
-    strategy_class,
-    parameter_ranges: dict,
-    initial_cash: float = 100000.0,
-    commission: float = 0.0003,
-    optimization_target: str = "总收益率"
+        data,
+        strategy_class,
+        parameter_ranges: dict,
+        initial_cash: float = 100000.0,
+        commission: float = 0.0003,
+        optimization_target: str = "总收益率"
 ):
     """
     参数优化的便捷函数
@@ -130,17 +131,17 @@ __all__ = [
     'DataManager',
     'ResultAnalyzer',
     'BacktestFactory',
-    
+
     # 策略模块
     'MAStrategy',
     'RSIStrategy',
     'MACDStrategy',
     'DualThrustStrategy',
-    
+
     # 工具模块
     'DataUtils',
     'ReportUtils',
-    
+
     # 便捷函数
     'run_backtest',
     'run_multi_strategy_backtest',
