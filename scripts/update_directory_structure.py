@@ -188,7 +188,7 @@ class DirectoryStructureUpdater:
             '快速参考手册.md': '快速参考手册',
             '项目工具功能文档.md': '项目功能文档',
             '项目目录结构.md': '项目目录结构文档',
-            'README.md': '项目说明文档',
+            '回测框架使用示例.md': '项目说明文档',
             'requirements.txt': 'Python依赖包',
             'run_frontend.py': '前端启动脚本',
             'run_backend.py': '后端启动脚本',
