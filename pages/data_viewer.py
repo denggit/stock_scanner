@@ -19,8 +19,12 @@ from plotly.subplots import make_subplots
 from backend.utils.indicators import CalIndicators
 
 
-def fetch_stock_data(code: str, period: str = 'daily', start_date: str = None, end_date: str = None) -> pd.DataFrame:
-    """从后端API获取股票数据，带上时间范围"""
+def fetch_stock_data(code: str, period: str = 'daily', start_date: str = None, end_date: str = None) -> tuple[pd.DataFrame, str]:
+    """从后端API获取股票数据，带上时间范围
+    
+    Returns:
+        tuple: (DataFrame, error_message) - 如果成功返回(DataFrame, None)，如果失败返回(empty_DataFrame, error_message)
+    """
     backend_url = os.getenv('BACKEND_URL')
     backend_port = os.getenv('BACKEND_PORT')
 
@@ -34,14 +38,28 @@ def fetch_stock_data(code: str, period: str = 'daily', start_date: str = None, e
         response = requests.get(f'http://{backend_url}:{backend_port}/api/stock/{code}', params=params)
         response.raise_for_status()
         data = response.json()
+        
         # 将返回的数据转换为DataFrame
         if isinstance(data, list) and data:
-            return pd.DataFrame(data)
+            return pd.DataFrame(data), None
         else:
-            return pd.DataFrame()
+            return pd.DataFrame(), f"股票 {code} 在指定时间范围内没有数据"
+            
+    except requests.exceptions.ConnectionError:
+        return pd.DataFrame(), f"无法连接到后端服务，请检查服务是否启动"
+    except requests.exceptions.Timeout:
+        return pd.DataFrame(), f"请求超时，请稍后重试"
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            return pd.DataFrame(), f"股票代码 {code} 不存在或无效"
+        elif e.response.status_code == 400:
+            return pd.DataFrame(), f"请求参数错误，请检查日期格式"
+        else:
+            return pd.DataFrame(), f"服务器错误 (HTTP {e.response.status_code})"
     except requests.exceptions.RequestException as e:
-        st.error(f"获取股票数据失败: {e}")
-        return pd.DataFrame()
+        return pd.DataFrame(), f"网络请求失败: {str(e)}"
+    except Exception as e:
+        return pd.DataFrame(), f"获取数据时发生未知错误: {str(e)}"
 
 
 def plot_candlestick(df: pd.DataFrame, ma_periods: list, show_volume: bool = True, show_macd: bool = False,
@@ -611,7 +629,28 @@ def main():
 
     # 侧边栏设置
     with st.sidebar:
-        st.header("数据设置")
+        st.header("📊 数据设置")
+        
+        # 添加操作提示
+        with st.expander("💡 使用说明", expanded=False):
+            st.markdown("""
+            **📈 快速开始：**
+            1. 输入6位股票代码（如：000001）
+            2. 选择数据周期和日期范围
+            3. 配置技术指标选项
+            4. 点击"获取数据"按钮
+            
+            **🔍 常用股票代码：**
+            - 000001：平安银行
+            - 000002：万科A
+            - 600000：浦发银行
+            - 600036：招商银行
+            
+            **⚠️ 注意事项：**
+            - 股票代码必须是6位数字
+            - 建议选择至少60天的数据范围
+            - 上升通道需要足够的历史数据才能准确计算
+            """)
 
         # 显示股票信息（如果从策略扫描器跳转过来）
         if default_name and strategy_name:
@@ -619,23 +658,43 @@ def main():
             st.info(f"**来源策略**: {strategy_name}")
 
         # 股票代码输入框
-        code = st.text_input('股票代码', value=default_code)
-        period = st.selectbox('数据周期', options=['daily', 'weekly', 'monthly'])
+        code = st.text_input('股票代码', value=default_code, 
+                            help="请输入6位数字的股票代码，如：000001")
+        
+        # 添加股票代码格式提示
+        if code and not (code.isdigit() and len(code) == 6):
+            st.warning("⚠️ 请输入6位数字的股票代码")
+        
+        period = st.selectbox('数据周期', options=['daily', 'weekly', 'monthly'],
+                             help="daily: 日线数据，weekly: 周线数据，monthly: 月线数据")
 
         # 日期选择(默认值为一年前到今天)
-        start_date = st.date_input("开始日期", value=default_start_date)
-        end_date = st.date_input("结束日期", value=default_end_date)
+        st.subheader("📅 日期范围")
+        start_date = st.date_input("开始日期", value=default_start_date,
+                                  help="选择数据开始日期")
+        end_date = st.date_input("结束日期", value=default_end_date,
+                                help="选择数据结束日期")
+        
+        # 日期范围提示
+        if start_date and end_date:
+            date_diff = (end_date - start_date).days
+            if date_diff < 30:
+                st.warning("⚠️ 日期范围较小，建议选择更长时间")
+            elif date_diff > 365 * 2:
+                st.info("ℹ️ 日期范围较大，数据获取可能需要较长时间")
 
         # 技术指标选择
-        st.header("技术指标")
-        show_ma = st.checkbox('显示均线', value=True)
+        st.header("📈 技术指标")
+        show_ma = st.checkbox('显示均线', value=True, help="显示移动平均线")
         if show_ma:
-            ma_periods = st.multiselect('均线周期', options=[5, 10, 20, 30, 60, 120, 250], default=[5, 20])
+            ma_periods = st.multiselect('均线周期', options=[5, 10, 20, 30, 60, 120, 250], 
+                                       default=[5, 20], help="选择要显示的均线周期")
         else:
             ma_periods = []
-        show_volume = st.checkbox('显示成交量', value=True)
-        show_macd = st.checkbox('显示MACD', value=False)
-        show_ascending_channel = st.checkbox('显示上升通道', value=True)  # 默认不显示
+        show_volume = st.checkbox('显示成交量', value=True, help="显示成交量柱状图")
+        show_macd = st.checkbox('显示MACD', value=False, help="显示MACD指标")
+        show_ascending_channel = st.checkbox('显示上升通道', value=True, 
+                                           help="显示上升通道回归分析结果")
 
         # 上升通道参数配置
         if show_ascending_channel:
@@ -709,6 +768,30 @@ def main():
 
     # 主界面
     if st.button('获取数据', key='fetch_data'):
+        # 验证输入参数
+        if not code or not code.strip():
+            st.error("请输入有效的股票代码")
+            return
+            
+        # 验证股票代码格式（简单验证）
+        code = code.strip().upper()
+        if not (code.isdigit() and len(code) == 6):
+            st.error("请输入6位数字的股票代码")
+            return
+            
+        # 验证日期范围
+        if start_date and end_date and start_date > end_date:
+            st.error("开始日期不能晚于结束日期")
+            return
+            
+        # 验证日期范围是否合理
+        if start_date and end_date:
+            date_diff = (end_date - start_date).days
+            if date_diff > 365 * 3:  # 超过3年
+                st.warning("⚠️ 日期范围较大，可能需要较长时间获取数据")
+            elif date_diff < 30:  # 少于30天
+                st.warning("⚠️ 日期范围较小，建议选择更长时间范围以获得更好的分析效果")
+        
         with st.spinner('获取数据中...'):
             # 计算向前推的日期
             if show_ma and ma_periods:
@@ -719,9 +802,21 @@ def main():
                 adjusted_start = start_date_str
 
             # 获取数据（包括额外的历史数据）
-            df = fetch_stock_data(code, period, adjusted_start, end_date_str)
+            df, error_message = fetch_stock_data(code, period, adjusted_start, end_date_str)
 
             if not df.empty:
+                # 验证数据质量
+                required_columns = ['trade_date', 'open', 'high', 'low', 'close', 'volume']
+                missing_columns = [col for col in required_columns if col not in df.columns]
+                if missing_columns:
+                    st.error(f"数据格式错误，缺少必需列: {missing_columns}")
+                    return
+                
+                # 检查数据是否为空或全为NaN
+                if df[['open', 'high', 'low', 'close', 'volume']].isna().all().all():
+                    st.error("获取的数据全为空值，请检查股票代码或日期范围")
+                    return
+                
                 # 设置trade_date为索引
                 df['trade_date'] = pd.to_datetime(df['trade_date'])
                 df.set_index('trade_date', inplace=True)
@@ -773,7 +868,29 @@ def main():
                 else:
                     st.session_state.ascending_channel_info = None
 
-                st.success(f"成功获取 {code} 的数据，共 {len(df)} 条记录")
+                st.success(f"✅ 成功获取 {code} 的数据，共 {len(df)} 条记录")
+                
+                # 显示数据质量提示
+                if len(df) < 60:
+                    st.warning(f"⚠️ 数据量较少（{len(df)}条），可能影响技术指标和上升通道的计算准确性")
+                    
+            else:
+                # 显示具体的错误信息
+                if "无法连接到后端服务" in error_message:
+                    st.error(f"❌ {error_message}")
+                    st.info("💡 请检查：\n1. 后端服务是否已启动\n2. 环境变量 BACKEND_URL 和 BACKEND_PORT 是否正确设置")
+                elif "股票代码" in error_message:
+                    st.error(f"❌ {error_message}")
+                    st.info("💡 请检查：\n1. 股票代码是否正确\n2. 该股票是否在指定时间范围内有交易数据")
+                elif "请求参数错误" in error_message:
+                    st.error(f"❌ {error_message}")
+                    st.info("💡 请检查：\n1. 日期格式是否正确（YYYY-MM-DD）\n2. 日期范围是否合理")
+                elif "请求超时" in error_message:
+                    st.error(f"❌ {error_message}")
+                    st.info("💡 请稍后重试，或尝试缩小日期范围")
+                else:
+                    st.error(f"❌ {error_message}")
+                    st.info("💡 如果问题持续存在，请联系技术支持")
 
     # 显示图表（如果有数据）
     if st.session_state.stock_data is not None:
@@ -972,8 +1089,98 @@ def main():
 
         st.dataframe(filtered_df.sort_index(ascending=False), use_container_width=True, height=400)
     else:
-        # 如果没有数据，显示提示信息
-        st.info("请在左侧设置参数后点击'获取数据'按钮来查看股票数据")
+        # 如果没有数据，显示更友好的提示信息
+        st.markdown("---")
+        st.markdown("## 📊 欢迎使用数据查看器")
+        
+        # 创建两列布局
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.markdown("""
+            **🚀 开始分析股票数据：**
+            
+            1. **📝 输入股票代码** - 在左侧输入6位数字的股票代码
+            2. **📅 选择日期范围** - 建议选择至少60天的数据范围
+            3. **⚙️ 配置技术指标** - 选择需要显示的技术指标
+            4. **🔍 点击获取数据** - 开始获取和分析数据
+            
+            **💡 推荐设置：**
+            - 数据周期：日线数据
+            - 日期范围：最近一年
+            - 技术指标：均线、成交量、上升通道
+            """)
+        
+        with col2:
+            st.markdown("""
+            **🔍 常用股票代码：**
+            
+            **银行股：**
+            - 000001 平安银行
+            - 600036 招商银行
+            - 600000 浦发银行
+            
+            **科技股：**
+            - 000002 万科A
+            - 000858 五粮液
+            - 002415 海康威视
+            
+            **新能源：**
+            - 300750 宁德时代
+            - 002594 比亚迪
+            """)
+        
+        # 添加快速开始按钮
+        st.markdown("---")
+        st.markdown("### 🎯 快速开始")
+        
+        # 创建快速开始按钮
+        quick_start_col1, quick_start_col2, quick_start_col3 = st.columns(3)
+        
+        with quick_start_col1:
+            if st.button("📈 查看平安银行", key="quick_000001"):
+                st.query_params["code"] = "000001"
+                st.rerun()
+        
+        with quick_start_col2:
+            if st.button("🏦 查看招商银行", key="quick_600036"):
+                st.query_params["code"] = "600036"
+                st.rerun()
+        
+        with quick_start_col3:
+            if st.button("🔋 查看宁德时代", key="quick_300750"):
+                st.query_params["code"] = "300750"
+                st.rerun()
+        
+        # 添加功能说明
+        st.markdown("---")
+        st.markdown("### ✨ 功能特色")
+        
+        feature_col1, feature_col2, feature_col3 = st.columns(3)
+        
+        with feature_col1:
+            st.markdown("""
+            **📊 专业图表**
+            - 交互式K线图
+            - 多技术指标叠加
+            - 支持拖动和缩放
+            """)
+        
+        with feature_col2:
+            st.markdown("""
+            **📈 上升通道分析**
+            - 智能通道识别
+            - 实时状态监控
+            - 质量评估报告
+            """)
+        
+        with feature_col3:
+            st.markdown("""
+            **🔍 数据搜索**
+            - 日期范围搜索
+            - 价格区间筛选
+            - 实时数据更新
+            """)
 
 
 if __name__ == "__main__":
