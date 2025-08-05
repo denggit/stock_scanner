@@ -1,0 +1,123 @@
+# 回测框架开发文档
+
+## 目录
+- [架构设计](#架构设计)
+- [目录结构](#目录结构)
+- [设计模式](#设计模式)
+- [核心API说明](#核心api说明)
+- [策略开发规范](#策略开发规范)
+- [扩展方式](#扩展方式)
+- [常见问题](#常见问题)
+- [版本变更说明](#版本变更说明)
+
+---
+
+## 架构设计
+
+本回测框架基于`backtrader`，采用分层解耦、设计模式驱动，支持灵活扩展和高可维护性。
+
+- **核心引擎**：统一调度数据、策略、分析器，支持单策略/多策略/参数优化。
+- **策略层**：所有策略均继承`BaseStrategy`，支持参数化、可插拔。
+- **工具层**：数据处理、报告生成、可视化等通用工具。
+- **统一入口**：`__init__.py`导出所有核心API和便捷函数。
+
+---
+
+## 目录结构
+
+```
+backend/backtest/
+├── core/           # 核心引擎与基础设施
+│   ├── base_strategy.py
+│   ├── backtest_engine.py
+│   ├── data_manager.py
+│   └── result_analyzer.py
+├── strategies/     # 策略实现
+│   ├── ma_strategy.py
+│   ├── rsi_strategy.py
+│   ├── macd_strategy.py
+│   └── dual_thrust_strategy.py
+├── utils/          # 工具类
+│   ├── data_utils.py
+│   └── report_utils.py
+├── __init__.py     # 统一导出接口和便捷函数
+├── demo_new_architecture.py  # 演示脚本
+```
+
+---
+
+## 设计模式
+- **策略模式**：所有策略继承`BaseStrategy`，便于扩展和切换。
+- **工厂模式**：`BacktestFactory`统一创建单策略、多策略、参数优化回测。
+- **单例模式**：`DataManager`保证数据管理唯一性。
+- **观察者模式**：`ResultAnalyzer`负责回测结果的分析和报告生成。
+
+---
+
+## 核心API说明
+
+### 1. 便捷函数
+- `run_backtest(data, strategy_class, initial_cash, commission, strategy_params, strategy_name, plot)`
+- `run_multi_strategy_backtest(data, strategies, initial_cash, commission)`
+- `optimize_parameters(data, strategy_class, parameter_ranges, initial_cash, commission, optimization_target)`
+
+### 2. 核心类
+- `BaseStrategy`：所有策略基类，需实现`next`方法。
+- `BacktestEngine`：回测主引擎，负责调度。
+- `BacktestFactory`：工厂类，统一创建回测任务。
+- `DataManager`：数据加载与校验。
+- `ResultAnalyzer`：结果分析与报告。
+- `DataUtils`：数据处理工具。
+- `ReportUtils`：报告与可视化工具。
+
+### 3. 策略开发
+- 继承`BaseStrategy`，实现`next`方法。
+- 支持参数化，参数在`__init__`中定义。
+- 推荐在`strategies/`目录下新建文件。
+
+---
+
+## 策略开发规范
+
+```python
+from backend.backtest.core.base_strategy import BaseStrategy
+import backtrader as bt
+
+class MyStrategy(BaseStrategy):
+    def __init__(self, my_param=10):
+        super().__init__()
+        self.my_param = my_param
+        self.sma = bt.indicators.SMA(self.dataclose, period=my_param)
+    def next(self):
+        if not self.position and self.dataclose[0] > self.sma[0]:
+            self.execute_buy()
+        elif self.position and self.dataclose[0] < self.sma[0]:
+            self.execute_sell()
+```
+
+---
+
+## 扩展方式
+- **新增策略**：在`strategies/`下新建文件并注册到`__init__.py`。
+- **新增分析器**：扩展`core/result_analyzer.py`。
+- **新增数据源**：扩展`core/data_manager.py`。
+- **新增报告/可视化**：扩展`utils/report_utils.py`。
+
+---
+
+## 常见问题
+- **策略参数报错**：参数校验请在`__init__`完成，避免backtrader参数机制带来的坑。
+- **数据格式报错**：请用`DataUtils.validate_data`提前校验。
+- **分析器重复添加报错**：请勿在`kwargs`中重复传递`_name`参数。
+
+---
+
+## 版本变更说明
+- v2.0：采用分层架构，全面引入设计模式，接口与目录大幅升级。
+- v1.x：老版单文件实现，已废弃。
+
+---
+
+## 维护建议
+- 每次新增/修改API、策略、工具，**务必同步更新本开发文档和使用示例文档**。
+- 推荐在`docs/模块使用示例/`下维护详细的用法案例。 

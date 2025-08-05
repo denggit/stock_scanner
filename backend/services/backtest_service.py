@@ -11,7 +11,6 @@ from typing import Dict, Any, List
 
 import pandas as pd
 
-from backend.backtest.explosive_stock_backtest import run_explosive_stock_backtest
 from backend.data.stock_data_fetcher import StockDataFetcher
 from backend.utils.logger import setup_logger
 
@@ -23,7 +22,6 @@ class BacktestService:
         self.data_fetcher = StockDataFetcher()
         # 注册所有可用的策略
         self.backtest = {
-            "爆发式选股策略": run_explosive_stock_backtest,
             # 可以添加更多策略
         }
 
