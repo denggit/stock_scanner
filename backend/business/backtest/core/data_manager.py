@@ -31,7 +31,8 @@ class DataManager:
         if self._initialized:
             return
             
-        self.logger = logging.getLogger(__name__)
+        # 统一使用backtest主日志记录器，便于全局日志管理和追踪
+        self.logger = logging.getLogger("backtest")
         self.data_cache = {}
         self._initialized = True
     

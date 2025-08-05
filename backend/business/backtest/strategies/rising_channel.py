@@ -85,12 +85,35 @@ class RisingChannelBacktestStrategy(BaseStrategy):
         self.current_positions = {}  # {股票代码: 持仓信息}
         self.candidate_stocks = []  # 候选股票列表
         
-        # 日志
-        self.logger = logging.getLogger(__name__)
+        # 统一使用backtest主日志记录器，便于全局日志管理和追踪
+        self.logger = logging.getLogger("backtest")
         
         # 交易记录
         self.rebalance_records = []
         self.channel_analysis_records = []
+        
+        # 多股票数据管理
+        self.stock_data = {}  # {股票代码: 数据源}
+        self.stock_prices = {}  # {股票代码: 当前价格}
+        
+        # 初始化多股票环境
+        self._init_multi_stock_environment()
+    
+    def _init_multi_stock_environment(self):
+        """
+        初始化多股票环境
+        在backtrader中处理多股票数据
+        """
+        # 检查是否有多个数据源
+        if len(self.datas) > 1:
+            # 多股票模式
+            for i, data in enumerate(self.datas):
+                stock_code = getattr(data, '_name', f'STOCK_{i}')
+                self.stock_data[stock_code] = data
+                self.logger.info(f"初始化股票数据: {stock_code}")
+        else:
+            # 单股票模式，使用模拟数据
+            self.logger.info("单股票模式，使用模拟数据")
     
     def next(self):
         """
@@ -99,12 +122,30 @@ class RisingChannelBacktestStrategy(BaseStrategy):
         """
         current_date = self.data.datetime.date()
         
+        # 更新股票价格
+        self._update_stock_prices(current_date)
+        
         # 检查是否需要调仓（每月最后一天）
         if self._should_rebalance(current_date):
             self._perform_rebalance(current_date)
         
         # 检查是否需要卖出（持仓股票通道状态变化）
         self._check_exit_signals(current_date)
+    
+    def _update_stock_prices(self, current_date: datetime.date):
+        """
+        更新所有股票的当前价格
+        
+        Args:
+            current_date: 当前日期
+        """
+        for stock_code, data in self.stock_data.items():
+            try:
+                # 获取当前价格
+                current_price = data.close[0]
+                self.stock_prices[stock_code] = current_price
+            except Exception as e:
+                self.logger.warning(f"更新股票 {stock_code} 价格失败: {e}")
     
     def _should_rebalance(self, current_date: datetime.date) -> bool:
         """
@@ -141,9 +182,7 @@ class RisingChannelBacktestStrategy(BaseStrategy):
         # 1. 卖出所有现有持仓
         self._sell_all_positions(current_date)
         
-        # 2. 扫描候选股票（这里需要外部数据，实际使用时需要修改）
-        # 在实际回测中，我们需要获取所有股票的数据
-        # 这里先使用模拟数据演示逻辑
+        # 2. 扫描候选股票
         self._scan_candidate_stocks(current_date)
         
         # 3. 买入候选股票
@@ -162,23 +201,29 @@ class RisingChannelBacktestStrategy(BaseStrategy):
         Args:
             current_date: 当前日期
         """
-        for stock_code, position_info in self.current_positions.items():
+        for stock_code, position_info in list(self.current_positions.items()):
             try:
                 # 计算卖出数量
                 sell_quantity = position_info['quantity']
                 
                 # 执行卖出
                 if sell_quantity > 0:
-                    # 这里需要根据实际的backtrader数据源来执行卖出
-                    # 由于这是多股票策略，需要特殊处理
-                    self.logger.info(f"卖出 {stock_code}: {sell_quantity} 股")
+                    # 获取当前价格
+                    current_price = self.stock_prices.get(stock_code, position_info['buy_price'])
+                    
+                    # 计算收益率
+                    buy_price = position_info['buy_price']
+                    returns = (current_price - buy_price) / buy_price * 100
+                    
+                    self.logger.info(f"卖出 {stock_code}: {sell_quantity} 股，价格: {current_price:.2f}，收益率: {returns:.2f}%")
                     
                     # 记录卖出交易
                     self._log_trade(
                         "SELL", 
                         sell_quantity, 
-                        self.dataclose[0],
-                        stock_code=stock_code
+                        current_price,
+                        stock_code=stock_code,
+                        returns=returns
                     )
                     
             except Exception as e:
@@ -197,29 +242,9 @@ class RisingChannelBacktestStrategy(BaseStrategy):
         """
         self.logger.info("开始扫描候选股票...")
         
-        # 这里应该获取所有股票的数据
-        # 由于backtrader的限制，这里先使用模拟数据
-        # 实际使用时需要修改为获取真实股票数据
-        
-        # 模拟候选股票（实际使用时需要替换为真实数据）
-        self.candidate_stocks = [
-            {
-                'code': '000001.SZ',
-                'name': '平安银行',
-                'channel_score': 85.5,
-                'channel_status': 'NORMAL',
-                'beta': 0.025,
-                'r2': 0.65
-            },
-            {
-                'code': '000002.SZ', 
-                'name': '万科A',
-                'channel_score': 72.3,
-                'channel_status': 'NORMAL',
-                'beta': 0.018,
-                'r2': 0.58
-            }
-        ]
+        # 在实际回测中，我们需要获取所有股票的数据
+        # 这里先使用模拟数据演示逻辑
+        self._generate_mock_candidate_stocks(current_date)
         
         # 筛选符合条件的股票
         qualified_stocks = []
@@ -236,6 +261,65 @@ class RisingChannelBacktestStrategy(BaseStrategy):
         
         # 记录分析结果
         self._record_channel_analysis(current_date, self.candidate_stocks)
+    
+    def _generate_mock_candidate_stocks(self, current_date: datetime.date):
+        """
+        生成模拟候选股票数据
+        在实际使用中，这里应该调用真实的通道分析
+        
+        Args:
+            current_date: 当前日期
+        """
+        # 模拟候选股票（实际使用时需要替换为真实数据）
+        mock_stocks = [
+            {
+                'code': '000001.SZ',
+                'name': '平安银行',
+                'channel_score': 85.5,
+                'channel_status': 'NORMAL',
+                'beta': 0.025,
+                'r2': 0.65,
+                'current_price': 12.50
+            },
+            {
+                'code': '000002.SZ', 
+                'name': '万科A',
+                'channel_score': 72.3,
+                'channel_status': 'NORMAL',
+                'beta': 0.018,
+                'r2': 0.58,
+                'current_price': 15.80
+            },
+            {
+                'code': '000858.SZ',
+                'name': '五粮液',
+                'channel_score': 78.9,
+                'channel_status': 'NORMAL',
+                'beta': 0.022,
+                'r2': 0.62,
+                'current_price': 168.50
+            },
+            {
+                'code': '000876.SZ',
+                'name': '新希望',
+                'channel_score': 65.2,
+                'channel_status': 'NORMAL',
+                'beta': 0.015,
+                'r2': 0.45,
+                'current_price': 8.90
+            },
+            {
+                'code': '000895.SZ',
+                'name': '双汇发展',
+                'channel_score': 68.7,
+                'channel_status': 'NORMAL',
+                'beta': 0.020,
+                'r2': 0.52,
+                'current_price': 25.60
+            }
+        ]
+        
+        self.candidate_stocks = mock_stocks
     
     def _buy_candidate_stocks(self, current_date: datetime.date):
         """
@@ -256,8 +340,10 @@ class RisingChannelBacktestStrategy(BaseStrategy):
         
         for stock in self.candidate_stocks:
             try:
+                # 获取当前价格
+                current_price = stock.get('current_price', 10.0)  # 使用模拟价格
+                
                 # 计算买入数量
-                current_price = self.dataclose[0]  # 这里需要获取对应股票的价格
                 buy_quantity = int(cash_per_stock / current_price)
                 
                 # 调整数量符合A股规则
@@ -265,7 +351,7 @@ class RisingChannelBacktestStrategy(BaseStrategy):
                 
                 if buy_quantity > 0:
                     # 执行买入
-                    self.logger.info(f"买入 {stock['code']}: {buy_quantity} 股")
+                    self.logger.info(f"买入 {stock['code']}: {buy_quantity} 股，价格: {current_price:.2f}")
                     
                     # 记录买入交易
                     self._log_trade(
@@ -280,7 +366,8 @@ class RisingChannelBacktestStrategy(BaseStrategy):
                         'quantity': buy_quantity,
                         'buy_price': current_price,
                         'buy_date': current_date,
-                        'channel_score': stock['channel_score']
+                        'channel_score': stock['channel_score'],
+                        'stock_name': stock['name']
                     }
                     
             except Exception as e:
@@ -295,7 +382,21 @@ class RisingChannelBacktestStrategy(BaseStrategy):
         """
         # 这里可以添加额外的退出条件
         # 比如通道状态变为非NORMAL，或者达到止损条件等
-        pass
+        for stock_code, position in list(self.current_positions.items()):
+            try:
+                current_price = self.stock_prices.get(stock_code, position['buy_price'])
+                buy_price = position['buy_price']
+                
+                # 计算当前收益率
+                returns = (current_price - buy_price) / buy_price * 100
+                
+                # 止损条件（示例：-10%止损）
+                if returns < -10.0:
+                    self.logger.info(f"触发止损: {stock_code}，收益率: {returns:.2f}%")
+                    # 这里可以添加止损卖出逻辑
+                    
+            except Exception as e:
+                self.logger.error(f"检查退出信号失败 {stock_code}: {e}")
     
     def _record_rebalance(self, current_date: datetime.date):
         """
@@ -310,7 +411,8 @@ class RisingChannelBacktestStrategy(BaseStrategy):
             'position_count': len(self.current_positions),
             'total_value': self.broker.getvalue(),
             'cash': self.broker.getcash(),
-            'candidates': self.candidate_stocks.copy()
+            'candidates': self.candidate_stocks.copy(),
+            'positions': self.current_positions.copy()
         }
         
         self.rebalance_records.append(record)
@@ -331,7 +433,7 @@ class RisingChannelBacktestStrategy(BaseStrategy):
         
         self.channel_analysis_records.append(record)
     
-    def _log_trade(self, action: str, size: int, price: float, stock_code: str = None):
+    def _log_trade(self, action: str, size: int, price: float, stock_code: str = None, returns: float = None):
         """
         记录交易信息（重写父类方法以支持多股票）
         
@@ -340,6 +442,7 @@ class RisingChannelBacktestStrategy(BaseStrategy):
             size: 交易数量
             price: 交易价格
             stock_code: 股票代码
+            returns: 收益率（卖出时）
         """
         trade = {
             "id": self.trade_count,
@@ -353,6 +456,9 @@ class RisingChannelBacktestStrategy(BaseStrategy):
             "portfolio_value": self.broker.getvalue()
         }
         
+        if returns is not None:
+            trade["returns"] = returns
+            
         self.trades.append(trade)
         self.trade_count += 1
     
@@ -371,7 +477,8 @@ class RisingChannelBacktestStrategy(BaseStrategy):
             "current_cash": self.broker.getcash(),
             "portfolio_value": self.broker.getvalue(),
             "rebalance_count": len(self.rebalance_records),
-            "last_rebalance_date": self.last_rebalance_date
+            "last_rebalance_date": self.last_rebalance_date,
+            "stock_count": len(self.stock_data)
         }
     
     def _get_parameters(self) -> Dict[str, Any]:
@@ -394,14 +501,22 @@ class RisingChannelBacktestStrategy(BaseStrategy):
         Returns:
             表现摘要字典
         """
+        # 计算持仓市值
+        position_value = 0.0
+        for stock_code, position in self.current_positions.items():
+            current_price = self.stock_prices.get(stock_code, position['buy_price'])
+            position_value += position['quantity'] * current_price
+        
         return {
             "total_rebalances": len(self.rebalance_records),
             "total_trades": self.trade_count,
             "current_positions": len(self.current_positions),
             "portfolio_value": self.broker.getvalue(),
             "cash": self.broker.getcash(),
+            "position_value": position_value,
             "rebalance_records": self.rebalance_records,
-            "channel_analysis_records": self.channel_analysis_records
+            "channel_analysis_records": self.channel_analysis_records,
+            "current_positions_detail": self.current_positions
         }
 
 

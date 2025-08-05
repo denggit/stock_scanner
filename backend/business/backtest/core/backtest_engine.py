@@ -33,7 +33,8 @@ class BacktestEngine:
         self.cerebro = None
         self.data_manager = DataManager()
         self.result_analyzer = ResultAnalyzer()
-        self.logger = logging.getLogger(__name__)
+        # 统一使用backtest主日志记录器，便于全局日志管理和追踪
+        self.logger = logging.getLogger("backtest")
         
         # 初始化分析器
         self._init_analyzers()
