@@ -1,5 +1,0 @@
-factor: "PE"
-signal_rules:
-  buy_condition: "PE < 行业PE的20%分位数"
-  sell_condition: "持有5日或收益率>5%"
-test_period: "2018-01-01至2023-12-31"
