@@ -23,7 +23,7 @@ import traceback
 import dotenv
 
 from tqdm import tqdm
-from backend.data.data_update import DataUpdateManager
+from backend.business.data.data_update import DataUpdateManager
 from backend.utils import format_info
 from backend.utils.logger import setup_logger
 

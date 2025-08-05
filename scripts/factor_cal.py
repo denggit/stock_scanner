@@ -21,8 +21,8 @@ sys.path.append(str(root_dir))
 os.chdir(root_dir)
 
 # 导入项目模块
-from backend.data.data_fetcher import StockDataFetcher
-from backend.quant.core.factor_engine.factor_generator import get_registered_factors
+from backend.business.data.data_fetcher import StockDataFetcher
+from backend.business.factor.core.engine.generator import get_registered_factors
 from backend.utils.logger import setup_logger
 
 # 设置日志

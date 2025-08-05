@@ -12,16 +12,16 @@ from typing import Any, Dict, List
 import pandas as pd
 from tqdm import tqdm
 
-from backend.data.data_fetcher import StockDataFetcher
-from backend.strategies.breakout import BreakoutStrategy
-from backend.strategies.continuous_rise import ContinuousRiseStrategy
-from backend.strategies.double_up import DoubleUpStrategy
-from backend.strategies.explosive_stock import ExplosiveStockStrategy
-from backend.strategies.hs_bottom import HSBottom
-from backend.strategies.long_term_uptrend import LongTermUpTrendStrategy
-from backend.strategies.ma_pullback import MAPullbackStrategy
-from backend.strategies.rising_channel import RisingChannelStrategy
-from backend.strategies.swing_trading import SwingTradingStrategy
+from backend.business.data.data_fetcher import StockDataFetcher
+from backend.business.strategies.breakout import BreakoutStrategy
+from backend.business.strategies.continuous_rise import ContinuousRiseStrategy
+from backend.business.strategies.double_up import DoubleUpStrategy
+from backend.business.strategies.explosive_stock import ExplosiveStockStrategy
+from backend.business.strategies.hs_bottom import HSBottom
+from backend.business.strategies.long_term_uptrend import LongTermUpTrendStrategy
+from backend.business.strategies.ma_pullback import MAPullbackStrategy
+from backend.business.strategies.rising_channel import RisingChannelStrategy
+from backend.business.strategies.swing_trading import SwingTradingStrategy
 from backend.utils.api_response import convert_to_python_types
 from backend.utils.logger import setup_logger
 

@@ -31,9 +31,9 @@ import argparse
 from typing import List, Optional
 import importlib
 
-from backend.data.data_fetcher import StockDataFetcher
-from backend.quant.backtest.performance_analyzer import analyze_single_factor
-from backend.quant.core.factor_engine.factor_generator import (
+from backend.business.data.data_fetcher import StockDataFetcher
+from backend.business.factor import analyze_single_factor
+from backend.business.factor.core.engine.generator import (
     get_registered_factors, FACTOR_REGISTRY
 )
 from backend.utils.logger import setup_logger
@@ -75,7 +75,7 @@ def run_factor_analysis(
         # 如果指定了因子类型
         try:
             # 动态导入指定的因子类
-            module = importlib.import_module('backend.quant.core.factor_engine.factor_generator')
+            module = importlib.import_module('backend.factor.core.engine.factor_generator')
             factor_class = getattr(module, factor_type)
 
             # 获取该类的所有注册因子，而不是通过方法名匹配

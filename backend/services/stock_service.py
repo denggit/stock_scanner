@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any
 import numpy as np
 import pandas as pd
 
-from backend.data.data_fetcher import StockDataFetcher
+from backend.business.data.data_fetcher import StockDataFetcher
 from backend.utils import format_info
 from backend.utils.logger import setup_logger
 

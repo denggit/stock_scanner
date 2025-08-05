@@ -186,7 +186,7 @@ strategy_config = config.strategy
 ### 策略扫描
 
 ```python
-from backend.strategies.explosive_stock import ExplosiveStockStrategy
+from backend.business.strategies.explosive_stock import ExplosiveStockStrategy
 
 strategy = ExplosiveStockStrategy()
 strategy.set_parameters({
@@ -225,19 +225,20 @@ print(f"最大回撤: {results['summary']['max_drawdown']}%")
 ### 添加新策略
 
 ```python
-from backend.strategies.base import BaseStrategy
+from backend.business.strategies.base import BaseStrategy
+
 
 class MyStrategy(BaseStrategy):
     def __init__(self):
         super().__init__(name="我的策略", description="策略描述")
         self._init_params()
-    
+
     def _init_params(self):
         self._params = {
             "param1": 10,
             "param2": 20
         }
-    
+
     def generate_signal(self, data: pd.DataFrame) -> pd.Series:
         # 实现策略逻辑
         return signal

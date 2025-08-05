@@ -18,7 +18,7 @@ import pandas as pd
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 try:
-    from backend.quant.core.factor_engine.factor_library.channel_analysis import AscendingChannelRegression
+    from backend.business.factor.core.engine.library.channel_analysis import AscendingChannelRegression
 
     ASCENDING_CHANNEL_AVAILABLE = True
 except ImportError:
@@ -473,7 +473,7 @@ class CalIndicators:
         Returns:
             pd.DataFrame: 更新后的历史通道数据
         """
-        from ..quant.core.factor_engine.factor_library.channel_analysis.ascending_channel import \
+        from backend.business.factor.core import \
             AscendingChannelRegression
 
         analyzer = AscendingChannelRegression()
@@ -494,7 +494,7 @@ class CalIndicators:
         Returns:
             pd.DataFrame: 更新后的历史通道数据
         """
-        from ..quant.core.factor_engine.factor_library.channel_analysis.ascending_channel import \
+        from backend.business.factor.core import \
             AscendingChannelRegression
 
         analyzer = AscendingChannelRegression()
@@ -517,7 +517,7 @@ class CalIndicators:
         Returns:
             pd.DataFrame: 更新后的历史通道数据
         """
-        from ..quant.core.factor_engine.factor_library.channel_analysis.ascending_channel import \
+        from backend.business.factor.core import \
             AscendingChannelRegression
 
         analyzer = AscendingChannelRegression()

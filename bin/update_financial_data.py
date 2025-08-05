@@ -11,7 +11,7 @@ import dotenv
 
 dotenv.load_dotenv()
 
-from backend.data.data_update import DataUpdateManager
+from backend.business.data.data_update import DataUpdateManager
 from backend.utils.logger import setup_logger
 
 logger = setup_logger("update_financial_data", log_level=logging.INFO, set_root_logger=True)
