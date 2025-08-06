@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.zijund.stockscanner.update</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/zijund/Code/stock_scanner/venv/bin/python /Users/zijund/Code/stock_scanner/bin/update_stock_data.py --daily --minute --vwap</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>18</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/zijund/Code/stock_scanner/logs/update_stock_data/stockscanner.update.plist.err.log</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>
