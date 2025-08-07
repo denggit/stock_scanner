@@ -19,6 +19,10 @@ from typing import Dict, Any, Optional
 import backtrader as bt
 import pandas as pd
 
+# 导入配置
+from backend.business.backtest.configs.rising_channel_config import RisingChannelConfig
+from backend.business.factor.core.engine.library.channel_analysis.channel_state import ChannelStatus
+
 
 class MockChannelAnalyzer:
     """模拟通道分析器，用于测试"""
@@ -39,7 +43,7 @@ class MockChannelStatus:
     """模拟通道状态枚举"""
 
     def __init__(self):
-        self.value = 'NORMAL'
+        self.value = ChannelStatus.NORMAL
 
     def set_value(self, value):
         self.value = value
@@ -74,7 +78,7 @@ class RisingChannelBacktestStrategy(bt.Strategy):
         ('min_data_points', 60),  # 最小数据点数
         ('R2_min', 0.20),  # 最小R2值
         ('width_pct_min', 0.04),  # 最小宽度百分比
-        ('width_pct_max', 0.15),  # 最大宽度百分比
+        ('width_pct_max', 0.20),  # 最大宽度百分比 - 调整为更宽松的值
     )
 
     def __init__(self, stock_data_dict: Dict[str, pd.DataFrame] = None):
@@ -125,6 +129,9 @@ class RisingChannelBacktestStrategy(bt.Strategy):
 
         # 记录策略初始化
         self.logger.info("成功初始化上升通道策略")
+        self.logger.info(f"将跳过前 {self.params.min_data_points} 天的数据，等待足够的历史数据")
+        self.logger.info(f"最大持仓数量: {self.params.max_positions}")
+        self.logger.info(f"最小通道评分: {self.params.min_channel_score}")
 
     def _init_channel_analyzer(self):
         """初始化通道分析器"""
@@ -203,6 +210,11 @@ class RisingChannelBacktestStrategy(bt.Strategy):
         current_date = self.data.datetime.date(0)
         self.current_date = current_date
 
+        # 跳过前min_data_points天的数据，等待足够的历史数据
+        if len(self.data) < self.params.min_data_points:
+            self.logger.debug(f"跳过第 {len(self.data)} 天，等待足够的历史数据 (需要 {self.params.min_data_points} 天)")
+            return
+
         # 打印当前回测交易日日期日志
         self.logger.info(f"========回测交易日: {current_date}========")
 
@@ -215,11 +227,9 @@ class RisingChannelBacktestStrategy(bt.Strategy):
         # 检查持仓股票状态，卖出非NORMAL状态的股票
         self._check_and_sell_positions(current_date)
 
-        # 如果持仓不足50只，重新选股并买入
+        # 如果持仓不足max_positions只，重新选股并买入
         if len([p for p in self.current_positions.values() if p > 0]) < self.params.max_positions:
             self._select_and_buy_stocks(current_date)
-
-        self.logger.info("========================================")
 
     def _run_single_stock_mode(self):
         """
@@ -228,6 +238,12 @@ class RisingChannelBacktestStrategy(bt.Strategy):
         # 获取当前日期
         current_date = self.data.datetime.date(0)
         self.current_date = current_date
+
+        # 跳过前min_data_points天的数据，等待足够的历史数据
+        if len(self.data) < self.params.min_data_points:
+            self.logger.debug(
+                f"单股票模式：跳过第 {len(self.data)} 天，等待足够的历史数据 (需要 {self.params.min_data_points} 天)")
+            return
 
         # 记录当前数据
         self._record_current_data(current_date)
@@ -294,21 +310,21 @@ class RisingChannelBacktestStrategy(bt.Strategy):
 
                 # 计算上升通道
                 channel_state = self.channel_analyzer.fit_channel(stock_data)
-                
+
                 # 计算通道评分
                 channel_score = self._calculate_channel_score(channel_state, stock_data)
-                
+
                 # 更新状态
                 self.channel_states[stock_code] = channel_state
                 self.channel_scores[stock_code] = channel_score
-                
+
                 # 记录分析结果
                 self._record_channel_analysis(stock_code, channel_state, channel_score, current_date)
-                
+
                 # 添加详细的通道信息日志（仅对NORMAL状态的股票）
-                if (channel_state and channel_state.channel_status and 
-                    channel_state.channel_status.value == 'NORMAL'):
-                    self.logger.debug(
+                if (channel_state and channel_state.channel_status and
+                        channel_state.channel_status.value == ChannelStatus.NORMAL):
+                    self.logger.info(
                         f"股票 {stock_code} 通道分析: "
                         f"状态={channel_state.channel_status.value}, "
                         f"评分={channel_score:.1f}, "
@@ -317,6 +333,10 @@ class RisingChannelBacktestStrategy(bt.Strategy):
                         f"上沿={channel_state.upper_today:.2f}, "
                         f"R²={channel_state.r2:.3f}"
                     )
+                else:
+                    # 添加BROKEN状态的简要日志
+                    status = channel_state.channel_status.value if channel_state and channel_state.channel_status else 'None'
+                    self.logger.debug(f"股票 {stock_code} 通道状态: {status}")
 
             except Exception as e:
                 self.logger.error(f"更新股票 {stock_code} 通道状态失败: {e}")
@@ -329,10 +349,6 @@ class RisingChannelBacktestStrategy(bt.Strategy):
 
         stock_df = self.all_stock_data[stock_code].copy()
 
-        # 确保索引是datetime类型
-        if not isinstance(stock_df.index, pd.DatetimeIndex):
-            stock_df.index = pd.to_datetime(stock_df.index)
-
         # 确保current_date是datetime类型
         if isinstance(current_date, datetime):
             current_datetime = current_date
@@ -341,8 +357,9 @@ class RisingChannelBacktestStrategy(bt.Strategy):
         else:
             current_datetime = pd.to_datetime(current_date).to_pydatetime()
 
+        # 使用trade_date列进行过滤，而不是索引
         # 过滤到当前日期之前的数据
-        filtered_df = stock_df[stock_df.index <= current_datetime].copy()
+        filtered_df = stock_df[stock_df['trade_date'] <= current_datetime.date()].copy()
 
         if len(filtered_df) < self.params.min_data_points:
             return None
@@ -350,7 +367,6 @@ class RisingChannelBacktestStrategy(bt.Strategy):
         # 确保数据格式符合通道分析器的要求
         # 通道分析器期望的列名：trade_date, open, high, low, close, volume
         formatted_df = filtered_df.copy()
-        formatted_df['trade_date'] = formatted_df.index
 
         # 确保所有必需的列都存在
         required_columns = ['trade_date', 'open', 'high', 'low', 'close', 'volume']
@@ -370,11 +386,11 @@ class RisingChannelBacktestStrategy(bt.Strategy):
 
         # 基础评分：通道状态
         base_score = 0.0
-        if channel_state.channel_status.value == 'NORMAL':
+        if channel_state.channel_status.value == ChannelStatus.NORMAL:
             base_score = 60.0
-        elif channel_state.channel_status.value == 'BREAK_UP':
+        elif channel_state.channel_status.value == ChannelStatus.ACCEL_BREAKOUT:
             base_score = 40.0
-        elif channel_state.channel_status.value == 'BREAK_DOWN':
+        elif channel_state.channel_status.value == ChannelStatus.BREAKDOWN:
             base_score = 20.0
         else:
             base_score = 0.0
@@ -413,7 +429,7 @@ class RisingChannelBacktestStrategy(bt.Strategy):
             if stock_code in self.channel_states:
                 channel_state = self.channel_states[stock_code]
                 if (channel_state and channel_state.channel_status and
-                        channel_state.channel_status.value != 'NORMAL'):
+                        channel_state.channel_status.value != ChannelStatus.NORMAL):
                     stocks_to_sell.append(stock_code)
 
         # 卖出非NORMAL状态的股票
@@ -487,7 +503,7 @@ class RisingChannelBacktestStrategy(bt.Strategy):
             if (stock_code in self.channel_states and
                     self.channel_states[stock_code] and
                     self.channel_states[stock_code].channel_status and
-                    self.channel_states[stock_code].channel_status.value == 'NORMAL' and
+                    self.channel_states[stock_code].channel_status.value == ChannelStatus.NORMAL and
                     self.channel_scores.get(stock_code, 0) >= self.params.min_channel_score):
 
                 # 获取当前价格
@@ -499,20 +515,21 @@ class RisingChannelBacktestStrategy(bt.Strategy):
                 if stock_code in self.channel_states and self.channel_states[stock_code]:
                     channel_state = self.channel_states[stock_code]
                     # 使用真实的通道下沿价格
-                    if (hasattr(channel_state, 'lower_today') and 
-                        channel_state.lower_today is not None and 
-                        channel_state.lower_today > 0):
+                    if (hasattr(channel_state, 'lower_today') and
+                            channel_state.lower_today is not None and
+                            channel_state.lower_today > 0):
                         lower_price = channel_state.lower_today
                         distance_to_lower = self._calculate_distance_to_lower(current_price, lower_price)
                     else:
-                        # 如果下沿价格无效，使用模拟计算作为备用
-                        # 假设下沿为当前价格的95%，这样距离下沿就是10%
-                        lower_price = current_price * 0.9
-                        distance_to_lower = 10.0  # 固定为10%的距离
+                        # 如果下沿价格无效，使用配置中的备用值
+                        distance_config = RisingChannelConfig.get_distance_config()
+                        lower_price = current_price * distance_config['lower_price_ratio_invalid']
+                        distance_to_lower = distance_config['fallback_distance_invalid']
                 else:
-                    # 如果没有通道状态，给予一个较大的距离值，避免被优先选择
-                    lower_price = current_price * 0.0  # 假设下沿为当前价格的0%
-                    distance_to_lower = 100.0  # 固定为100%的距离
+                    # 如果没有通道状态，使用配置中的备用值
+                    distance_config = RisingChannelConfig.get_distance_config()
+                    lower_price = current_price * distance_config['lower_price_ratio_no_state']
+                    distance_to_lower = distance_config['fallback_distance_no_state']
 
                 normal_stocks.append({
                     'stock_code': stock_code,
@@ -521,20 +538,21 @@ class RisingChannelBacktestStrategy(bt.Strategy):
                     'channel_score': self.channel_scores.get(stock_code, 0.0),
                     'lower_today': lower_price,  # 添加下沿价格
                     'mid_today': channel_state.mid_today if hasattr(channel_state, 'mid_today') else None,  # 添加中轴价格
-                    'upper_today': channel_state.upper_today if hasattr(channel_state, 'upper_today') else None  # 添加上沿价格
+                    'upper_today': channel_state.upper_today if hasattr(channel_state, 'upper_today') else None
+                    # 添加上沿价格
                 })
 
         # 按距离下沿百分比排序（从小到大）
         normal_stocks.sort(key=lambda x: x['distance_to_lower'])
 
         self.logger.info(f"找到 {len(normal_stocks)} 只NORMAL状态股票")
-        
+
         # 添加详细的通道信息日志
         if normal_stocks:
             self.logger.info("通道分析详情:")
             for i, stock_info in enumerate(normal_stocks[:5]):  # 只显示前5只股票
                 self.logger.info(
-                    f"  {i+1}. {stock_info['stock_code']}: "
+                    f"  {i + 1}. {stock_info['stock_code']}: "
                     f"当前价格={stock_info['current_price']:.2f}, "
                     f"下沿={stock_info['lower_today']:.2f}, "
                     f"中轴={stock_info['mid_today']:.2f}, "
@@ -572,32 +590,44 @@ class RisingChannelBacktestStrategy(bt.Strategy):
         """
         if lower_price <= 0 or current_price <= 0:
             return float('inf')
-        
+
         # 如果当前价格等于下沿价格，距离为0
         if current_price == lower_price:
             return 0.0
-            
+
         # 计算距离下沿的百分比距离
         distance = (current_price - lower_price) / lower_price * 100
-        
+
         # 确保距离不为负数（如果当前价格低于下沿，给予一个小的正值）
         if distance < 0:
-            distance = 0.1  # 给予一个很小的正值，表示非常接近下沿
-            
+            distance_config = RisingChannelConfig.get_distance_config()
+            distance = distance_config['min_distance_below_lower']
+
         return distance
 
     def _get_stock_price(self, stock_code: str, current_date) -> float:
-        """获取指定股票的当前价格"""
+        """获取指定股票在指定日期的价格"""
         if stock_code not in self.all_stock_data:
             return 0.0
 
         stock_df = self.all_stock_data[stock_code]
-        stock_df['date'] = pd.to_datetime(stock_df.index)
 
-        # 获取当前日期的收盘价
-        current_data = stock_df[stock_df['date'] == current_date]
+        # 确保current_date是datetime类型
+        if isinstance(current_date, datetime):
+            current_datetime = current_date
+        elif isinstance(current_date, pd.Timestamp):
+            current_datetime = current_date.to_pydatetime()
+        else:
+            current_datetime = pd.to_datetime(current_date).to_pydatetime()
+
+        # 使用trade_date列进行匹配
+        current_data = stock_df[stock_df['trade_date'] == current_datetime.date()]
         if not current_data.empty:
             return current_data.iloc[0]['close']
+
+        # 如果精确匹配失败，尝试获取最近的日期
+        if len(stock_df) > 0:
+            return stock_df.iloc[-1]['close']
 
         return 0.0
 

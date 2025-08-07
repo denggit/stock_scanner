@@ -424,7 +424,23 @@ class DataUtils:
         # 复制数据
         cleaned_data = data.copy()
         
-        # 处理空值
+        # 确保索引是日期类型
+        if not isinstance(cleaned_data.index, pd.DatetimeIndex):
+            # 如果索引不是日期类型，尝试从date列创建索引
+            if 'date' in cleaned_data.columns:
+                cleaned_data.set_index('date', inplace=True)
+                cleaned_data.index = pd.to_datetime(cleaned_data.index)
+            else:
+                # 如果没有date列，尝试从第一列创建索引
+                first_col = cleaned_data.columns[0]
+                if cleaned_data[first_col].dtype == 'object':
+                    try:
+                        cleaned_data.set_index(first_col, inplace=True)
+                        cleaned_data.index = pd.to_datetime(cleaned_data.index)
+                    except:
+                        pass
+        
+        # 处理空值，但保留索引
         cleaned_data = cleaned_data.dropna()
         
         # 处理异常值（使用3倍标准差）

@@ -26,6 +26,7 @@ from backend.business.backtest import (
 from backend.business.backtest.strategies.rising_channel import RisingChannelBacktestStrategy
 from backend.business.backtest.core.backtest_engine import BacktestEngine
 from backend.utils.logger import setup_logger
+from backend.business.backtest.configs.rising_channel_config import RisingChannelConfig
 
 
 class MultiStockDataFeed(bt.feeds.PandasData):
@@ -61,7 +62,8 @@ class RisingChannelBacktestRunner:
             environment: 运行环境 ("development", "production", "optimization")
         """
         # 设置日志记录器
-        self.logger = setup_logger("backtest", log_level=log_level)
+        log_config = RisingChannelConfig.get_log_config()
+        self.logger = setup_logger(log_config['logger_name'], log_level=log_level)
         
         # 如果没有指定环境，从环境变量读取
         if environment is None:
@@ -70,20 +72,10 @@ class RisingChannelBacktestRunner:
         
         # 根据环境设置配置
         self.environment = environment
-        self.config = self._get_environment_config(environment)
+        self.config = RisingChannelConfig.get_environment_config(environment)
 
         # 策略参数
-        self.strategy_params = {
-            'max_positions': self.config['max_positions'],  # 从配置中获取最大持仓数量
-            'min_channel_score': 60.0,  # 最小通道评分
-            'k': 2.0,  # 通道斜率参数
-            'L_max': 120,  # 最大通道长度
-            'gain_trigger': 0.30,  # 收益触发阈值
-            'beta_delta': 0.15,  # Beta变化阈值
-            'R2_min': 0.20,  # 最小R²值
-            'width_pct_min': 0.04,  # 最小通道宽度
-            'width_pct_max': 0.15  # 最大通道宽度
-        }
+        self.strategy_params = RisingChannelConfig.get_strategy_params(self.config['max_positions'])
         
         # 记录环境配置信息
         self.logger.info(f"环境配置: {self.environment}")
@@ -91,67 +83,6 @@ class RisingChannelBacktestRunner:
         self.logger.info(f"最大持仓数量: {self.config['max_positions']}")
         self.logger.info(f"配置描述: {self.config['description']}")
     
-    def _get_environment_config(self, environment: str, params: dict = None) -> Dict:
-        """
-        根据环境获取配置，并允许通过params参数覆盖部分配置
-        
-        Args:
-            environment: 运行环境
-            params: 可选，用户自定义参数字典，可覆盖默认配置
-            
-        Returns:
-            环境配置字典
-        """
-        base_config = {
-            'initial_cash': 1000000.0,  # 初始资金100万
-            'commission': 0.0003,  # 手续费率
-            'stock_pool': 'no_st',  # 股票池：非ST股票
-            'start_date': '2024-01-01',  # 开始日期
-            'end_date': datetime.today().strftime("%Y-%m-%d"),  # 结束日期
-            'min_data_days': 120  # 最小数据天数
-        }
-        
-        # 根据环境设置股票数量限制
-        if environment == "development":
-            # 开发环境：限制股票数量，快速迭代
-            base_config['max_stocks'] = 100
-            base_config['description'] = "开发环境 - 快速验证策略逻辑"
-            
-        elif environment == "optimization":
-            # 优化环境：进一步减少股票数量，提高优化速度
-            base_config['max_stocks'] = 50
-            base_config['description'] = "优化环境 - 快速参数优化"
-            
-        elif environment == "production":
-            # 生产环境：不限制股票数量，使用全量数据
-            base_config['max_stocks'] = None  # 不限制
-            base_config['description'] = "生产环境 - 全量股票回测"
-            
-        elif environment == "full_backtest":
-            # 完整回测：使用大量股票但有限制
-            base_config['max_stocks'] = 2000
-            base_config['description'] = "完整回测 - 大量股票测试"
-            
-        else:
-            # 默认使用开发环境配置
-            base_config['max_stocks'] = 100
-            base_config['description'] = "默认环境 - 开发配置"
-        
-        # 计算最大持仓数量：max_stocks的10%，最大不超过50只
-        if base_config['max_stocks'] is not None:
-            max_positions = min(int(base_config['max_stocks'] * 0.1), 50)
-        else:
-            # 如果max_stocks为None（生产环境），使用默认的50只
-            max_positions = 50
-            
-        base_config['max_positions'] = max_positions
-        
-        # 如果传入了params参数，则覆盖base_config中的对应项
-        if params is not None:
-            for k, v in params.items():
-                base_config[k] = v
-
-        return base_config
     def run_basic_backtest(self):
         """
         运行基础回测 - 真正的多股票策略回测
@@ -296,12 +227,15 @@ class RisingChannelBacktestRunner:
         self.logger.info("开始运行参数优化...")
 
         try:
+            # 获取优化配置
+            optimization_config = RisingChannelConfig.get_optimization_config()
+            
             # 获取股票数据
             stock_data_dict = DataUtils.get_stock_data_for_backtest(
                 stock_pool=self.config['stock_pool'],
                 start_date=self.config['start_date'],
                 end_date=self.config['end_date'],
-                max_stocks=20,  # 优化时使用较少股票以提高速度
+                max_stocks=optimization_config['max_stocks_for_optimization'],  # 使用配置中的股票数量
                 min_data_days=self.config['min_data_days']
             )
 
@@ -313,15 +247,8 @@ class RisingChannelBacktestRunner:
             main_stock_code = self._select_main_stock(stock_data_dict)
             main_stock_data = stock_data_dict[main_stock_code]
 
-            # 定义参数范围
-            parameter_ranges = {
-                'max_positions': [30, 50, 70],  # 持仓数量范围
-                'min_channel_score': [50.0, 60.0, 70.0],  # 通道评分范围
-                'k': [1.5, 2.0, 2.5],  # 通道斜率范围
-                'gain_trigger': [0.25, 0.30, 0.35],  # 收益触发阈值范围
-                'R2_min': [0.15, 0.20, 0.25],  # 最小R²值范围
-                'width_pct_min': [0.03, 0.04, 0.05]  # 最小通道宽度范围
-            }
+            # 获取参数优化范围
+            parameter_ranges = RisingChannelConfig.get_optimization_ranges()
 
             # 运行参数优化
             optimization_results = self._run_parameter_optimization(
@@ -425,34 +352,17 @@ class RisingChannelBacktestRunner:
                 self.logger.error("没有获取到有效的股票数据")
                 return None
 
+            # 获取策略变体配置
+            strategy_variants = RisingChannelConfig.get_strategy_variants()
+            
             # 定义不同参数配置的策略
             strategies = [
-                {
-                    'name': '保守策略',
-                    'params': {
-                        'max_positions': 30,  # 较少持仓
-                        'min_channel_score': 70.0,  # 更高评分要求
-                        'k': 1.5,  # 较低斜率
-                        'gain_trigger': 0.25,  # 较低收益触发
-                        'R2_min': 0.25,  # 更高R²要求
-                        'width_pct_min': 0.05  # 更宽通道要求
-                    }
-                },
+                strategy_variants['conservative'],  # 保守策略
                 {
                     'name': '标准策略',
                     'params': self.strategy_params
                 },
-                {
-                    'name': '激进策略',
-                    'params': {
-                        'max_positions': 70,  # 更多持仓
-                        'min_channel_score': 50.0,  # 较低评分要求
-                        'k': 2.5,  # 较高斜率
-                        'gain_trigger': 0.35,  # 较高收益触发
-                        'R2_min': 0.15,  # 较低R²要求
-                        'width_pct_min': 0.03  # 较窄通道要求
-                    }
-                }
+                strategy_variants['aggressive']  # 激进策略
             ]
 
             # 运行对比回测
@@ -655,13 +565,16 @@ class RisingChannelBacktestRunner:
             return
 
         try:
+            # 获取报告配置
+            report_config = RisingChannelConfig.get_report_config()
+            
             # 创建报告目录
-            report_dir = "backtest_reports"
+            report_dir = report_config['report_dir']
             os.makedirs(report_dir, exist_ok=True)
 
             # 生成文件名
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{report_dir}/rising_channel_{report_type}_{timestamp}.xlsx"
+            filename = f"{report_dir}/{report_config['file_prefix']}_{report_type}_{timestamp}.xlsx"
 
             # 保存报告
             ReportUtils.save_report_to_excel(results, filename)
@@ -682,13 +595,16 @@ class RisingChannelBacktestRunner:
             return
 
         try:
+            # 获取报告配置
+            report_config = RisingChannelConfig.get_report_config()
+            
             # 创建报告目录
-            report_dir = "backtest_reports"
+            report_dir = report_config['report_dir']
             os.makedirs(report_dir, exist_ok=True)
 
             # 生成文件名
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{report_dir}/rising_channel_optimization_{timestamp}.xlsx"
+            filename = f"{report_dir}/{report_config['file_prefix']}_optimization_{timestamp}.xlsx"
 
             # 创建优化结果DataFrame
             optimization_data = []
@@ -712,7 +628,7 @@ class RisingChannelBacktestRunner:
             df = df.sort_values('收益率', ascending=False)
 
             # 保存到Excel
-            with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+            with pd.ExcelWriter(filename, engine=report_config['excel_engine']) as writer:
                 df.to_excel(writer, sheet_name='优化结果', index=False)
 
                 # 添加最优结果
@@ -739,13 +655,16 @@ class RisingChannelBacktestRunner:
             return
 
         try:
+            # 获取报告配置
+            report_config = RisingChannelConfig.get_report_config()
+            
             # 创建报告目录
-            report_dir = "backtest_reports"
+            report_dir = report_config['report_dir']
             os.makedirs(report_dir, exist_ok=True)
 
             # 生成文件名
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{report_dir}/rising_channel_comparison_{timestamp}.xlsx"
+            filename = f"{report_dir}/{report_config['file_prefix']}_comparison_{timestamp}.xlsx"
 
             # 保存报告
             ReportUtils.save_report_to_excel(results, filename)

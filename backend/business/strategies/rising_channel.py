@@ -53,7 +53,7 @@ class RisingChannelStrategy(BaseStrategy):
             "min_data_points": 60,  # 最小数据点数
             "R2_min": 0.20,  # 最小回归拟合优度
             "width_pct_min": 0.04,  # 通道宽度下限
-            "width_pct_max": 0.15,  # 通道宽度上限
+            "width_pct_max": 0.20,  # 通道宽度上限 - 调整为更宽松的值
 
             # 技术指标参数
             "bb_period": 20,  # 布林带周期

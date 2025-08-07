@@ -70,10 +70,12 @@ def main():
             index=1,  # 默认选择非ST股票
             help="选择要回测的股票池范围"
         )
+        # 增加 end_date 字段，默认为今天
         ipo_date = st.date_input("最晚上市日期", value=one_year_ago, help="默认一年前").strftime("%Y-%m-%d")
+        end_date = st.date_input("扫描日期", value=today, help="默认今天").strftime("%Y-%m-%d")
         min_amount = st.number_input("5日最小成交额", min_value=0, value=100000000,
                                      help="排除五日平均交易额低于该值股票")
-        params = {"stock_pool": stock_pool, "ipo_date": ipo_date, "min_amount": min_amount}
+        params = {"stock_pool": stock_pool, "ipo_date": ipo_date, "end_date": end_date, "min_amount": min_amount}
 
         # 策略参数设置
         if strategy == "均线回踩策略":
