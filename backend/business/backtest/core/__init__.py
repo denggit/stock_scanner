@@ -4,8 +4,8 @@
 回测框架核心模块
 """
 
-from .base_strategy import BaseStrategy
 from .backtest_engine import BacktestEngine, BacktestFactory
+from .base_strategy import BaseStrategy
 from .data_manager import DataManager
 from .result_analyzer import ResultAnalyzer
 
@@ -15,4 +15,4 @@ __all__ = [
     'BacktestFactory',
     'DataManager',
     'ResultAnalyzer'
-] 
+]

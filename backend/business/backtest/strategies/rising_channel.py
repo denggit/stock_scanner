@@ -311,7 +311,8 @@ class RisingChannelBacktestStrategy(bt.Strategy):
                 # 获取股票历史数据
                 stock_data = self._get_stock_historical_data(stock_code, current_date)
                 if stock_data is None or len(stock_data) < self.params.min_data_points:
-                    self.logger.debug(f"股票 {stock_code} 数据不足: {len(stock_data) if stock_data is not None else 0} < {self.params.min_data_points}")
+                    self.logger.debug(
+                        f"股票 {stock_code} 数据不足: {len(stock_data) if stock_data is not None else 0} < {self.params.min_data_points}")
                     continue
 
                 # 计算上升通道
@@ -347,7 +348,7 @@ class RisingChannelBacktestStrategy(bt.Strategy):
 
         # 输出统计信息
         self.logger.info(f"通道状态统计: NORMAL={normal_count}, BROKEN={broken_count}, ERROR={error_count}")
-        
+
         # 如果没有找到NORMAL状态的股票，输出一些调试信息
         if normal_count == 0:
             self.logger.warning("没有找到NORMAL状态的股票，可能的原因:")
@@ -399,7 +400,7 @@ class RisingChannelBacktestStrategy(bt.Strategy):
         # 检查数据质量
         if formatted_df['close'].isnull().any():
             self.logger.debug(f"股票 {stock_code} 收盘价存在空值")
-        
+
         if formatted_df['volume'].isnull().any():
             self.logger.debug(f"股票 {stock_code} 成交量存在空值")
 
@@ -682,17 +683,17 @@ class RisingChannelBacktestStrategy(bt.Strategy):
 
         # 计算交易金额
         trade_value = price * size
-        
+
         # 获取当前资金和总资产
         current_cash = self.broker.getcash()
         portfolio_value = self.broker.getvalue()
-        
+
         # 获取当前持仓信息
         current_position_count = len([p for p in self.current_positions.values() if p > 0])
-        
+
         # 获取通道详细信息
         channel_info = self._get_channel_info(stock_code)
-        
+
         trade = {
             '交易日期': current_date or datetime.now(),
             '交易动作': action,
@@ -714,7 +715,7 @@ class RisingChannelBacktestStrategy(bt.Strategy):
             '上沿价格': channel_info.get('upper_today', 0.0),
             '距离下沿百分比': channel_info.get('distance_to_lower', 0.0)
         }
-        
+
         # 添加兼容性字段（保持向后兼容）
         trade.update({
             'date': trade['交易日期'],
@@ -723,18 +724,19 @@ class RisingChannelBacktestStrategy(bt.Strategy):
             'quantity': trade['交易数量'],
             'price': trade['交易价格'],
             'value': trade['交易金额'],
+            'returns': trade['收益率'],  # 添加这个关键字段！
             'channel_status': trade['通道状态'],
             'channel_score': trade['通道评分']
         })
-        
+
         self.trades.append(trade)
         self.trade_count += 1
-        
+
         # 记录详细日志
         returns_str = f"{returns:.2f}%" if returns is not None else "N/A"
         self.logger.info(f"记录交易: {action} {stock_code} {size}股 @ {price:.2f} "
-                        f"金额:{trade_value:.2f} 收益率:{returns_str} "
-                        f"通道状态:{channel_status} 评分:{channel_score:.1f}")
+                         f"金额:{trade_value:.2f} 收益率:{returns_str} "
+                         f"通道状态:{channel_status} 评分:{channel_score:.1f}")
 
     def _get_channel_info(self, stock_code: str) -> Dict[str, float]:
         """
@@ -755,32 +757,32 @@ class RisingChannelBacktestStrategy(bt.Strategy):
             'upper_today': 0.0,
             'distance_to_lower': 0.0
         }
-        
-        if (stock_code in self.channel_states and 
-            self.channel_states[stock_code] and 
-            hasattr(self.channel_states[stock_code], 'slope')):
-            
+
+        if (stock_code in self.channel_states and
+                self.channel_states[stock_code] and
+                hasattr(self.channel_states[stock_code], 'slope')):
+
             channel_state = self.channel_states[stock_code]
-            
+
             # 获取通道基本信息
             channel_info['slope'] = getattr(channel_state, 'slope', 0.0)
             channel_info['r2'] = getattr(channel_state, 'r2', 0.0)
             channel_info['width_pct'] = getattr(channel_state, 'width_pct', 0.0)
-            
+
             # 获取当前价格和通道边界
             current_price = self._get_stock_price(stock_code, self.current_date)
             if current_price > 0:
                 channel_info['lower_today'] = getattr(channel_state, 'lower_today', current_price)
                 channel_info['mid_today'] = getattr(channel_state, 'mid_today', current_price)
                 channel_info['upper_today'] = getattr(channel_state, 'upper_today', current_price)
-                
+
                 # 计算距离下沿百分比
                 if channel_info['lower_today'] > 0:
                     channel_info['distance_to_lower'] = (
-                        (current_price - channel_info['lower_today']) / 
-                        channel_info['lower_today'] * 100
+                            (current_price - channel_info['lower_today']) /
+                            channel_info['lower_today'] * 100
                     )
-        
+
         return channel_info
 
     def get_strategy_info(self) -> Dict[str, Any]:

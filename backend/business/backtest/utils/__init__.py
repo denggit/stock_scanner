@@ -10,4 +10,4 @@ from .report_utils import ReportUtils
 __all__ = [
     'DataUtils',
     'ReportUtils'
-] 
+]

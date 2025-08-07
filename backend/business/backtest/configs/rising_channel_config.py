@@ -5,9 +5,9 @@
 包含所有策略相关的常量配置
 """
 
+import os
 from datetime import datetime
 from typing import Dict, Any
-import os
 
 
 class RisingChannelConfig:
@@ -15,7 +15,7 @@ class RisingChannelConfig:
     上升通道策略配置类
     集中管理所有策略相关的常量
     """
-    
+
     # ==================== 环境配置 ====================
     ENVIRONMENTS = {
         "development": {
@@ -39,7 +39,7 @@ class RisingChannelConfig:
             "max_positions": 50,
         }
     }
-    
+
     # ==================== 基础配置 ====================
     BASE_CONFIG = {
         'initial_cash': 1000000.0,  # 初始资金100万
@@ -49,7 +49,7 @@ class RisingChannelConfig:
         'end_date': datetime.today().strftime("%Y-%m-%d"),  # 结束日期
         'min_data_days': 120  # 最小数据天数
     }
-    
+
     # ==================== 策略参数 ====================
     STRATEGY_PARAMS = {
         'min_channel_score': 60.0,  # 最小通道评分
@@ -61,7 +61,7 @@ class RisingChannelConfig:
         'width_pct_min': 0.04,  # 最小通道宽度
         'width_pct_max': 0.20  # 最大通道宽度 - 调整为更宽松的值
     }
-    
+
     # ==================== 参数优化范围 ====================
     OPTIMIZATION_RANGES = {
         'max_positions': [30, 50, 70],  # 持仓数量范围
@@ -71,7 +71,7 @@ class RisingChannelConfig:
         'R2_min': [0.15, 0.20, 0.25],  # 最小R²值范围
         'width_pct_min': [0.03, 0.04, 0.05]  # 最小通道宽度范围
     }
-    
+
     # ==================== 策略变体配置 ====================
     STRATEGY_VARIANTS = {
         'conservative': {
@@ -99,7 +99,7 @@ class RisingChannelConfig:
             }
         }
     }
-    
+
     # ==================== 距离计算配置 ====================
     DISTANCE_CONFIG = {
         'fallback_distance_invalid': 10.0,  # 下沿无效时的固定距离
@@ -108,27 +108,27 @@ class RisingChannelConfig:
         'lower_price_ratio_no_state': 0.0,  # 无通道状态时的价格比例
         'min_distance_below_lower': 0.1,  # 价格低于下沿时的最小距离
     }
-    
+
     # ==================== 日志配置 ====================
     LOG_CONFIG = {
         'logger_name': 'backtest',
         'default_level': 'INFO',
         'log_format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     }
-    
+
     # ==================== 报告配置 ====================
     REPORT_CONFIG = {
         'report_dir': os.path.abspath(os.path.join(os.path.dirname(__file__), '../backtest_reports')),
         'file_prefix': 'rising_channel',
         'excel_engine': 'openpyxl'
     }
-    
+
     # ==================== 优化配置 ====================
     OPTIMIZATION_CONFIG = {
         'max_stocks_for_optimization': 20,  # 优化时使用的股票数量
         'target_metric': 'total_return',  # 优化目标指标
     }
-    
+
     # ==================== 通道分析配置 ====================
     CHANNEL_ANALYSIS_CONFIG = {
         'delta_cut': 5,  # 切割参数
@@ -137,7 +137,7 @@ class RisingChannelConfig:
         'reanchor_fail_max': 2,  # 重锚定失败最大次数
         'min_data_points': 60,  # 最小数据点数
     }
-    
+
     @classmethod
     def get_environment_config(cls, environment: str, params: dict = None) -> Dict[str, Any]:
         """
@@ -152,7 +152,7 @@ class RisingChannelConfig:
         """
         # 获取基础配置
         base_config = cls.BASE_CONFIG.copy()
-        
+
         # 获取环境特定配置
         if environment in cls.ENVIRONMENTS:
             env_config = cls.ENVIRONMENTS[environment]
@@ -161,14 +161,14 @@ class RisingChannelConfig:
             # 默认使用开发环境配置
             env_config = cls.ENVIRONMENTS["development"]
             base_config.update(env_config)
-        
+
         # 如果传入了params参数，则覆盖base_config中的对应项
         if params is not None:
             for k, v in params.items():
                 base_config[k] = v
 
         return base_config
-    
+
     @classmethod
     def get_strategy_params(cls, max_positions: int = None) -> Dict[str, Any]:
         """
@@ -181,16 +181,16 @@ class RisingChannelConfig:
             策略参数字典
         """
         params = cls.STRATEGY_PARAMS.copy()
-        
+
         # 添加通道分析配置
         params.update(cls.CHANNEL_ANALYSIS_CONFIG)
-        
+
         # 如果指定了max_positions，则使用指定值
         if max_positions is not None:
             params['max_positions'] = max_positions
-        
+
         return params
-    
+
     @classmethod
     def get_optimization_ranges(cls) -> Dict[str, list]:
         """
@@ -200,7 +200,7 @@ class RisingChannelConfig:
             参数优化范围字典
         """
         return cls.OPTIMIZATION_RANGES.copy()
-    
+
     @classmethod
     def get_strategy_variants(cls) -> Dict[str, Dict]:
         """
@@ -210,7 +210,7 @@ class RisingChannelConfig:
             策略变体配置字典
         """
         return cls.STRATEGY_VARIANTS.copy()
-    
+
     @classmethod
     def get_distance_config(cls) -> Dict[str, Any]:
         """
@@ -220,7 +220,7 @@ class RisingChannelConfig:
             距离计算配置字典
         """
         return cls.DISTANCE_CONFIG.copy()
-    
+
     @classmethod
     def get_log_config(cls) -> Dict[str, str]:
         """
@@ -230,7 +230,7 @@ class RisingChannelConfig:
             日志配置字典
         """
         return cls.LOG_CONFIG.copy()
-    
+
     @classmethod
     def get_report_config(cls) -> Dict[str, str]:
         """
@@ -240,7 +240,7 @@ class RisingChannelConfig:
             报告配置字典
         """
         return cls.REPORT_CONFIG.copy()
-    
+
     @classmethod
     def get_optimization_config(cls) -> Dict[str, Any]:
         """
@@ -250,7 +250,7 @@ class RisingChannelConfig:
             优化配置字典
         """
         return cls.OPTIMIZATION_CONFIG.copy()
-    
+
     @classmethod
     def get_channel_analysis_config(cls) -> Dict[str, Any]:
         """
@@ -263,4 +263,4 @@ class RisingChannelConfig:
 
 
 # 导出配置实例
-config = RisingChannelConfig() 
+config = RisingChannelConfig()

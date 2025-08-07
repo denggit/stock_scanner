@@ -13,39 +13,39 @@ class AShareTradingRules:
     A股交易规则类
     包含A股市场的各种交易限制和规则
     """
-    
+
     # 基础交易规则
     MIN_TRADE_UNITS = 100  # 最小交易单位（股）
     MIN_TRADE_AMOUNT = 1000  # 最小交易金额（元）
-    
+
     # 手续费规则
     COMMISSION_RATE = 0.0003  # 佣金费率（万分之三）
     MIN_COMMISSION = 5.0  # 最低佣金（元）
     MAX_COMMISSION = 0.0003  # 最高佣金费率
-    
+
     # 印花税规则
     STAMP_TAX_RATE = 0.001  # 印花税率（千分之一，仅卖出时收取）
-    
+
     # 过户费规则
     TRANSFER_FEE_RATE = 0.00002  # 过户费率（十万分之二）
-    
+
     # 涨跌停规则
     PRICE_LIMIT_RATE = 0.10  # 涨跌停幅度（10%）
     ST_PRICE_LIMIT_RATE = 0.05  # ST股票涨跌停幅度（5%）
-    
+
     # 交易时间规则
     TRADING_HOURS = {
         "morning": ("09:30", "11:30"),
         "afternoon": ("13:00", "15:00")
     }
-    
+
     # 停牌规则
     SUSPENSION_RULES = {
         "daily_limit": True,  # 涨跌停停牌
         "news_announcement": True,  # 重大事项停牌
         "trading_halt": True  # 交易异常停牌
     }
-    
+
     @classmethod
     def calculate_commission(cls, trade_amount: float, is_buy: bool = True) -> float:
         """
@@ -61,7 +61,7 @@ class AShareTradingRules:
         commission = trade_amount * cls.COMMISSION_RATE
         commission = max(commission, cls.MIN_COMMISSION)
         return commission
-    
+
     @classmethod
     def calculate_stamp_tax(cls, trade_amount: float) -> float:
         """
@@ -74,7 +74,7 @@ class AShareTradingRules:
             印花税金额
         """
         return trade_amount * cls.STAMP_TAX_RATE
-    
+
     @classmethod
     def calculate_transfer_fee(cls, trade_amount: float) -> float:
         """
@@ -87,7 +87,7 @@ class AShareTradingRules:
             过户费金额
         """
         return trade_amount * cls.TRANSFER_FEE_RATE
-    
+
     @classmethod
     def calculate_total_fees(cls, trade_amount: float, is_buy: bool = True) -> float:
         """
@@ -102,16 +102,16 @@ class AShareTradingRules:
         """
         commission = cls.calculate_commission(trade_amount, is_buy)
         transfer_fee = cls.calculate_transfer_fee(trade_amount)
-        
+
         total_fees = commission + transfer_fee
-        
+
         # 卖出时加收印花税
         if not is_buy:
             stamp_tax = cls.calculate_stamp_tax(trade_amount)
             total_fees += stamp_tax
-        
+
         return total_fees
-    
+
     @classmethod
     def adjust_trade_quantity(cls, quantity: int) -> int:
         """
@@ -125,13 +125,13 @@ class AShareTradingRules:
         """
         # 确保是100的整数倍
         adjusted_quantity = (quantity // cls.MIN_TRADE_UNITS) * cls.MIN_TRADE_UNITS
-        
+
         # 如果调整后为0，但原始数量大于0，则设为最小交易单位
         if adjusted_quantity == 0 and quantity > 0:
             adjusted_quantity = cls.MIN_TRADE_UNITS
-        
+
         return adjusted_quantity
-    
+
     @classmethod
     def check_price_limit(cls, current_price: float, reference_price: float, is_st: bool = False) -> Dict[str, Any]:
         """
@@ -146,10 +146,10 @@ class AShareTradingRules:
             检查结果字典
         """
         limit_rate = cls.ST_PRICE_LIMIT_RATE if is_st else cls.PRICE_LIMIT_RATE
-        
+
         upper_limit = reference_price * (1 + limit_rate)
         lower_limit = reference_price * (1 - limit_rate)
-        
+
         return {
             "is_upper_limit": current_price >= upper_limit,
             "is_lower_limit": current_price <= lower_limit,
@@ -157,7 +157,7 @@ class AShareTradingRules:
             "lower_limit": lower_limit,
             "limit_rate": limit_rate
         }
-    
+
     @classmethod
     def get_trading_rules_summary(cls) -> Dict[str, Any]:
         """
@@ -181,4 +181,4 @@ class AShareTradingRules:
 
 
 # 全局交易规则实例
-ASHARE_RULES = AShareTradingRules() 
+ASHARE_RULES = AShareTradingRules()

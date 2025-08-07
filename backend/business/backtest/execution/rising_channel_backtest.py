@@ -9,17 +9,15 @@ import logging
 import os
 import sys
 from datetime import datetime
-import pandas as pd
-import backtrader as bt
 from typing import Dict, List
+
+import backtrader as bt
+import pandas as pd
 
 # 添加项目根目录到路径
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../../..'))
 
 from backend.business.backtest import (
-    run_backtest,
-    run_multi_strategy_backtest,
-    optimize_parameters,
     DataUtils,
     ReportUtils
 )
@@ -34,7 +32,7 @@ class MultiStockDataFeed(bt.feeds.PandasData):
     多股票数据源
     用于在backtrader中处理多股票数据
     """
-    
+
     def __init__(self, stock_code: str, **kwargs):
         """
         初始化数据源
@@ -64,25 +62,25 @@ class RisingChannelBacktestRunner:
         # 设置日志记录器
         log_config = RisingChannelConfig.get_log_config()
         self.logger = setup_logger(log_config['logger_name'], log_level=log_level)
-        
+
         # 如果没有指定环境，从环境变量读取
         if environment is None:
             import os
             environment = os.getenv('BACKTEST_ENV', 'development')
-        
+
         # 根据环境设置配置
         self.environment = environment
         self.config = RisingChannelConfig.get_environment_config(environment)
 
         # 策略参数
         self.strategy_params = RisingChannelConfig.get_strategy_params(self.config['max_positions'])
-        
+
         # 记录环境配置信息
         self.logger.info(f"环境配置: {self.environment}")
         self.logger.info(f"最大股票数量: {self.config['max_stocks']}")
         self.logger.info(f"最大持仓数量: {self.config['max_positions']}")
         self.logger.info(f"配置描述: {self.config['description']}")
-    
+
     def run_basic_backtest(self):
         """
         运行基础回测 - 真正的多股票策略回测
@@ -133,41 +131,41 @@ class RisingChannelBacktestRunner:
             回测结果
         """
         self.logger.info("开始创建多股票回测引擎...")
-        
+
         # 使用传入的策略参数或默认参数
         if strategy_params is None:
             strategy_params = self.strategy_params
-        
+
         # 创建回测引擎
         engine = BacktestEngine(
             initial_cash=self.config['initial_cash'],
             commission=self.config['commission']
         )
-        
+
         # 选择一只股票作为主数据源（用于时间轴）
         # 选择数据最完整的股票
         main_stock_code = self._select_main_stock(stock_data_dict)
         main_stock_data = stock_data_dict[main_stock_code]
-        
+
         self.logger.info(f"选择主数据源: {main_stock_code}")
-        
+
         # 添加主数据源
         engine.add_data(main_stock_data, name=main_stock_code)
-        
+
         # 添加策略到引擎，同时传入股票数据
         engine.add_strategy(RisingChannelBacktestStrategy, stock_data_dict=stock_data_dict, **strategy_params)
-        
+
         # 运行回测
         self.logger.info("开始运行回测...")
         results = engine.run("上升通道多股票策略")
-        
+
         # 获取策略实例（用于获取详细信息）
         strategy_instance = self._get_strategy_instance(engine)
         if strategy_instance is not None:
             # 添加策略详细信息到结果中
             results['strategy_info'] = strategy_instance.get_strategy_info()
             results['performance'] = strategy_instance.get_performance_summary()
-            
+
             # 确保交易记录被正确传递
             if 'performance' in results and 'trades' in results['performance']:
                 results['trades'] = results['performance']['trades']
@@ -175,7 +173,7 @@ class RisingChannelBacktestRunner:
             elif hasattr(strategy_instance, 'trades'):
                 results['trades'] = strategy_instance.trades
                 self.logger.info(f"从策略实例获取 {len(results['trades'])} 笔交易记录")
-        
+
         return results
 
     def _select_main_stock(self, stock_data_dict: Dict[str, pd.DataFrame]) -> str:
@@ -190,12 +188,12 @@ class RisingChannelBacktestRunner:
         """
         best_stock = None
         max_length = 0
-        
+
         for stock_code, data in stock_data_dict.items():
             if len(data) > max_length:
                 max_length = len(data)
                 best_stock = stock_code
-        
+
         return best_stock
 
     def _get_strategy_instance(self, engine: BacktestEngine):
@@ -225,7 +223,7 @@ class RisingChannelBacktestRunner:
                         return None  # 暂时返回None，因为无法直接获取实例
         except Exception as e:
             self.logger.warning(f"获取策略实例失败: {e}")
-        
+
         return None
 
     def run_parameter_optimization(self):
@@ -237,7 +235,7 @@ class RisingChannelBacktestRunner:
         try:
             # 获取优化配置
             optimization_config = RisingChannelConfig.get_optimization_config()
-            
+
             # 获取股票数据
             stock_data_dict = DataUtils.get_stock_data_for_backtest(
                 stock_pool=self.config['stock_pool'],
@@ -287,39 +285,39 @@ class RisingChannelBacktestRunner:
             优化结果
         """
         self.logger.info("开始参数优化...")
-        
+
         # 生成参数组合
         import itertools
         param_names = list(parameter_ranges.keys())
         param_values = list(parameter_ranges.values())
         param_combinations = list(itertools.product(*param_values))
-        
+
         self.logger.info(f"总共 {len(param_combinations)} 个参数组合")
-        
+
         optimization_results = []
         best_result = None
         best_value = float('-inf')
-        
+
         for i, param_combo in enumerate(param_combinations):
             try:
                 # 构建参数字典
                 params = dict(zip(param_names, param_combo))
-                
-                self.logger.info(f"测试参数组合 {i+1}/{len(param_combinations)}: {params}")
-                
+
+                self.logger.info(f"测试参数组合 {i + 1}/{len(param_combinations)}: {params}")
+
                 # 运行回测
                 result = self._run_multi_stock_backtest(stock_data_dict, params)
-                
+
                 if result and 'summary' in result:
                     # 获取目标指标
                     target_value = result['summary'].get('total_return', 0)
-                    
+
                     optimization_results.append({
                         'parameters': params,
                         'result': result,
                         'target_value': target_value
                     })
-                    
+
                     # 更新最佳结果
                     if target_value > best_value:
                         best_value = target_value
@@ -328,11 +326,11 @@ class RisingChannelBacktestRunner:
                             'result': result,
                             'target_value': target_value
                         }
-                
+
             except Exception as e:
                 self.logger.warning(f"参数组合 {params} 测试失败: {e}")
                 continue
-        
+
         return {
             'optimization_results': optimization_results,
             'best_params': best_result['parameters'] if best_result else {},
@@ -362,7 +360,7 @@ class RisingChannelBacktestRunner:
 
             # 获取策略变体配置
             strategy_variants = RisingChannelConfig.get_strategy_variants()
-            
+
             # 定义不同参数配置的策略
             strategies = [
                 strategy_variants['conservative'],  # 保守策略
@@ -400,27 +398,27 @@ class RisingChannelBacktestRunner:
             对比结果
         """
         self.logger.info("开始对比回测...")
-        
+
         strategy_results = {}
-        
+
         for strategy_config in strategies:
             strategy_name = strategy_config['name']
             strategy_params = strategy_config['params']
-            
+
             self.logger.info(f"运行策略: {strategy_name}")
-            
+
             try:
                 # 运行回测
                 result = self._run_multi_stock_backtest(stock_data_dict, strategy_params)
                 strategy_results[strategy_name] = result
-                
+
             except Exception as e:
                 self.logger.error(f"策略 {strategy_name} 运行失败: {e}")
                 continue
-        
+
         # 生成比较报告
         comparison_report = self._generate_comparison_report(strategy_results)
-        
+
         return {
             'strategy_results': strategy_results,
             'comparison_report': comparison_report
@@ -439,11 +437,11 @@ class RisingChannelBacktestRunner:
         report_lines = []
         report_lines.append("=== 策略对比报告 ===")
         report_lines.append("")
-        
+
         # 创建对比表格
         report_lines.append("策略名称\t总收益率\t夏普比率\t最大回撤\t交易次数\t胜率")
         report_lines.append("-" * 80)
-        
+
         for strategy_name, result in strategy_results.items():
             if result and 'summary' in result:
                 summary = result['summary']
@@ -455,7 +453,7 @@ class RisingChannelBacktestRunner:
                     f"{summary.get('total_trades', 0)}\t"
                     f"{summary.get('win_rate', 0):.2f}%"
                 )
-        
+
         return "\n".join(report_lines)
 
     def _print_results(self, results):
@@ -483,7 +481,7 @@ class RisingChannelBacktestRunner:
             def safe_get(key, default=0):
                 value = metrics.get(key, default)
                 return value if value is not None else default
-            
+
             print("\n关键指标:")
             print(f"  总收益率: {safe_get('总收益率', 0):.2f}%")
             print(f"  夏普比率: {safe_get('夏普比率', 0):.4f}")
@@ -548,12 +546,12 @@ class RisingChannelBacktestRunner:
         strategy_results = results.get('strategy_results', {})
         for name, result in strategy_results.items():
             metrics = result.get('metrics', {})
-            
+
             # 安全获取指标值，处理None值
             def safe_get(key, default=0):
                 value = metrics.get(key, default)
                 return value if value is not None else default
-            
+
             print(f"\n{name}:")
             print(f"  总收益率: {safe_get('总收益率', 0):.2f}%")
             print(f"  夏普比率: {safe_get('夏普比率', 0):.4f}")
@@ -575,7 +573,7 @@ class RisingChannelBacktestRunner:
         try:
             # 获取报告配置
             report_config = RisingChannelConfig.get_report_config()
-            
+
             # 创建报告目录
             report_dir = report_config['report_dir']
             os.makedirs(report_dir, exist_ok=True)
@@ -605,7 +603,7 @@ class RisingChannelBacktestRunner:
         try:
             # 获取报告配置
             report_config = RisingChannelConfig.get_report_config()
-            
+
             # 创建报告目录
             report_dir = report_config['report_dir']
             os.makedirs(report_dir, exist_ok=True)
@@ -622,7 +620,7 @@ class RisingChannelBacktestRunner:
                     metrics = result['result'].get('metrics', {})
                     value = metrics.get(key, default)
                     return value if value is not None else default
-                
+
                 row = {
                     '参数组合': str(result['parameters']),
                     '收益率': result['target_value'],
@@ -665,7 +663,7 @@ class RisingChannelBacktestRunner:
         try:
             # 获取报告配置
             report_config = RisingChannelConfig.get_report_config()
-            
+
             # 创建报告目录
             report_dir = report_config['report_dir']
             os.makedirs(report_dir, exist_ok=True)
@@ -693,12 +691,12 @@ def main():
     # 根据命令行参数或环境变量选择运行环境
     import os
     environment = os.getenv('BACKTEST_ENV', 'development')
-    
+
     print(f"当前运行环境: {environment}")
-    
+
     # 创建回测运行器
     runner = RisingChannelBacktestRunner(log_level=logging.INFO, environment=environment)
-    
+
     # 打印环境配置信息
     print(f"环境配置: {runner.config['description']}")
     print(f"股票数量限制: {runner.config['max_stocks']}")
@@ -708,20 +706,20 @@ def main():
             # 开发环境：快速验证
             print("\n1. 开发环境 - 快速验证策略逻辑...")
             basic_results = runner.run_basic_backtest()
-            
+
         elif environment == "optimization":
             # 优化环境：参数优化
             print("\n1. 优化环境 - 参数优化...")
             optimization_results = runner.run_parameter_optimization()
-            
+
         elif environment == "production":
             # 生产环境：完整回测
             print("\n1. 生产环境 - 完整回测...")
             basic_results = runner.run_basic_backtest()
-            
+
             print("\n2. 生产环境 - 对比回测...")
             comparison_results = runner.run_comparison_backtest()
-            
+
         elif environment == "full_backtest":
             # 完整回测：所有功能
             print("\n1. 完整回测 - 多股票回测...")
@@ -732,7 +730,7 @@ def main():
 
             print("\n3. 完整回测 - 对比回测...")
             comparison_results = runner.run_comparison_backtest()
-        
+
         else:
             # 默认开发环境
             print("\n1. 默认环境 - 基础回测...")
