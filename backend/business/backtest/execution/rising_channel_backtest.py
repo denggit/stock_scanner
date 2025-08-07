@@ -167,6 +167,14 @@ class RisingChannelBacktestRunner:
             # 添加策略详细信息到结果中
             results['strategy_info'] = strategy_instance.get_strategy_info()
             results['performance'] = strategy_instance.get_performance_summary()
+            
+            # 确保交易记录被正确传递
+            if 'performance' in results and 'trades' in results['performance']:
+                results['trades'] = results['performance']['trades']
+                self.logger.info(f"成功获取 {len(results['trades'])} 笔交易记录")
+            elif hasattr(strategy_instance, 'trades'):
+                results['trades'] = strategy_instance.trades
+                self.logger.info(f"从策略实例获取 {len(results['trades'])} 笔交易记录")
         
         return results
 

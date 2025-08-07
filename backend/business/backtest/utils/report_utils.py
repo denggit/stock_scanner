@@ -34,6 +34,7 @@ class ReportUtils:
             value = metrics.get(key, default)
             return value if value is not None else default
         
+        # 确保所有值都是字符串格式
         summary_data = {
             '指标': [
                 '初始资金', '最终资金', '总收益率', '绝对收益',
@@ -54,6 +55,13 @@ class ReportUtils:
             ]
         }
         
+        # 确保数据长度一致
+        if len(summary_data['指标']) != len(summary_data['数值']):
+            # 如果长度不一致，截取较短的长度
+            min_length = min(len(summary_data['指标']), len(summary_data['数值']))
+            summary_data['指标'] = summary_data['指标'][:min_length]
+            summary_data['数值'] = summary_data['数值'][:min_length]
+        
         return pd.DataFrame(summary_data)
     
     @staticmethod
@@ -70,30 +78,58 @@ class ReportUtils:
         if not trades:
             return pd.DataFrame()
         
-        df = pd.DataFrame(trades)
-        
-        # 计算交易统计
-        buy_trades = df[df['action'] == 'BUY']
-        sell_trades = df[df['action'] == 'SELL']
-        
-        summary = {
-            '统计项': [
-                '总交易数', '买入交易数', '卖出交易数',
-                '平均买入价格', '平均卖出价格',
-                '最大单笔交易金额', '最小单笔交易金额'
-            ],
-            '数值': [
-                len(df),
-                len(buy_trades),
-                len(sell_trades),
-                f"{buy_trades['price'].mean():.2f}" if len(buy_trades) > 0 else "N/A",
-                f"{sell_trades['price'].mean():.2f}" if len(sell_trades) > 0 else "N/A",
-                f"{df['value'].max():,.2f}",
-                f"{df['value'].min():,.2f}"
-            ]
-        }
-        
-        return pd.DataFrame(summary)
+        try:
+            df = pd.DataFrame(trades)
+            
+            # 计算交易统计
+            buy_trades = df[df['action'] == 'BUY'] if 'action' in df.columns else pd.DataFrame()
+            sell_trades = df[df['action'] == 'SELL'] if 'action' in df.columns else pd.DataFrame()
+            
+            # 安全计算统计值
+            def safe_calc(series, calc_type='mean'):
+                if series.empty:
+                    return "N/A"
+                try:
+                    if calc_type == 'mean':
+                        return f"{series.mean():.2f}"
+                    elif calc_type == 'max':
+                        return f"{series.max():,.2f}"
+                    elif calc_type == 'min':
+                        return f"{series.min():,.2f}"
+                except:
+                    return "N/A"
+            
+            summary_data = {
+                '统计项': [
+                    '总交易数', '买入交易数', '卖出交易数',
+                    '平均买入价格', '平均卖出价格',
+                    '最大单笔交易金额', '最小单笔交易金额'
+                ],
+                '数值': [
+                    str(len(df)),
+                    str(len(buy_trades)),
+                    str(len(sell_trades)),
+                    safe_calc(buy_trades['price'], 'mean') if 'price' in buy_trades.columns else "N/A",
+                    safe_calc(sell_trades['price'], 'mean') if 'price' in sell_trades.columns else "N/A",
+                    safe_calc(df['value'], 'max') if 'value' in df.columns else "N/A",
+                    safe_calc(df['value'], 'min') if 'value' in df.columns else "N/A"
+                ]
+            }
+            
+            # 确保数据长度一致
+            if len(summary_data['统计项']) != len(summary_data['数值']):
+                min_length = min(len(summary_data['统计项']), len(summary_data['数值']))
+                summary_data['统计项'] = summary_data['统计项'][:min_length]
+                summary_data['数值'] = summary_data['数值'][:min_length]
+            
+            return pd.DataFrame(summary_data)
+            
+        except Exception as e:
+            # 如果处理失败，返回基本的汇总信息
+            return pd.DataFrame({
+                '统计项': ['总交易数', '处理状态'],
+                '数值': [str(len(trades)), f'处理失败: {str(e)}']
+            })
     
     @staticmethod
     def create_monthly_returns(trades: List[Dict]) -> pd.DataFrame:
@@ -109,27 +145,77 @@ class ReportUtils:
         if not trades:
             return pd.DataFrame()
         
-        df = pd.DataFrame(trades)
-        sell_trades = df[df['action'] == 'SELL'].copy()
-        
-        if len(sell_trades) == 0:
+        try:
+            df = pd.DataFrame(trades)
+            
+            # 兼容不同的列名
+            returns_col = None
+            for col in ['returns', '收益率', '收益率(%)']:
+                if col in df.columns:
+                    returns_col = col
+                    break
+            
+            if returns_col is None:
+                return pd.DataFrame()
+            
+            sell_trades = df[df['action'] == 'SELL'].copy()
+            
+            if len(sell_trades) == 0:
+                return pd.DataFrame()
+            
+            # 转换日期格式
+            date_col = None
+            for col in ['date', '交易日期']:
+                if col in sell_trades.columns:
+                    date_col = col
+                    break
+            
+            if date_col is None:
+                return pd.DataFrame()
+            
+            sell_trades['date'] = pd.to_datetime(sell_trades[date_col])
+            sell_trades['month'] = sell_trades['date'].dt.to_period('M')
+            
+            # 按月度汇总 - 使用更安全的方式
+            monthly_data = []
+            
+            for month, group in sell_trades.groupby('month'):
+                month_data = {
+                    '月份': str(month),
+                    '交易次数': len(group),
+                    '总收益率': group[returns_col].sum() if returns_col in group.columns else 0,
+                    '平均收益率': group[returns_col].mean() if returns_col in group.columns else 0
+                }
+                
+                # 添加交易金额列
+                value_col = None
+                for col in ['value', '交易金额']:
+                    if col in group.columns:
+                        value_col = col
+                        break
+                
+                if value_col:
+                    month_data['交易金额'] = group[value_col].sum()
+                else:
+                    month_data['交易金额'] = 0
+                
+                monthly_data.append(month_data)
+            
+            if monthly_data:
+                result_df = pd.DataFrame(monthly_data)
+                # 格式化数值
+                numeric_cols = ['总收益率', '平均收益率', '交易金额']
+                for col in numeric_cols:
+                    if col in result_df.columns:
+                        result_df[col] = pd.to_numeric(result_df[col], errors='coerce').round(2)
+                
+                return result_df
+            else:
+                return pd.DataFrame()
+                
+        except Exception as e:
+            # 如果处理失败，返回空的DataFrame
             return pd.DataFrame()
-        
-        # 转换日期格式
-        sell_trades['date'] = pd.to_datetime(sell_trades['date'])
-        sell_trades['month'] = sell_trades['date'].dt.to_period('M')
-        
-        # 按月度汇总
-        monthly_returns = sell_trades.groupby('month').agg({
-            'returns': ['count', 'sum', 'mean'],
-            'value': 'sum'
-        }).round(2)
-        
-        monthly_returns.columns = ['交易次数', '总收益率', '平均收益率', '交易金额']
-        monthly_returns = monthly_returns.reset_index()
-        monthly_returns['月份'] = monthly_returns['month'].astype(str)
-        
-        return monthly_returns[['月份', '交易次数', '总收益率', '平均收益率', '交易金额']]
     
     @staticmethod
     def plot_performance_comparison(strategy_results: Dict[str, Dict], 
@@ -259,9 +345,15 @@ class ReportUtils:
                 performance_summary = ReportUtils.create_performance_summary(results)
                 performance_summary.to_excel(writer, sheet_name='性能汇总', index=False)
                 
-                # 交易汇总表
+                # 处理交易记录
                 trades = results.get('trades', [])
+                if not trades and 'performance' in results:
+                    # 从performance中获取交易记录
+                    performance = results.get('performance', {})
+                    trades = performance.get('trades', [])
+                
                 if trades:
+                    # 交易汇总表
                     trade_summary = ReportUtils.create_trade_summary(trades)
                     if not trade_summary.empty:
                         trade_summary.to_excel(writer, sheet_name='交易汇总', index=False)
@@ -271,15 +363,24 @@ class ReportUtils:
                     if not monthly_returns.empty:
                         monthly_returns.to_excel(writer, sheet_name='月度收益', index=False)
                     
-                    # 详细交易记录
-                    trades_df = pd.DataFrame(trades)
+                    # 详细交易记录 - 保存到"交易记录"sheet
+                    trades_df = ReportUtils.create_detailed_trade_records(trades)
                     if not trades_df.empty:
-                        trades_df.to_excel(writer, sheet_name='交易详情', index=False)
+                        trades_df.to_excel(writer, sheet_name='交易记录', index=False)
                 
                 # 策略报告
                 if 'report' in results and results['report']:
                     report_df = pd.DataFrame({'报告': [results['report']]})
                     report_df.to_excel(writer, sheet_name='策略报告', index=False)
+                
+                # 策略信息
+                if 'strategy_info' in results:
+                    strategy_info = results['strategy_info']
+                    if strategy_info:
+                        # 创建策略信息表
+                        strategy_info_df = ReportUtils.create_strategy_info_table(strategy_info)
+                        if not strategy_info_df.empty:
+                            strategy_info_df.to_excel(writer, sheet_name='策略信息', index=False)
             
             print(f"报告已保存到: {filename}")
             
@@ -296,4 +397,168 @@ class ReportUtils:
                     basic_summary.to_excel(writer, sheet_name='性能汇总', index=False)
                 print(f"已创建基本报告: {filename}")
             except Exception as e2:
-                print(f"创建基本报告也失败: {e2}") 
+                print(f"创建基本报告也失败: {e2}")
+
+    @staticmethod
+    def create_detailed_trade_records(trades: List[Dict]) -> pd.DataFrame:
+        """
+        创建详细的交易记录表
+        
+        Args:
+            trades: 交易记录列表
+            
+        Returns:
+            详细的交易记录DataFrame
+        """
+        if not trades:
+            return pd.DataFrame()
+        
+        try:
+            # 创建DataFrame
+            df = pd.DataFrame(trades)
+            
+            # 定义列的顺序和中文名称映射
+            column_mapping = {
+                '交易日期': '交易日期',
+                '交易动作': '交易动作',
+                '股票代码': '股票代码',
+                '交易数量': '交易数量',
+                '交易价格': '交易价格',
+                '交易金额': '交易金额',
+                '收益率': '收益率(%)',
+                '通道状态': '通道状态',
+                '通道评分': '通道评分',
+                '当前资金': '当前资金',
+                '总资产': '总资产',
+                '当前持仓数量': '当前持仓数量',
+                '通道斜率': '通道斜率',
+                '通道R²': '通道R²',
+                '通道宽度': '通道宽度(%)',
+                '下沿价格': '下沿价格',
+                '中轴价格': '中轴价格',
+                '上沿价格': '上沿价格',
+                '距离下沿百分比': '距离下沿(%)'
+            }
+            
+            # 兼容性字段映射
+            compatibility_mapping = {
+                'date': '交易日期',
+                'action': '交易动作',
+                'stock_code': '股票代码',
+                'quantity': '交易数量',
+                'price': '交易价格',
+                'value': '交易金额',
+                'returns': '收益率(%)',
+                'channel_status': '通道状态',
+                'channel_score': '通道评分'
+            }
+            
+            # 重命名列
+            df = df.rename(columns=compatibility_mapping)
+            
+            # 选择需要的列并排序
+            available_columns = []
+            for col in column_mapping.keys():
+                if col in df.columns:
+                    available_columns.append(col)
+            
+            if available_columns:
+                df = df[available_columns]
+            
+            # 格式化数值列
+            numeric_columns = ['交易价格', '交易金额', '收益率(%)', '通道评分', '当前资金', '总资产', 
+                              '通道斜率', '通道R²', '通道宽度(%)', '下沿价格', '中轴价格', '上沿价格', '距离下沿(%)']
+            
+            for col in numeric_columns:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                    # 格式化显示
+                    if col in ['交易价格', '交易金额', '当前资金', '总资产', '下沿价格', '中轴价格', '上沿价格']:
+                        df[col] = df[col].round(2)
+                    elif col in ['收益率(%)', '通道评分', '通道宽度(%)', '距离下沿(%)']:
+                        df[col] = df[col].round(2)
+                    elif col in ['通道斜率', '通道R²']:
+                        df[col] = df[col].round(4)
+            
+            # 格式化日期列
+            if '交易日期' in df.columns:
+                df['交易日期'] = pd.to_datetime(df['交易日期'], errors='coerce')
+                df['交易日期'] = df['交易日期'].dt.strftime('%Y-%m-%d')
+            
+            # 按日期排序
+            if '交易日期' in df.columns:
+                df = df.sort_values('交易日期')
+            
+            return df
+            
+        except Exception as e:
+            # 如果处理失败，返回基本的交易记录
+            try:
+                basic_df = pd.DataFrame(trades)
+                if not basic_df.empty:
+                    # 只保留基本列
+                    basic_columns = ['date', 'action', 'stock_code', 'price', 'value']
+                    available_basic_cols = [col for col in basic_columns if col in basic_df.columns]
+                    if available_basic_cols:
+                        return basic_df[available_basic_cols]
+            except:
+                pass
+            
+            return pd.DataFrame()
+
+    @staticmethod
+    def create_strategy_info_table(strategy_info: Dict[str, Any]) -> pd.DataFrame:
+        """
+        创建策略信息表
+        
+        Args:
+            strategy_info: 策略信息字典
+            
+        Returns:
+            策略信息DataFrame
+        """
+        if not strategy_info:
+            return pd.DataFrame()
+        
+        try:
+            info_data = []
+            
+            # 基本信息
+            info_data.append({
+                '信息类型': '策略名称',
+                '数值': strategy_info.get('strategy_name', '未知策略')
+            })
+            
+            # 参数信息
+            parameters = strategy_info.get('parameters', {})
+            for param_name, param_value in parameters.items():
+                info_data.append({
+                    '信息类型': f'参数_{param_name}',
+                    '数值': str(param_value)
+                })
+            
+            # 当前状态
+            current_status = strategy_info.get('current_status', {})
+            for status_name, status_value in current_status.items():
+                if isinstance(status_value, dict):
+                    info_data.append({
+                        '信息类型': f'状态_{status_name}',
+                        '数值': str(status_value)
+                    })
+                else:
+                    info_data.append({
+                        '信息类型': f'状态_{status_name}',
+                        '数值': str(status_value)
+                    })
+            
+            if info_data:
+                return pd.DataFrame(info_data)
+            else:
+                return pd.DataFrame()
+                
+        except Exception as e:
+            # 如果处理失败，返回基本的策略信息
+            return pd.DataFrame({
+                '信息类型': ['策略名称', '处理状态'],
+                '数值': [strategy_info.get('strategy_name', '未知策略'), f'处理失败: {str(e)}']
+            }) 

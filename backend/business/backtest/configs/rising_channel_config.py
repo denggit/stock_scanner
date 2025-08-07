@@ -7,6 +7,7 @@
 
 from datetime import datetime
 from typing import Dict, Any
+import os
 
 
 class RisingChannelConfig:
@@ -117,7 +118,7 @@ class RisingChannelConfig:
     
     # ==================== 报告配置 ====================
     REPORT_CONFIG = {
-        'report_dir': 'backtest_reports',
+        'report_dir': os.path.abspath(os.path.join(os.path.dirname(__file__), '../backtest_reports')),
         'file_prefix': 'rising_channel',
         'excel_engine': 'openpyxl'
     }
