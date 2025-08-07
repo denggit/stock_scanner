@@ -117,15 +117,15 @@ class RisingChannelBacktestStrategy(bt.Strategy):
         # 统一使用backtest主日志记录器
         self.logger = logging.getLogger("backtest")
         
-        # 初始化通道分析器
-        self._init_channel_analyzer()
+        # 延迟初始化通道分析器，避免在backtrader初始化时出现问题
+        self._channel_analyzer_initialized = False
         
         # 如果传入了股票数据，立即设置
         if stock_data_dict is not None:
             self.set_stock_data(stock_data_dict)
         
         # 记录策略初始化
-        self.logger.info("成功初始化上升通道分析器")
+        self.logger.info("成功初始化上升通道策略")
     
     def _init_channel_analyzer(self):
         """初始化通道分析器"""
@@ -164,6 +164,12 @@ class RisingChannelBacktestStrategy(bt.Strategy):
             self.logger.error(f"初始化上升通道分析器失败: {e}")
             self.channel_analyzer = MockChannelAnalyzer()
     
+    def _ensure_channel_analyzer_initialized(self):
+        """确保通道分析器已初始化"""
+        if not self._channel_analyzer_initialized:
+            self._init_channel_analyzer()
+            self._channel_analyzer_initialized = True
+    
     def set_stock_data(self, stock_data_dict: Dict[str, pd.DataFrame]):
         """
         设置所有股票数据
@@ -183,6 +189,9 @@ class RisingChannelBacktestStrategy(bt.Strategy):
         """
         策略主逻辑 - 每个交易日执行
         """
+        # 确保通道分析器已初始化
+        self._ensure_channel_analyzer_initialized()
+        
         # 如果没有设置多股票数据，使用单股票模式
         if not self.all_stock_data:
             self._run_single_stock_mode()
@@ -265,8 +274,7 @@ class RisingChannelBacktestStrategy(bt.Strategy):
     
     def _update_all_channel_states(self, current_date):
         """更新所有股票的通道状态"""
-        if self.channel_analyzer is None:
-            return
+        self._ensure_channel_analyzer_initialized()
         
         self.logger.info(f"开始更新 {len(self.stock_codes)} 只股票的通道状态...")
         
@@ -278,7 +286,7 @@ class RisingChannelBacktestStrategy(bt.Strategy):
                     continue
                 
                 # 计算上升通道
-                channel_state = self.channel_analyzer.analyze(stock_data)
+                channel_state = self.channel_analyzer.fit_channel(stock_data)
                 
                 # 计算通道评分
                 channel_score = self._calculate_channel_score(channel_state, stock_data)
@@ -300,15 +308,40 @@ class RisingChannelBacktestStrategy(bt.Strategy):
             return None
         
         stock_df = self.all_stock_data[stock_code].copy()
-        stock_df['date'] = pd.to_datetime(stock_df.index)
+        
+        # 确保索引是datetime类型
+        if not isinstance(stock_df.index, pd.DatetimeIndex):
+            stock_df.index = pd.to_datetime(stock_df.index)
+        
+        # 确保current_date是datetime类型
+        if isinstance(current_date, datetime):
+            current_datetime = current_date
+        elif isinstance(current_date, pd.Timestamp):
+            current_datetime = current_date.to_pydatetime()
+        else:
+            current_datetime = pd.to_datetime(current_date).to_pydatetime()
         
         # 过滤到当前日期之前的数据
-        filtered_df = stock_df[stock_df['date'] <= current_date].copy()
+        filtered_df = stock_df[stock_df.index <= current_datetime].copy()
         
         if len(filtered_df) < self.params.min_data_points:
             return None
         
-        return filtered_df
+        # 确保数据格式符合通道分析器的要求
+        # 通道分析器期望的列名：trade_date, open, high, low, close, volume
+        formatted_df = filtered_df.copy()
+        formatted_df['trade_date'] = formatted_df.index
+        
+        # 确保所有必需的列都存在
+        required_columns = ['trade_date', 'open', 'high', 'low', 'close', 'volume']
+        for col in required_columns:
+            if col not in formatted_df.columns:
+                if col == 'volume':
+                    formatted_df[col] = 1000000  # 默认成交量
+                else:
+                    formatted_df[col] = formatted_df['close']  # 使用收盘价作为默认值
+        
+        return formatted_df
     
     def _calculate_channel_score(self, channel_state, stock_data: pd.DataFrame) -> float:
         """计算通道评分"""
@@ -423,6 +456,8 @@ class RisingChannelBacktestStrategy(bt.Strategy):
     
     def _select_and_buy_stocks(self, current_date):
         """选择并买入股票"""
+        self._ensure_channel_analyzer_initialized()
+        
         # 找出所有NORMAL状态的股票
         normal_stocks = []
         

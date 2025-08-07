@@ -120,6 +120,9 @@ class BacktestEngine:
         self.logger.info("开始运行回测...")
         strategy_results = self.cerebro.run()
         
+        # 保存策略实例以便后续访问
+        self._last_run_results = strategy_results
+        
         # 分析结果
         results = self.result_analyzer.analyze(self.cerebro, strategy_results)
         

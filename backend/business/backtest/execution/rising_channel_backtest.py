@@ -52,26 +52,25 @@ class RisingChannelBacktestRunner:
     提供完整的回测流程管理
     """
 
-    def __init__(self, log_level=logging.INFO):
+    def __init__(self, log_level=logging.INFO, environment: str = None):
         """
         初始化回测运行器
         
         Args:
             log_level: 日志级别
+            environment: 运行环境 ("development", "production", "optimization")
         """
         # 设置日志记录器
         self.logger = setup_logger("backtest", log_level=log_level)
-
-        # 回测配置
-        self.config = {
-            'initial_cash': 1000000.0,  # 初始资金100万
-            'commission': 0.0003,  # 手续费率
-            'stock_pool': 'no_st',  # 股票池：非ST股票
-            'start_date': '2024-01-01',  # 开始日期
-            'end_date': datetime.today().strftime("%Y-%m-%d"),  # 结束日期
-            'max_stocks': 100,  # 最大股票数量
-            'min_data_days': 120  # 最小数据天数
-        }
+        
+        # 如果没有指定环境，从环境变量读取
+        if environment is None:
+            import os
+            environment = os.getenv('BACKTEST_ENV', 'development')
+        
+        # 根据环境设置配置
+        self.environment = environment
+        self.config = self._get_environment_config(environment)
 
         # 策略参数
         self.strategy_params = {
@@ -85,7 +84,59 @@ class RisingChannelBacktestRunner:
             'width_pct_min': 0.04,  # 最小通道宽度
             'width_pct_max': 0.15  # 最大通道宽度
         }
+    
+    def _get_environment_config(self, environment: str, params: dict = None) -> Dict:
+        """
+        根据环境获取配置，并允许通过params参数覆盖部分配置
+        
+        Args:
+            environment: 运行环境
+            params: 可选，用户自定义参数字典，可覆盖默认配置
+            
+        Returns:
+            环境配置字典
+        """
+        base_config = {
+            'initial_cash': 1000000.0,  # 初始资金100万
+            'commission': 0.0003,  # 手续费率
+            'stock_pool': 'no_st',  # 股票池：非ST股票
+            'start_date': '2024-01-01',  # 开始日期
+            'end_date': datetime.today().strftime("%Y-%m-%d"),  # 结束日期
+            'min_data_days': 120  # 最小数据天数
+        }
+        
+        # 根据环境设置股票数量限制
+        if environment == "development":
+            # 开发环境：限制股票数量，快速迭代
+            base_config['max_stocks'] = 100
+            base_config['description'] = "开发环境 - 快速验证策略逻辑"
+            
+        elif environment == "optimization":
+            # 优化环境：进一步减少股票数量，提高优化速度
+            base_config['max_stocks'] = 50
+            base_config['description'] = "优化环境 - 快速参数优化"
+            
+        elif environment == "production":
+            # 生产环境：不限制股票数量，使用全量数据
+            base_config['max_stocks'] = None  # 不限制
+            base_config['description'] = "生产环境 - 全量股票回测"
+            
+        elif environment == "full_backtest":
+            # 完整回测：使用大量股票但有限制
+            base_config['max_stocks'] = 2000
+            base_config['description'] = "完整回测 - 大量股票测试"
+            
+        else:
+            # 默认使用开发环境配置
+            base_config['max_stocks'] = 100
+            base_config['description'] = "默认环境 - 开发配置"
+        
+        # 如果传入了params参数，则覆盖base_config中的对应项
+        if params is not None:
+            for k, v in params.items():
+                base_config[k] = v
 
+        return base_config
     def run_basic_backtest(self):
         """
         运行基础回测 - 真正的多股票策略回测
@@ -166,7 +217,7 @@ class RisingChannelBacktestRunner:
         
         # 获取策略实例（用于获取详细信息）
         strategy_instance = self._get_strategy_instance(engine)
-        if strategy_instance:
+        if strategy_instance is not None:
             # 添加策略详细信息到结果中
             results['strategy_info'] = strategy_instance.get_strategy_info()
             results['performance'] = strategy_instance.get_performance_summary()
@@ -206,9 +257,18 @@ class RisingChannelBacktestRunner:
         try:
             # 从引擎中获取策略实例
             if hasattr(engine, 'cerebro') and engine.cerebro:
-                strategies = engine.cerebro.strats
-                if strategies and len(strategies) > 0:
-                    return strategies[0][0]  # 返回第一个策略实例
+                # backtrader.run()返回的是策略结果列表
+                # 我们需要从结果中获取策略实例
+                if hasattr(engine, '_last_run_results') and engine._last_run_results:
+                    # 如果引擎保存了最后的运行结果
+                    return engine._last_run_results[0]  # 返回第一个策略实例
+                else:
+                    # 尝试从cerebro中获取
+                    strategies = engine.cerebro.strats
+                    if strategies and len(strategies) > 0:
+                        # strategies[0]是一个元组 (strategy_class, strategy_params)
+                        # 我们需要从运行结果中获取实例
+                        return None  # 暂时返回None，因为无法直接获取实例
         except Exception as e:
             self.logger.warning(f"获取策略实例失败: {e}")
         
@@ -683,37 +743,71 @@ class RisingChannelBacktestRunner:
 
 def main():
     """
-    主函数
+    主函数 - 展示不同环境的使用方式
     """
     print("上升通道多股票策略回测示例")
     print("=" * 50)
 
+    # 根据命令行参数或环境变量选择运行环境
+    import os
+    environment = os.getenv('BACKTEST_ENV', 'development')
+    
+    print(f"当前运行环境: {environment}")
+    
     # 创建回测运行器
-    runner = RisingChannelBacktestRunner(log_level=logging.INFO)
+    runner = RisingChannelBacktestRunner(log_level=logging.INFO, environment=environment)
+    
+    # 打印环境配置信息
+    print(f"环境配置: {runner.config['description']}")
+    print(f"股票数量限制: {runner.config['max_stocks']}")
 
     try:
-        # 1. 运行基础回测
-        print("\n1. 运行多股票回测...")
-        basic_results = runner.run_basic_backtest()
+        if environment == "development":
+            # 开发环境：快速验证
+            print("\n1. 开发环境 - 快速验证策略逻辑...")
+            basic_results = runner.run_basic_backtest()
+            
+        elif environment == "optimization":
+            # 优化环境：参数优化
+            print("\n1. 优化环境 - 参数优化...")
+            optimization_results = runner.run_parameter_optimization()
+            
+        elif environment == "production":
+            # 生产环境：完整回测
+            print("\n1. 生产环境 - 完整回测...")
+            basic_results = runner.run_basic_backtest()
+            
+            print("\n2. 生产环境 - 对比回测...")
+            comparison_results = runner.run_comparison_backtest()
+            
+        elif environment == "full_backtest":
+            # 完整回测：所有功能
+            print("\n1. 完整回测 - 多股票回测...")
+            basic_results = runner.run_basic_backtest()
 
-        # 2. 运行参数优化
-        print("\n2. 运行参数优化...")
-        optimization_results = runner.run_parameter_optimization()
+            print("\n2. 完整回测 - 参数优化...")
+            optimization_results = runner.run_parameter_optimization()
 
-        # 3. 运行对比回测
-        print("\n3. 运行对比回测...")
-        comparison_results = runner.run_comparison_backtest()
+            print("\n3. 完整回测 - 对比回测...")
+            comparison_results = runner.run_comparison_backtest()
+        
+        else:
+            # 默认开发环境
+            print("\n1. 默认环境 - 基础回测...")
+            basic_results = runner.run_basic_backtest()
 
         print("\n" + "=" * 50)
-        print("所有回测完成！")
+        print("回测完成！")
 
         # 总结
-        if basic_results:
-            print("✓ 多股票回测成功")
-        if optimization_results:
-            print("✓ 参数优化成功")
-        if comparison_results:
-            print("✓ 对比回测成功")
+        if environment == "development":
+            print("✓ 开发环境回测完成 - 快速验证策略逻辑")
+        elif environment == "optimization":
+            print("✓ 优化环境回测完成 - 参数优化完成")
+        elif environment == "production":
+            print("✓ 生产环境回测完成 - 全量股票回测")
+        elif environment == "full_backtest":
+            print("✓ 完整回测完成 - 所有功能测试完成")
 
     except Exception as e:
         print(f"\n❌ 回测过程中出现错误: {e}")
