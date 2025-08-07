@@ -537,14 +537,14 @@ class AscendingChannelRegression:
         """检查并更新极端状态"""
         if self.state.reanchor_fail_up >= self.reanchor_fail_max:
             self.state.channel_status = ChannelStatus.ACCEL_BREAKOUT
-            logger.warning(f"进入加速突破状态: 连续重锚失败 {self.state.reanchor_fail_up} 次")
+            logger.debug(f"进入加速突破状态: 连续重锚失败 {self.state.reanchor_fail_up} 次")
         elif self.state.reanchor_fail_down >= self.reanchor_fail_max:
             self.state.channel_status = ChannelStatus.BREAKDOWN
-            logger.warning(f"进入跌破状态: 连续重锚失败 {self.state.reanchor_fail_down} 次")
+            logger.debug(f"进入跌破状态: 连续重锚失败 {self.state.reanchor_fail_down} 次")
         elif (self.state.break_cnt_down >= self.break_days and
               self.state.channel_status != ChannelStatus.BROKEN):
             self.state.channel_status = ChannelStatus.BROKEN
-            logger.warning("通道失效: 连续跌破下沿")
+            logger.debug("通道失效: 连续跌破下沿")
 
     # 向后兼容方法
     def force_reanchor(self, state: ChannelState) -> ChannelState:

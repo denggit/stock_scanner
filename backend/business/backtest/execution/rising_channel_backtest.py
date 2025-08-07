@@ -9,8 +9,9 @@ import logging
 import os
 import sys
 from datetime import datetime
-
 import pandas as pd
+import backtrader as bt
+from typing import Dict, List
 
 # 添加项目根目录到路径
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../../..'))
@@ -23,7 +24,26 @@ from backend.business.backtest import (
     ReportUtils
 )
 from backend.business.backtest.strategies.rising_channel import RisingChannelBacktestStrategy
+from backend.business.backtest.core.backtest_engine import BacktestEngine
 from backend.utils.logger import setup_logger
+
+
+class MultiStockDataFeed(bt.feeds.PandasData):
+    """
+    多股票数据源
+    用于在backtrader中处理多股票数据
+    """
+    
+    def __init__(self, stock_code: str, **kwargs):
+        """
+        初始化数据源
+        
+        Args:
+            stock_code: 股票代码
+            **kwargs: 其他参数
+        """
+        super().__init__(**kwargs)
+        self._name = stock_code
 
 
 class RisingChannelBacktestRunner:
@@ -48,26 +68,29 @@ class RisingChannelBacktestRunner:
             'commission': 0.0003,  # 手续费率
             'stock_pool': 'no_st',  # 股票池：非ST股票
             'start_date': '2024-01-01',  # 开始日期
-            'end_date': '2024-12-31',  # 结束日期
-            'max_stocks': 50,  # 最大股票数量（用于测试）
+            'end_date': datetime.today().strftime("%Y-%m-%d"),  # 结束日期
+            'max_stocks': 100,  # 最大股票数量
             'min_data_days': 120  # 最小数据天数
         }
 
         # 策略参数
         self.strategy_params = {
-            'max_positions': 10,  # 最大持仓数量
+            'max_positions': 50,  # 最大持仓数量（50只股票）
             'min_channel_score': 60.0,  # 最小通道评分
             'k': 2.0,  # 通道斜率参数
             'L_max': 120,  # 最大通道长度
             'gain_trigger': 0.30,  # 收益触发阈值
-            'beta_delta': 0.15  # Beta变化阈值
+            'beta_delta': 0.15,  # Beta变化阈值
+            'R2_min': 0.20,  # 最小R²值
+            'width_pct_min': 0.04,  # 最小通道宽度
+            'width_pct_max': 0.15  # 最大通道宽度
         }
 
     def run_basic_backtest(self):
         """
-        运行基础回测
+        运行基础回测 - 真正的多股票策略回测
         """
-        self.logger.info("开始运行上升通道策略基础回测...")
+        self.logger.info("开始运行上升通道策略多股票回测...")
 
         try:
             # 1. 获取股票数据
@@ -82,38 +105,114 @@ class RisingChannelBacktestRunner:
 
             self.logger.info(f"成功获取 {len(stock_data_dict)} 只股票的数据")
 
-            # 2. 选择一只股票进行单股票回测（演示用）
-            if stock_data_dict:
-                test_stock_code = list(stock_data_dict.keys())[0]
-                test_stock_data = stock_data_dict[test_stock_code]
-
-                self.logger.info(f"使用股票 {test_stock_code} 进行回测演示")
-
-                # 3. 运行回测
-                results = run_backtest(
-                    data=test_stock_data,
-                    strategy_class=RisingChannelBacktestStrategy,
-                    initial_cash=self.config['initial_cash'],
-                    commission=self.config['commission'],
-                    strategy_params=self.strategy_params,
-                    strategy_name="上升通道策略",
-                    plot=False  # 暂时关闭绘图
-                )
-
-                # 4. 输出结果
-                self._print_results(results)
-
-                # 5. 保存报告
-                self._save_report(results, "basic_backtest")
-
-                return results
-            else:
+            if not stock_data_dict:
                 self.logger.error("没有获取到有效的股票数据")
                 return None
 
+            # 2. 创建多股票回测引擎
+            results = self._run_multi_stock_backtest(stock_data_dict)
+
+            # 3. 输出结果
+            self._print_results(results)
+
+            # 4. 保存报告
+            self._save_report(results, "multi_stock_backtest")
+
+            return results
+
         except Exception as e:
-            self.logger.error(f"基础回测失败: {e}")
+            self.logger.exception(f"多股票回测失败: {e}")
             return None
+
+    def _run_multi_stock_backtest(self, stock_data_dict: Dict[str, pd.DataFrame], strategy_params: Dict = None):
+        """
+        运行多股票回测
+        
+        Args:
+            stock_data_dict: 股票数据字典
+            strategy_params: 策略参数字典，如果为None则使用默认参数
+            
+        Returns:
+            回测结果
+        """
+        self.logger.info("开始创建多股票回测引擎...")
+        
+        # 使用传入的策略参数或默认参数
+        if strategy_params is None:
+            strategy_params = self.strategy_params
+        
+        # 创建回测引擎
+        engine = BacktestEngine(
+            initial_cash=self.config['initial_cash'],
+            commission=self.config['commission']
+        )
+        
+        # 选择一只股票作为主数据源（用于时间轴）
+        # 选择数据最完整的股票
+        main_stock_code = self._select_main_stock(stock_data_dict)
+        main_stock_data = stock_data_dict[main_stock_code]
+        
+        self.logger.info(f"选择主数据源: {main_stock_code}")
+        
+        # 添加主数据源
+        engine.add_data(main_stock_data, name=main_stock_code)
+        
+        # 添加策略到引擎，同时传入股票数据
+        engine.add_strategy(RisingChannelBacktestStrategy, stock_data_dict=stock_data_dict, **strategy_params)
+        
+        # 运行回测
+        self.logger.info("开始运行回测...")
+        results = engine.run("上升通道多股票策略")
+        
+        # 获取策略实例（用于获取详细信息）
+        strategy_instance = self._get_strategy_instance(engine)
+        if strategy_instance:
+            # 添加策略详细信息到结果中
+            results['strategy_info'] = strategy_instance.get_strategy_info()
+            results['performance'] = strategy_instance.get_performance_summary()
+        
+        return results
+
+    def _select_main_stock(self, stock_data_dict: Dict[str, pd.DataFrame]) -> str:
+        """
+        选择主数据源股票（数据最完整的）
+        
+        Args:
+            stock_data_dict: 股票数据字典
+            
+        Returns:
+            主股票代码
+        """
+        best_stock = None
+        max_length = 0
+        
+        for stock_code, data in stock_data_dict.items():
+            if len(data) > max_length:
+                max_length = len(data)
+                best_stock = stock_code
+        
+        return best_stock
+
+    def _get_strategy_instance(self, engine: BacktestEngine):
+        """
+        获取策略实例
+        
+        Args:
+            engine: 回测引擎
+            
+        Returns:
+            策略实例
+        """
+        try:
+            # 从引擎中获取策略实例
+            if hasattr(engine, 'cerebro') and engine.cerebro:
+                strategies = engine.cerebro.strats
+                if strategies and len(strategies) > 0:
+                    return strategies[0][0]  # 返回第一个策略实例
+        except Exception as e:
+            self.logger.warning(f"获取策略实例失败: {e}")
+        
+        return None
 
     def run_parameter_optimization(self):
         """
@@ -127,7 +226,7 @@ class RisingChannelBacktestRunner:
                 stock_pool=self.config['stock_pool'],
                 start_date=self.config['start_date'],
                 end_date=self.config['end_date'],
-                max_stocks=5,  # 优化时使用较少股票以提高速度
+                max_stocks=20,  # 优化时使用较少股票以提高速度
                 min_data_days=self.config['min_data_days']
             )
 
@@ -135,26 +234,23 @@ class RisingChannelBacktestRunner:
                 self.logger.error("没有获取到有效的股票数据")
                 return None
 
-            # 选择一只股票进行优化
-            test_stock_code = list(stock_data_dict.keys())[0]
-            test_stock_data = stock_data_dict[test_stock_code]
+            # 选择主数据源
+            main_stock_code = self._select_main_stock(stock_data_dict)
+            main_stock_data = stock_data_dict[main_stock_code]
 
             # 定义参数范围
             parameter_ranges = {
-                'max_positions': [5, 10, 15],
-                'min_channel_score': [50.0, 60.0, 70.0],
-                'k': [1.5, 2.0, 2.5],
-                'gain_trigger': [0.25, 0.30, 0.35]
+                'max_positions': [30, 50, 70],  # 持仓数量范围
+                'min_channel_score': [50.0, 60.0, 70.0],  # 通道评分范围
+                'k': [1.5, 2.0, 2.5],  # 通道斜率范围
+                'gain_trigger': [0.25, 0.30, 0.35],  # 收益触发阈值范围
+                'R2_min': [0.15, 0.20, 0.25],  # 最小R²值范围
+                'width_pct_min': [0.03, 0.04, 0.05]  # 最小通道宽度范围
             }
 
             # 运行参数优化
-            optimization_results = optimize_parameters(
-                data=test_stock_data,
-                strategy_class=RisingChannelBacktestStrategy,
-                parameter_ranges=parameter_ranges,
-                initial_cash=self.config['initial_cash'],
-                commission=self.config['commission'],
-                optimization_target="总收益率"
+            optimization_results = self._run_parameter_optimization(
+                stock_data_dict, parameter_ranges
             )
 
             # 输出优化结果
@@ -166,8 +262,73 @@ class RisingChannelBacktestRunner:
             return optimization_results
 
         except Exception as e:
-            self.logger.error(f"参数优化失败: {e}")
+            self.logger.exception(f"参数优化失败: {e}")
             return None
+
+    def _run_parameter_optimization(self, stock_data_dict: Dict[str, pd.DataFrame], parameter_ranges: Dict):
+        """
+        运行参数优化
+        
+        Args:
+            stock_data_dict: 股票数据字典
+            parameter_ranges: 参数范围
+            
+        Returns:
+            优化结果
+        """
+        self.logger.info("开始参数优化...")
+        
+        # 生成参数组合
+        import itertools
+        param_names = list(parameter_ranges.keys())
+        param_values = list(parameter_ranges.values())
+        param_combinations = list(itertools.product(*param_values))
+        
+        self.logger.info(f"总共 {len(param_combinations)} 个参数组合")
+        
+        optimization_results = []
+        best_result = None
+        best_value = float('-inf')
+        
+        for i, param_combo in enumerate(param_combinations):
+            try:
+                # 构建参数字典
+                params = dict(zip(param_names, param_combo))
+                
+                self.logger.info(f"测试参数组合 {i+1}/{len(param_combinations)}: {params}")
+                
+                # 运行回测
+                result = self._run_multi_stock_backtest(stock_data_dict, params)
+                
+                if result and 'summary' in result:
+                    # 获取目标指标
+                    target_value = result['summary'].get('total_return', 0)
+                    
+                    optimization_results.append({
+                        'parameters': params,
+                        'result': result,
+                        'target_value': target_value
+                    })
+                    
+                    # 更新最佳结果
+                    if target_value > best_value:
+                        best_value = target_value
+                        best_result = {
+                            'parameters': params,
+                            'result': result,
+                            'target_value': target_value
+                        }
+                
+            except Exception as e:
+                self.logger.warning(f"参数组合 {params} 测试失败: {e}")
+                continue
+        
+        return {
+            'optimization_results': optimization_results,
+            'best_params': best_result['parameters'] if best_result else {},
+            'best_value': best_result['target_value'] if best_result else 0,
+            'total_combinations': len(param_combinations)
+        }
 
     def run_comparison_backtest(self):
         """
@@ -181,7 +342,7 @@ class RisingChannelBacktestRunner:
                 stock_pool=self.config['stock_pool'],
                 start_date=self.config['start_date'],
                 end_date=self.config['end_date'],
-                max_stocks=5,
+                max_stocks=50,
                 min_data_days=self.config['min_data_days']
             )
 
@@ -189,46 +350,38 @@ class RisingChannelBacktestRunner:
                 self.logger.error("没有获取到有效的股票数据")
                 return None
 
-            # 选择一只股票进行对比
-            test_stock_code = list(stock_data_dict.keys())[0]
-            test_stock_data = stock_data_dict[test_stock_code]
-
             # 定义不同参数配置的策略
             strategies = [
                 {
                     'name': '保守策略',
-                    'class': RisingChannelBacktestStrategy,
                     'params': {
-                        'max_positions': 5,
-                        'min_channel_score': 70.0,
-                        'k': 1.5,
-                        'gain_trigger': 0.25
+                        'max_positions': 30,  # 较少持仓
+                        'min_channel_score': 70.0,  # 更高评分要求
+                        'k': 1.5,  # 较低斜率
+                        'gain_trigger': 0.25,  # 较低收益触发
+                        'R2_min': 0.25,  # 更高R²要求
+                        'width_pct_min': 0.05  # 更宽通道要求
                     }
                 },
                 {
                     'name': '标准策略',
-                    'class': RisingChannelBacktestStrategy,
                     'params': self.strategy_params
                 },
                 {
                     'name': '激进策略',
-                    'class': RisingChannelBacktestStrategy,
                     'params': {
-                        'max_positions': 15,
-                        'min_channel_score': 50.0,
-                        'k': 2.5,
-                        'gain_trigger': 0.35
+                        'max_positions': 70,  # 更多持仓
+                        'min_channel_score': 50.0,  # 较低评分要求
+                        'k': 2.5,  # 较高斜率
+                        'gain_trigger': 0.35,  # 较高收益触发
+                        'R2_min': 0.15,  # 较低R²要求
+                        'width_pct_min': 0.03  # 较窄通道要求
                     }
                 }
             ]
 
-            # 运行多策略回测
-            comparison_results = run_multi_strategy_backtest(
-                data=test_stock_data,
-                strategies=strategies,
-                initial_cash=self.config['initial_cash'],
-                commission=self.config['commission']
-            )
+            # 运行对比回测
+            comparison_results = self._run_comparison_backtest(stock_data_dict, strategies)
 
             # 输出对比结果
             self._print_comparison_results(comparison_results)
@@ -239,8 +392,78 @@ class RisingChannelBacktestRunner:
             return comparison_results
 
         except Exception as e:
-            self.logger.error(f"对比回测失败: {e}")
+            self.logger.exception(f"对比回测失败: {e}")
             return None
+
+    def _run_comparison_backtest(self, stock_data_dict: Dict[str, pd.DataFrame], strategies: List[Dict]):
+        """
+        运行对比回测
+        
+        Args:
+            stock_data_dict: 股票数据字典
+            strategies: 策略配置列表
+            
+        Returns:
+            对比结果
+        """
+        self.logger.info("开始对比回测...")
+        
+        strategy_results = {}
+        
+        for strategy_config in strategies:
+            strategy_name = strategy_config['name']
+            strategy_params = strategy_config['params']
+            
+            self.logger.info(f"运行策略: {strategy_name}")
+            
+            try:
+                # 运行回测
+                result = self._run_multi_stock_backtest(stock_data_dict, strategy_params)
+                strategy_results[strategy_name] = result
+                
+            except Exception as e:
+                self.logger.error(f"策略 {strategy_name} 运行失败: {e}")
+                continue
+        
+        # 生成比较报告
+        comparison_report = self._generate_comparison_report(strategy_results)
+        
+        return {
+            'strategy_results': strategy_results,
+            'comparison_report': comparison_report
+        }
+
+    def _generate_comparison_report(self, strategy_results: Dict) -> str:
+        """
+        生成对比报告
+        
+        Args:
+            strategy_results: 策略结果字典
+            
+        Returns:
+            对比报告
+        """
+        report_lines = []
+        report_lines.append("=== 策略对比报告 ===")
+        report_lines.append("")
+        
+        # 创建对比表格
+        report_lines.append("策略名称\t总收益率\t夏普比率\t最大回撤\t交易次数\t胜率")
+        report_lines.append("-" * 80)
+        
+        for strategy_name, result in strategy_results.items():
+            if result and 'summary' in result:
+                summary = result['summary']
+                report_lines.append(
+                    f"{strategy_name}\t"
+                    f"{summary.get('total_return', 0):.2f}%\t"
+                    f"{summary.get('sharpe_ratio', 0):.4f}\t"
+                    f"{summary.get('max_drawdown', 0):.2f}%\t"
+                    f"{summary.get('total_trades', 0)}\t"
+                    f"{summary.get('win_rate', 0):.2f}%"
+                )
+        
+        return "\n".join(report_lines)
 
     def _print_results(self, results):
         """
@@ -253,7 +476,7 @@ class RisingChannelBacktestRunner:
             return
 
         print("\n" + "=" * 60)
-        print("上升通道策略回测结果")
+        print("上升通道多股票策略回测结果")
         print("=" * 60)
 
         # 打印报告
@@ -263,12 +486,24 @@ class RisingChannelBacktestRunner:
         # 打印关键指标
         metrics = results.get('metrics', {})
         if metrics:
+            # 安全获取指标值，处理None值
+            def safe_get(key, default=0):
+                value = metrics.get(key, default)
+                return value if value is not None else default
+            
             print("\n关键指标:")
-            print(f"  总收益率: {metrics.get('总收益率', 0):.2f}%")
-            print(f"  夏普比率: {metrics.get('夏普比率', 0):.4f}")
-            print(f"  最大回撤: {metrics.get('最大回撤', 0):.2f}%")
-            print(f"  交易次数: {metrics.get('交易次数', 0)}")
-            print(f"  胜率: {metrics.get('胜率', 0):.2f}%")
+            print(f"  总收益率: {safe_get('总收益率', 0):.2f}%")
+            print(f"  夏普比率: {safe_get('夏普比率', 0):.4f}")
+            print(f"  最大回撤: {safe_get('最大回撤', 0):.2f}%")
+            print(f"  交易次数: {safe_get('交易次数', 0)}")
+            print(f"  胜率: {safe_get('胜率', 0):.2f}%")
+
+        # 打印策略信息
+        if 'strategy_info' in results:
+            strategy_info = results['strategy_info']
+            print(f"\n策略信息:")
+            print(f"  当前持仓数量: {strategy_info.get('current_status', {}).get('position_count', 0)}")
+            print(f"  策略参数: {strategy_info.get('parameters', {})}")
 
     def _print_optimization_results(self, results):
         """
@@ -320,10 +555,18 @@ class RisingChannelBacktestRunner:
         strategy_results = results.get('strategy_results', {})
         for name, result in strategy_results.items():
             metrics = result.get('metrics', {})
+            
+            # 安全获取指标值，处理None值
+            def safe_get(key, default=0):
+                value = metrics.get(key, default)
+                return value if value is not None else default
+            
             print(f"\n{name}:")
-            print(f"  总收益率: {metrics.get('总收益率', 0):.2f}%")
-            print(f"  夏普比率: {metrics.get('夏普比率', 0):.4f}")
-            print(f"  最大回撤: {metrics.get('最大回撤', 0):.2f}%")
+            print(f"  总收益率: {safe_get('总收益率', 0):.2f}%")
+            print(f"  夏普比率: {safe_get('夏普比率', 0):.4f}")
+            print(f"  最大回撤: {safe_get('最大回撤', 0):.2f}%")
+            print(f"  交易次数: {safe_get('交易次数', 0)}")
+            print(f"  胜率: {safe_get('胜率', 0):.2f}%")
 
     def _save_report(self, results, report_type):
         """
@@ -351,7 +594,7 @@ class RisingChannelBacktestRunner:
             self.logger.info(f"报告已保存: {filename}")
 
         except Exception as e:
-            self.logger.error(f"保存报告失败: {e}")
+            self.logger.exception(f"保存报告失败: {e}")
 
     def _save_optimization_report(self, results):
         """
@@ -375,12 +618,18 @@ class RisingChannelBacktestRunner:
             # 创建优化结果DataFrame
             optimization_data = []
             for result in results['optimization_results']:
+                # 安全获取指标值，处理None值
+                def safe_get_metrics(key, default=0):
+                    metrics = result['result'].get('metrics', {})
+                    value = metrics.get(key, default)
+                    return value if value is not None else default
+                
                 row = {
                     '参数组合': str(result['parameters']),
                     '收益率': result['target_value'],
-                    '夏普比率': result['result']['metrics'].get('夏普比率', 0),
-                    '最大回撤': result['result']['metrics'].get('最大回撤', 0),
-                    '交易次数': result['result']['metrics'].get('交易次数', 0)
+                    '夏普比率': safe_get_metrics('夏普比率', 0),
+                    '最大回撤': safe_get_metrics('最大回撤', 0),
+                    '交易次数': safe_get_metrics('交易次数', 0)
                 }
                 optimization_data.append(row)
 
@@ -402,7 +651,7 @@ class RisingChannelBacktestRunner:
             self.logger.info(f"优化报告已保存: {filename}")
 
         except Exception as e:
-            self.logger.error(f"保存优化报告失败: {e}")
+            self.logger.exception(f"保存优化报告失败: {e}")
 
     def _save_comparison_report(self, results):
         """
@@ -429,14 +678,14 @@ class RisingChannelBacktestRunner:
             self.logger.info(f"对比报告已保存: {filename}")
 
         except Exception as e:
-            self.logger.error(f"保存对比报告失败: {e}")
+            self.logger.exception(f"保存对比报告失败: {e}")
 
 
 def main():
     """
     主函数
     """
-    print("上升通道策略回测示例")
+    print("上升通道多股票策略回测示例")
     print("=" * 50)
 
     # 创建回测运行器
@@ -444,7 +693,7 @@ def main():
 
     try:
         # 1. 运行基础回测
-        print("\n1. 运行基础回测...")
+        print("\n1. 运行多股票回测...")
         basic_results = runner.run_basic_backtest()
 
         # 2. 运行参数优化
@@ -460,7 +709,7 @@ def main():
 
         # 总结
         if basic_results:
-            print("✓ 基础回测成功")
+            print("✓ 多股票回测成功")
         if optimization_results:
             print("✓ 参数优化成功")
         if comparison_results:

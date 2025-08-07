@@ -50,9 +50,12 @@ class DataManager:
         # 验证数据格式
         self._validate_data(data)
         
+        # 处理时间戳格式
+        processed_data = self._process_timestamp(data)
+        
         # 创建数据源
         data_feed = bt.feeds.PandasData(
-            dataname=data,
+            dataname=processed_data,
             name=name,
             datetime=None,  # 使用索引作为日期
             open='open',
@@ -65,12 +68,12 @@ class DataManager:
         
         # 缓存数据
         self.data_cache[name] = {
-            'data': data,
+            'data': processed_data,
             'feed': data_feed,
-            'info': self._get_data_info(data)
+            'info': self._get_data_info(processed_data)
         }
         
-        self.logger.info(f"数据加载成功: {name}, 数据条数: {len(data)}")
+        self.logger.info(f"数据加载成功: {name}, 数据条数: {len(processed_data)}")
         return data_feed
     
     def _validate_data(self, data: pd.DataFrame) -> None:
@@ -237,3 +240,43 @@ class DataManager:
             })
         
         return pd.DataFrame(data, index=dates) 
+
+    def _process_timestamp(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        处理时间戳格式，确保符合backtrader要求
+        
+        Args:
+            data: 原始数据
+            
+        Returns:
+            处理后的数据
+        """
+        processed_data = data.copy()
+        
+        # 检查是否有trade_date列
+        if 'trade_date' in processed_data.columns:
+            # 将trade_date转换为datetime格式
+            processed_data['trade_date'] = pd.to_datetime(processed_data['trade_date'])
+            # 设置为索引
+            processed_data.set_index('trade_date', inplace=True)
+        elif not isinstance(processed_data.index, pd.DatetimeIndex):
+            # 如果索引不是DatetimeIndex，尝试转换
+            try:
+                processed_data.index = pd.to_datetime(processed_data.index)
+            except Exception as e:
+                self.logger.warning(f"无法转换索引为datetime格式: {e}")
+                # 创建默认的日期索引
+                processed_data.index = pd.date_range(
+                    start='2024-01-01', 
+                    periods=len(processed_data), 
+                    freq='D'
+                )
+        
+        # 确保索引是DatetimeIndex
+        if not isinstance(processed_data.index, pd.DatetimeIndex):
+            raise ValueError("数据索引必须是datetime格式")
+        
+        # 按日期排序
+        processed_data.sort_index(inplace=True)
+        
+        return processed_data 

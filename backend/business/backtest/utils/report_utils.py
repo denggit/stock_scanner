@@ -29,6 +29,11 @@ class ReportUtils:
         """
         metrics = results.get('metrics', {})
         
+        # 安全获取指标值，处理None值
+        def safe_get(key, default=0):
+            value = metrics.get(key, default)
+            return value if value is not None else default
+        
         summary_data = {
             '指标': [
                 '初始资金', '最终资金', '总收益率', '绝对收益',
@@ -36,16 +41,16 @@ class ReportUtils:
                 '年化收益率', '年化波动率'
             ],
             '数值': [
-                f"{metrics.get('初始资金', 0):,.2f}",
-                f"{metrics.get('最终资金', 0):,.2f}",
-                f"{metrics.get('总收益率', 0):.2f}%",
-                f"{metrics.get('绝对收益', 0):,.2f}",
-                f"{metrics.get('夏普比率', 0):.4f}",
-                f"{metrics.get('最大回撤', 0):.2f}%",
-                f"{metrics.get('交易次数', 0)}",
-                f"{metrics.get('胜率', 0):.2f}%",
-                f"{metrics.get('年化收益率', 0):.2f}%",
-                f"{metrics.get('年化波动率', 0):.2f}%"
+                f"{safe_get('初始资金', 0):,.2f}",
+                f"{safe_get('最终资金', 0):,.2f}",
+                f"{safe_get('总收益率', 0):.2f}%",
+                f"{safe_get('绝对收益', 0):,.2f}",
+                f"{safe_get('夏普比率', 0):.4f}",
+                f"{safe_get('最大回撤', 0):.2f}%",
+                f"{safe_get('交易次数', 0)}",
+                f"{safe_get('胜率', 0):.2f}%",
+                f"{safe_get('年化收益率', 0):.2f}%",
+                f"{safe_get('年化波动率', 0):.2f}%"
             ]
         }
         
@@ -248,29 +253,47 @@ class ReportUtils:
             results: 回测结果
             filename: 文件名
         """
-        with pd.ExcelWriter(filename, engine='openpyxl') as writer:
-            # 性能汇总表
-            performance_summary = ReportUtils.create_performance_summary(results)
-            performance_summary.to_excel(writer, sheet_name='性能汇总', index=False)
-            
-            # 交易汇总表
-            trades = results.get('trades', [])
-            if trades:
-                trade_summary = ReportUtils.create_trade_summary(trades)
-                trade_summary.to_excel(writer, sheet_name='交易汇总', index=False)
+        try:
+            with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+                # 性能汇总表（始终创建，确保至少有一个工作表）
+                performance_summary = ReportUtils.create_performance_summary(results)
+                performance_summary.to_excel(writer, sheet_name='性能汇总', index=False)
                 
-                # 月度收益表
-                monthly_returns = ReportUtils.create_monthly_returns(trades)
-                if not monthly_returns.empty:
-                    monthly_returns.to_excel(writer, sheet_name='月度收益', index=False)
+                # 交易汇总表
+                trades = results.get('trades', [])
+                if trades:
+                    trade_summary = ReportUtils.create_trade_summary(trades)
+                    if not trade_summary.empty:
+                        trade_summary.to_excel(writer, sheet_name='交易汇总', index=False)
+                    
+                    # 月度收益表
+                    monthly_returns = ReportUtils.create_monthly_returns(trades)
+                    if not monthly_returns.empty:
+                        monthly_returns.to_excel(writer, sheet_name='月度收益', index=False)
+                    
+                    # 详细交易记录
+                    trades_df = pd.DataFrame(trades)
+                    if not trades_df.empty:
+                        trades_df.to_excel(writer, sheet_name='交易详情', index=False)
                 
-                # 详细交易记录
-                trades_df = pd.DataFrame(trades)
-                trades_df.to_excel(writer, sheet_name='交易详情', index=False)
+                # 策略报告
+                if 'report' in results and results['report']:
+                    report_df = pd.DataFrame({'报告': [results['report']]})
+                    report_df.to_excel(writer, sheet_name='策略报告', index=False)
             
-            # 策略报告
-            if 'report' in results:
-                report_df = pd.DataFrame({'报告': [results['report']]})
-                report_df.to_excel(writer, sheet_name='策略报告', index=False)
-        
-        print(f"报告已保存到: {filename}") 
+            print(f"报告已保存到: {filename}")
+            
+        except Exception as e:
+            print(f"保存报告失败: {e}")
+            # 如果保存失败，尝试创建一个简单的报告
+            try:
+                with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+                    # 创建一个基本的性能汇总表
+                    basic_summary = pd.DataFrame({
+                        '指标': ['状态'],
+                        '数值': ['回测完成，但报告生成失败']
+                    })
+                    basic_summary.to_excel(writer, sheet_name='性能汇总', index=False)
+                print(f"已创建基本报告: {filename}")
+            except Exception as e2:
+                print(f"创建基本报告也失败: {e2}") 
