@@ -176,35 +176,66 @@ class ReportUtils:
             sell_trades['date'] = pd.to_datetime(sell_trades[date_col])
             sell_trades['month'] = sell_trades['date'].dt.to_period('M')
             
-            # 按月度汇总 - 使用更安全的方式
+            # 按月度汇总 - 基于总资本变化计算总收益率
             monthly_data = []
             
             for month, group in sell_trades.groupby('month'):
-                month_data = {
-                    '月份': str(month),
-                    '交易次数': len(group),
-                    '总收益率': group[returns_col].sum() if returns_col in group.columns else 0,
-                    '平均收益率': group[returns_col].mean() if returns_col in group.columns else 0
-                }
-                
-                # 添加交易金额列
+                # 获取交易金额列
                 value_col = None
                 for col in ['value', '交易金额']:
                     if col in group.columns:
                         value_col = col
                         break
                 
-                if value_col:
-                    month_data['交易金额'] = group[value_col].sum()
+                if not value_col:
+                    continue
+                
+                # 计算总资本变化
+                total_capital_invested = 0  # 总投入资本
+                total_capital_returned = 0  # 总收回资本
+                
+                for _, trade in group.iterrows():
+                    trade_value = trade.get(value_col, 0)
+                    trade_return = trade.get(returns_col, 0)
+                    
+                    if trade_value > 0 and trade_return is not None:
+                        # 根据收益率计算投入资本
+                        # 收益率 = (卖出价格 - 买入价格) / 买入价格
+                        # 投入资本 = 交易金额 / (1 + 收益率/100)
+                        if trade_return != -100:  # 避免除零错误
+                            invested_capital = trade_value / (1 + trade_return/100)
+                        else:
+                            # 如果收益率是-100%，说明全部亏损
+                            invested_capital = trade_value
+                        
+                        total_capital_invested += invested_capital
+                        total_capital_returned += trade_value
+                
+                # 计算基于总资本的总收益率
+                if total_capital_invested > 0:
+                    total_return_rate = ((total_capital_returned - total_capital_invested) / total_capital_invested) * 100
                 else:
-                    month_data['交易金额'] = 0
+                    total_return_rate = 0
+                
+                # 计算平均收益率（基于单笔交易收益率）
+                avg_return_rate = group[returns_col].mean() if returns_col in group.columns else 0
+                
+                month_data = {
+                    '月份': str(month),
+                    '交易次数': len(group),
+                    '总收益率': total_return_rate,  # 基于总资本变化
+                    '平均收益率': avg_return_rate,   # 基于单笔交易收益率
+                    '交易金额': group[value_col].sum() if value_col else 0,
+                    '投入资本': total_capital_invested,  # 新增：显示投入资本
+                    '收回资本': total_capital_returned   # 新增：显示收回资本
+                }
                 
                 monthly_data.append(month_data)
             
             if monthly_data:
                 result_df = pd.DataFrame(monthly_data)
                 # 格式化数值
-                numeric_cols = ['总收益率', '平均收益率', '交易金额']
+                numeric_cols = ['总收益率', '平均收益率', '交易金额', '投入资本', '收回资本']
                 for col in numeric_cols:
                     if col in result_df.columns:
                         result_df[col] = pd.to_numeric(result_df[col], errors='coerce').round(2)
@@ -215,6 +246,7 @@ class ReportUtils:
                 
         except Exception as e:
             # 如果处理失败，返回空的DataFrame
+            print(f"创建月度收益表时出错: {e}")
             return pd.DataFrame()
     
     @staticmethod
