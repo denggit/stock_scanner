@@ -160,11 +160,12 @@ class RisingChannelBacktestStrategy(bt.Strategy):
                     "width_pct_max": self.params.width_pct_max
                 }
 
+                self.logger.info(f"初始化通道分析器，参数: {channel_params}")
                 self.channel_analyzer = AscendingChannelRegression(**channel_params)
                 self.logger.info("成功初始化上升通道分析器")
-            except ImportError:
+            except ImportError as e:
                 # 如果导入失败，创建一个模拟的分析器
-                self.logger.warning("无法导入上升通道分析器，使用模拟分析器")
+                self.logger.warning(f"无法导入上升通道分析器: {e}，使用模拟分析器")
                 self.channel_analyzer = MockChannelAnalyzer()
 
         except Exception as e:
@@ -301,11 +302,16 @@ class RisingChannelBacktestStrategy(bt.Strategy):
 
         self.logger.info(f"开始更新 {len(self.stock_codes)} 只股票的通道状态...")
 
+        normal_count = 0
+        broken_count = 0
+        error_count = 0
+
         for stock_code in self.stock_codes:
             try:
                 # 获取股票历史数据
                 stock_data = self._get_stock_historical_data(stock_code, current_date)
                 if stock_data is None or len(stock_data) < self.params.min_data_points:
+                    self.logger.debug(f"股票 {stock_code} 数据不足: {len(stock_data) if stock_data is not None else 0} < {self.params.min_data_points}")
                     continue
 
                 # 计算上升通道
@@ -321,26 +327,33 @@ class RisingChannelBacktestStrategy(bt.Strategy):
                 # 记录分析结果
                 self._record_channel_analysis(stock_code, channel_state, channel_score, current_date)
 
-                # 添加详细的通道信息日志（仅对NORMAL状态的股票）
+                # 统计状态
                 if (channel_state and channel_state.channel_status and
-                        channel_state.channel_status.value == ChannelStatus.NORMAL):
-                    self.logger.info(
+                        channel_state.channel_status == ChannelStatus.NORMAL):
+                    normal_count += 1
+                    self.logger.debug(
                         f"股票 {stock_code} 通道分析: "
                         f"状态={channel_state.channel_status.value}, "
                         f"评分={channel_score:.1f}, "
-                        f"下沿={channel_state.lower_today:.2f}, "
-                        f"中轴={channel_state.mid_today:.2f}, "
-                        f"上沿={channel_state.upper_today:.2f}, "
                         f"R²={channel_state.r2:.3f}"
                     )
                 else:
-                    # 添加BROKEN状态的简要日志
-                    status = channel_state.channel_status.value if channel_state and channel_state.channel_status else 'None'
-                    self.logger.debug(f"股票 {stock_code} 通道状态: {status}")
+                    broken_count += 1
 
             except Exception as e:
+                error_count += 1
                 self.logger.error(f"更新股票 {stock_code} 通道状态失败: {e}")
                 continue
+
+        # 输出统计信息
+        self.logger.info(f"通道状态统计: NORMAL={normal_count}, BROKEN={broken_count}, ERROR={error_count}")
+        
+        # 如果没有找到NORMAL状态的股票，输出一些调试信息
+        if normal_count == 0:
+            self.logger.warning("没有找到NORMAL状态的股票，可能的原因:")
+            self.logger.warning("1. 通道参数设置过于严格")
+            self.logger.warning("2. 数据质量不足")
+            self.logger.warning("3. 通道分析器配置问题")
 
     def _get_stock_historical_data(self, stock_code: str, current_date) -> Optional[pd.DataFrame]:
         """获取指定股票的历史数据"""
@@ -362,6 +375,7 @@ class RisingChannelBacktestStrategy(bt.Strategy):
         filtered_df = stock_df[stock_df['trade_date'] <= current_datetime.date()].copy()
 
         if len(filtered_df) < self.params.min_data_points:
+            self.logger.debug(f"股票 {stock_code} 过滤后数据不足: {len(filtered_df)} < {self.params.min_data_points}")
             return None
 
         # 确保数据格式符合通道分析器的要求
@@ -370,12 +384,24 @@ class RisingChannelBacktestStrategy(bt.Strategy):
 
         # 确保所有必需的列都存在
         required_columns = ['trade_date', 'open', 'high', 'low', 'close', 'volume']
+        missing_columns = []
         for col in required_columns:
             if col not in formatted_df.columns:
+                missing_columns.append(col)
                 if col == 'volume':
                     formatted_df[col] = 1000000  # 默认成交量
                 else:
                     formatted_df[col] = formatted_df['close']  # 使用收盘价作为默认值
+
+        if missing_columns:
+            self.logger.debug(f"股票 {stock_code} 缺少列: {missing_columns}，已使用默认值填充")
+
+        # 检查数据质量
+        if formatted_df['close'].isnull().any():
+            self.logger.debug(f"股票 {stock_code} 收盘价存在空值")
+        
+        if formatted_df['volume'].isnull().any():
+            self.logger.debug(f"股票 {stock_code} 成交量存在空值")
 
         return formatted_df
 
@@ -386,11 +412,11 @@ class RisingChannelBacktestStrategy(bt.Strategy):
 
         # 基础评分：通道状态
         base_score = 0.0
-        if channel_state.channel_status.value == ChannelStatus.NORMAL:
-            base_score = 60.0
-        elif channel_state.channel_status.value == ChannelStatus.ACCEL_BREAKOUT:
+        if channel_state.channel_status == ChannelStatus.NORMAL:
+            base_score = 60.0  # 提高NORMAL状态的基础评分
+        elif channel_state.channel_status == ChannelStatus.ACCEL_BREAKOUT:
             base_score = 40.0
-        elif channel_state.channel_status.value == ChannelStatus.BREAKDOWN:
+        elif channel_state.channel_status == ChannelStatus.BREAKDOWN:
             base_score = 20.0
         else:
             base_score = 0.0
@@ -429,7 +455,7 @@ class RisingChannelBacktestStrategy(bt.Strategy):
             if stock_code in self.channel_states:
                 channel_state = self.channel_states[stock_code]
                 if (channel_state and channel_state.channel_status and
-                        channel_state.channel_status.value != ChannelStatus.NORMAL):
+                        channel_state.channel_status != ChannelStatus.NORMAL):
                     stocks_to_sell.append(stock_code)
 
         # 卖出非NORMAL状态的股票
@@ -503,7 +529,7 @@ class RisingChannelBacktestStrategy(bt.Strategy):
             if (stock_code in self.channel_states and
                     self.channel_states[stock_code] and
                     self.channel_states[stock_code].channel_status and
-                    self.channel_states[stock_code].channel_status.value == ChannelStatus.NORMAL and
+                    self.channel_states[stock_code].channel_status == ChannelStatus.NORMAL and
                     self.channel_scores.get(stock_code, 0) >= self.params.min_channel_score):
 
                 # 获取当前价格
