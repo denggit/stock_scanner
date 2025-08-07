@@ -74,7 +74,7 @@ class RisingChannelBacktestRunner:
 
         # 策略参数
         self.strategy_params = {
-            'max_positions': 50,  # 最大持仓数量（50只股票）
+            'max_positions': self.config['max_positions'],  # 从配置中获取最大持仓数量
             'min_channel_score': 60.0,  # 最小通道评分
             'k': 2.0,  # 通道斜率参数
             'L_max': 120,  # 最大通道长度
@@ -84,6 +84,12 @@ class RisingChannelBacktestRunner:
             'width_pct_min': 0.04,  # 最小通道宽度
             'width_pct_max': 0.15  # 最大通道宽度
         }
+        
+        # 记录环境配置信息
+        self.logger.info(f"环境配置: {self.environment}")
+        self.logger.info(f"最大股票数量: {self.config['max_stocks']}")
+        self.logger.info(f"最大持仓数量: {self.config['max_positions']}")
+        self.logger.info(f"配置描述: {self.config['description']}")
     
     def _get_environment_config(self, environment: str, params: dict = None) -> Dict:
         """
@@ -130,6 +136,15 @@ class RisingChannelBacktestRunner:
             # 默认使用开发环境配置
             base_config['max_stocks'] = 100
             base_config['description'] = "默认环境 - 开发配置"
+        
+        # 计算最大持仓数量：max_stocks的10%，最大不超过50只
+        if base_config['max_stocks'] is not None:
+            max_positions = min(int(base_config['max_stocks'] * 0.1), 50)
+        else:
+            # 如果max_stocks为None（生产环境），使用默认的50只
+            max_positions = 50
+            
+        base_config['max_positions'] = max_positions
         
         # 如果传入了params参数，则覆盖base_config中的对应项
         if params is not None:
