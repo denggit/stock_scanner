@@ -450,94 +450,67 @@ class ReportUtils:
             # 创建DataFrame
             df = pd.DataFrame(trades)
 
-            # 定义列的顺序和中文名称映射
-            column_mapping = {
-                '交易日期': '交易日期',
-                '交易动作': '交易动作',
-                '股票代码': '股票代码',
-                '交易数量': '交易数量',
-                '交易价格': '交易价格',
-                '交易金额': '交易金额',
-                '收益率': '收益率(%)',
-                '通道状态': '通道状态',
-                '通道评分': '通道评分',
-                '当前资金': '当前资金',
-                '总资产': '总资产',
-                '当前持仓数量': '当前持仓数量',
-                '通道斜率': '通道斜率',
-                '通道R²': '通道R²',
-                '通道宽度': '通道宽度(%)',
-                '下沿价格': '下沿价格',
-                '中轴价格': '中轴价格',
-                '上沿价格': '上沿价格',
-                '距离下沿百分比': '距离下沿(%)'
+            # 定义需要的字段映射（只保留用户需要的7个字段）
+            required_fields = {
+                '交易日期': ['交易日期', 'date'],
+                '交易动作': ['交易动作', 'action'],
+                '股票代码': ['股票代码', 'stock_code'],
+                '交易数量': ['交易数量', 'quantity', 'size'],
+                '交易价格': ['交易价格', 'price'],
+                '交易金额': ['交易金额', 'value'],
+                '收益率(%)': ['收益率', 'returns', '收益率(%)']
             }
 
-            # 兼容性字段映射
-            compatibility_mapping = {
-                'date': '交易日期',
-                'action': '交易动作',
-                'stock_code': '股票代码',
-                'quantity': '交易数量',
-                'price': '交易价格',
-                'value': '交易金额',
-                'returns': '收益率(%)',
-                'channel_status': '通道状态',
-                'channel_score': '通道评分'
-            }
+            # 创建新的DataFrame，只包含需要的字段
+            result_data = {}
+            
+            for final_name, possible_sources in required_fields.items():
+                # 寻找可用的源字段
+                found_field = None
+                for source_field in possible_sources:
+                    if source_field in df.columns:
+                        found_field = source_field
+                        break
+                
+                if found_field:
+                    result_data[final_name] = df[found_field]
+                else:
+                    # 如果没有找到对应字段，创建空列
+                    result_data[final_name] = [None] * len(df)
 
-            # 重命名列
-            df = df.rename(columns=compatibility_mapping)
-
-            # 选择需要的列并排序
-            available_columns = []
-            for col in column_mapping.keys():
-                if col in df.columns:
-                    available_columns.append(col)
-
-            if available_columns:
-                df = df[available_columns]
+            # 创建新的DataFrame，只包含指定的字段
+            df_result = pd.DataFrame(result_data)
 
             # 格式化数值列
-            numeric_columns = ['交易价格', '交易金额', '收益率(%)', '通道评分', '当前资金', '总资产',
-                               '通道斜率', '通道R²', '通道宽度(%)', '下沿价格', '中轴价格', '上沿价格', '距离下沿(%)']
-
-            for col in numeric_columns:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
-                    # 格式化显示
-                    if col in ['交易价格', '交易金额', '当前资金', '总资产', '下沿价格', '中轴价格', '上沿价格']:
-                        df[col] = df[col].round(2)
-                    elif col in ['收益率(%)', '通道评分', '通道宽度(%)', '距离下沿(%)']:
-                        df[col] = df[col].round(2)
-                    elif col in ['通道斜率', '通道R²']:
-                        df[col] = df[col].round(4)
+            if '交易价格' in df_result.columns:
+                df_result['交易价格'] = pd.to_numeric(df_result['交易价格'], errors='coerce').round(2)
+            
+            if '交易金额' in df_result.columns:
+                df_result['交易金额'] = pd.to_numeric(df_result['交易金额'], errors='coerce').round(2)
+                
+            if '收益率(%)' in df_result.columns:
+                df_result['收益率(%)'] = pd.to_numeric(df_result['收益率(%)'], errors='coerce').round(2)
 
             # 格式化日期列
-            if '交易日期' in df.columns:
-                df['交易日期'] = pd.to_datetime(df['交易日期'], errors='coerce')
-                df['交易日期'] = df['交易日期'].dt.strftime('%Y-%m-%d')
+            if '交易日期' in df_result.columns:
+                df_result['交易日期'] = pd.to_datetime(df_result['交易日期'], errors='coerce')
+                df_result['交易日期'] = df_result['交易日期'].dt.strftime('%Y-%m-%d')
 
-            # 按日期排序
-            if '交易日期' in df.columns:
-                df = df.sort_values('交易日期')
+            # 格式化整数列
+            if '交易数量' in df_result.columns:
+                df_result['交易数量'] = pd.to_numeric(df_result['交易数量'], errors='coerce').fillna(0).astype('int64')
 
-            return df
+            return df_result
 
         except Exception as e:
-            # 如果处理失败，返回基本的交易记录
+            print(f"创建详细交易记录失败: {e}")
+            # 如果出错，返回原始数据的简化版本
             try:
                 basic_df = pd.DataFrame(trades)
-                if not basic_df.empty:
-                    # 只保留基本列
-                    basic_columns = ['date', 'action', 'stock_code', 'price', 'value']
-                    available_basic_cols = [col for col in basic_columns if col in basic_df.columns]
-                    if available_basic_cols:
-                        return basic_df[available_basic_cols]
-            except:
-                pass
-
-            return pd.DataFrame()
+                return basic_df
+            except Exception as e2:
+                print(f"创建基本交易记录也失败: {e2}")
+                return pd.DataFrame()
 
     @staticmethod
     def create_strategy_info_table(strategy_info: Dict[str, Any]) -> pd.DataFrame:

@@ -498,26 +498,49 @@ class RisingChannelBacktestStrategy(bt.Strategy):
             return
 
         shares = self.current_positions[stock_code]
-        current_price = self.data.close[0]  # 使用当前数据源的价格
+        # 修复：使用正确的方法获取特定股票的价格，而不是主数据源的价格
+        current_price = self._get_stock_price(stock_code, current_date)
 
         if current_price > 0:
             # 执行卖出
             self.sell(size=shares)
 
-            # 计算收益
+            # 计算详细收益信息
             buy_price = self.buy_prices.get(stock_code, 0)
-            returns = (current_price - buy_price) / buy_price * 100 if buy_price > 0 else 0
+            buy_date = self.buy_dates.get(stock_code, current_date)
+            
+            # 计算收益率百分比
+            returns_pct = (current_price - buy_price) / buy_price * 100 if buy_price > 0 else 0
+            
+            # 计算绝对收益金额
+            profit_amount = (current_price - buy_price) * shares if buy_price > 0 else 0
+            
+            # 计算买入和卖出的总金额
+            buy_total = buy_price * shares
+            sell_total = current_price * shares
+            
+            # 计算持仓天数
+            holding_days = (current_date - buy_date).days if buy_date != current_date else 0
 
             # 更新持仓状态
             self.current_positions[stock_code] = 0
             del self.buy_prices[stock_code]
             del self.buy_dates[stock_code]
 
-            # 记录交易
-            self._log_trade('SELL', stock_code, shares, current_price, current_date, returns)
+            # 记录交易（传递详细的收益信息）
+            self._log_trade('SELL', stock_code, shares, current_price, current_date, 
+                          returns_pct, profit_amount, buy_price, buy_total, sell_total, holding_days)
 
-            self.logger.info(f"卖出股票 {stock_code}: {shares} 股，价格: {current_price:.2f}，"
-                             f"收益: {returns:.2f}%，日期: {current_date}")
+            # 输出详细的卖出日志
+            profit_sign = "+" if profit_amount >= 0 else ""
+            returns_sign = "+" if returns_pct >= 0 else ""
+            self.logger.info(f"卖出股票 {stock_code}: {shares} 股，"
+                           f"买入价格: {buy_price:.2f}，卖出价格: {current_price:.2f}，"
+                           f"绝对收益: {profit_sign}{profit_amount:.2f}元，"
+                           f"收益率: {returns_sign}{returns_pct:.2f}%，"
+                           f"持仓天数: {holding_days}天，日期: {current_date}")
+        else:
+            self.logger.warning(f"无法获取股票 {stock_code} 在 {current_date} 的价格，跳过卖出")
 
     def _select_and_buy_stocks(self, current_date):
         """选择并买入股票"""
@@ -659,7 +682,8 @@ class RisingChannelBacktestStrategy(bt.Strategy):
         return 0.0
 
     def _log_trade(self, action: str, stock_code: str, size: int, price: float, current_date=None,
-                   returns: float = None):
+                   returns: float = None, profit_amount: float = 0, buy_price: float = 0, 
+                   buy_total: float = 0, sell_total: float = 0, holding_days: int = 0):
         """
         记录交易详细信息
         
@@ -669,7 +693,12 @@ class RisingChannelBacktestStrategy(bt.Strategy):
             size: 交易数量
             price: 交易价格
             current_date: 交易日期
-            returns: 收益率（卖出时）
+            returns: 收益率百分比（卖出时）
+            profit_amount: 绝对收益金额（卖出时）
+            buy_price: 买入价格（卖出时）
+            buy_total: 买入总金额（卖出时）
+            sell_total: 卖出总金额（卖出时）
+            holding_days: 持仓天数（卖出时）
         """
         # 安全获取通道状态
         channel_status = None
@@ -694,6 +723,7 @@ class RisingChannelBacktestStrategy(bt.Strategy):
         # 获取通道详细信息
         channel_info = self._get_channel_info(stock_code)
 
+        # 构建基础交易记录
         trade = {
             '交易日期': current_date or datetime.now(),
             '交易动作': action,
@@ -716,27 +746,56 @@ class RisingChannelBacktestStrategy(bt.Strategy):
             '距离下沿百分比': channel_info.get('distance_to_lower', 0.0)
         }
 
+        # 如果是卖出交易，添加详细的收益信息
+        if action == 'SELL':
+            trade.update({
+                '买入价格': buy_price,
+                '买入总金额': buy_total,
+                '卖出总金额': sell_total,
+                '绝对收益': profit_amount,
+                '收益率百分比': returns,
+                '持仓天数': holding_days
+            })
+
         # 添加兼容性字段（保持向后兼容）
         trade.update({
             'date': trade['交易日期'],
             'action': trade['交易动作'],
             'stock_code': trade['股票代码'],
             'quantity': trade['交易数量'],
+            'size': trade['交易数量'],  # 添加size字段兼容性
             'price': trade['交易价格'],
             'value': trade['交易金额'],
-            'returns': trade['收益率'],  # 添加这个关键字段！
+            'returns': trade['收益率'],
             'channel_status': trade['通道状态'],
             'channel_score': trade['通道评分']
         })
+
+        # 如果是卖出，添加兼容性字段
+        if action == 'SELL':
+            trade.update({
+                'buy_price': buy_price,
+                'profit_amount': profit_amount,
+                'holding_days': holding_days
+            })
 
         self.trades.append(trade)
         self.trade_count += 1
 
         # 记录详细日志
-        returns_str = f"{returns:.2f}%" if returns is not None else "N/A"
-        self.logger.info(f"记录交易: {action} {stock_code} {size}股 @ {price:.2f} "
-                         f"金额:{trade_value:.2f} 收益率:{returns_str} "
-                         f"通道状态:{channel_status} 评分:{channel_score:.1f}")
+        if action == 'SELL':
+            # 卖出时显示详细的收益信息
+            profit_sign = "+" if profit_amount >= 0 else ""
+            returns_str = f"{returns:.2f}%" if returns is not None else "N/A"
+            self.logger.info(f"记录交易: {action} {stock_code} {size}股 @ {price:.2f} "
+                           f"买入价格:{buy_price:.2f} 绝对收益:{profit_sign}{profit_amount:.2f}元 "
+                           f"收益率:{returns_str} 持仓{holding_days}天 "
+                           f"通道状态:{channel_status} 评分:{channel_score:.1f}")
+        else:
+            # 买入时显示基本信息
+            self.logger.info(f"记录交易: {action} {stock_code} {size}股 @ {price:.2f} "
+                           f"金额:{trade_value:.2f} "
+                           f"通道状态:{channel_status} 评分:{channel_score:.1f}")
 
     def _get_channel_info(self, stock_code: str) -> Dict[str, float]:
         """
