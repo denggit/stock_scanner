@@ -7,9 +7,9 @@
 """
 
 import logging
+from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Dict, List, Optional, Any
-from abc import ABC, abstractmethod
 
 import pandas as pd
 
@@ -19,7 +19,7 @@ class DataObserver(ABC):
     数据观察者接口
     用于观察者模式，当数据更新时通知观察者
     """
-    
+
     @abstractmethod
     def on_data_updated(self, stock_code: str, data: pd.DataFrame):
         """
@@ -37,7 +37,7 @@ class DataCache:
     数据缓存类
     管理历史数据的缓存和清理
     """
-    
+
     def __init__(self, max_cache_size: int = 1000):
         """
         初始化数据缓存
@@ -48,7 +48,7 @@ class DataCache:
         self.max_cache_size = max_cache_size
         self._cache = {}  # {股票代码: 数据列表}
         self.logger = logging.getLogger("backtest")
-    
+
     def add_data(self, stock_code: str, data_record: Dict[str, Any]):
         """
         添加数据记录
@@ -59,12 +59,12 @@ class DataCache:
         """
         if stock_code not in self._cache:
             self._cache[stock_code] = []
-        
+
         self._cache[stock_code].append(data_record)
-        
+
         # 清理过期数据
         self._cleanup_cache(stock_code)
-    
+
     def get_data(self, stock_code: str, days: int = None) -> List[Dict[str, Any]]:
         """
         获取缓存数据
@@ -78,14 +78,14 @@ class DataCache:
         """
         if stock_code not in self._cache:
             return []
-        
+
         data = self._cache[stock_code]
-        
+
         if days is None:
             return data.copy()
         else:
             return data[-days:] if len(data) >= days else data.copy()
-    
+
     def _cleanup_cache(self, stock_code: str):
         """清理缓存，保持在最大大小限制内"""
         if stock_code in self._cache:
@@ -94,7 +94,7 @@ class DataCache:
                 # 保留最新的数据
                 self._cache[stock_code] = cache_data[-self.max_cache_size:]
                 self.logger.debug(f"清理 {stock_code} 的缓存数据")
-    
+
     def clear_cache(self, stock_code: str = None):
         """
         清理缓存
@@ -129,19 +129,19 @@ class DataManager:
         """
         # 原始股票数据 {股票代码: DataFrame}
         self.stock_data = {}
-        
+
         # 股票代码列表
         self.stock_codes = []
-        
+
         # 数据缓存
         self.cache = DataCache(cache_size)
-        
+
         # 观察者列表
         self.observers = []
-        
+
         # 日志记录器
         self.logger = logging.getLogger("backtest")
-        
+
         # 数据统计
         self.data_stats = {
             'total_stocks': 0,
@@ -159,13 +159,13 @@ class DataManager:
         """
         self.stock_data = stock_data_dict.copy()
         self.stock_codes = list(stock_data_dict.keys())
-        
+
         # 验证和预处理数据
         self._validate_and_preprocess_data()
-        
+
         # 更新统计信息
         self._update_data_statistics()
-        
+
         self.logger.info(f"设置股票数据: {len(self.stock_codes)} 只股票")
 
     def add_observer(self, observer: DataObserver):
@@ -237,8 +237,8 @@ class DataManager:
 
         return 0.0
 
-    def get_stock_data_until(self, stock_code: str, date: datetime, 
-                           min_data_points: int = 60) -> Optional[pd.DataFrame]:
+    def get_stock_data_until(self, stock_code: str, date: datetime,
+                             min_data_points: int = 60) -> Optional[pd.DataFrame]:
         """
         获取指定股票截至指定日期的历史数据
         
@@ -287,11 +287,11 @@ class DataManager:
             price = self.get_stock_price(stock_code, date)
             if price > 0:
                 prices[stock_code] = price
-        
+
         return prices
 
-    def record_current_data(self, stock_code: str, date: datetime, 
-                          ohlcv_data: Dict[str, float]):
+    def record_current_data(self, stock_code: str, date: datetime,
+                            ohlcv_data: Dict[str, float]):
         """
         记录当前交易日数据
         
@@ -334,17 +334,17 @@ class DataManager:
     def _validate_and_preprocess_data(self):
         """验证和预处理数据"""
         invalid_stocks = []
-        
+
         for stock_code, data in self.stock_data.items():
             try:
                 # 检查必需的列
                 required_columns = ['trade_date', 'open', 'high', 'low', 'close', 'volume']
                 missing_columns = []
-                
+
                 for col in required_columns:
                     if col not in data.columns:
                         missing_columns.append(col)
-                
+
                 if missing_columns:
                     self.logger.warning(f"股票 {stock_code} 缺少列: {missing_columns}")
                     # 尝试填充缺失列
@@ -353,14 +353,14 @@ class DataManager:
                             data[col] = 1000000  # 默认成交量
                         else:
                             data[col] = data.get('close', 0)  # 使用收盘价填充
-                
+
                 # 检查数据质量
                 null_counts = data[required_columns].isnull().sum()
                 if null_counts.any():
                     self.logger.warning(f"股票 {stock_code} 存在空值: {null_counts.to_dict()}")
                     # 前向填充空值（使用更兼容的方法）
                     data[required_columns] = data[required_columns].fillna(method='ffill').fillna(method='bfill')
-                
+
                 # 检查价格数据合理性
                 price_columns = ['open', 'high', 'low', 'close']
                 for col in price_columns:
@@ -368,14 +368,14 @@ class DataManager:
                         self.logger.warning(f"股票 {stock_code} 存在非正价格数据")
                         # 移除非正价格的行
                         data = data[data[col] > 0]
-                
+
                 # 更新处理后的数据
                 self.stock_data[stock_code] = data
-                
+
             except Exception as e:
                 self.logger.error(f"处理股票 {stock_code} 数据失败: {e}")
                 invalid_stocks.append(stock_code)
-        
+
         # 移除无效股票
         for stock_code in invalid_stocks:
             del self.stock_data[stock_code]
@@ -386,7 +386,7 @@ class DataManager:
     def _update_data_statistics(self):
         """更新数据统计信息"""
         self.data_stats['total_stocks'] = len(self.stock_codes)
-        
+
         # 计算日期范围
         date_ranges = {}
         for stock_code, data in self.stock_data.items():
@@ -398,7 +398,7 @@ class DataManager:
                     'end_date': max_date,
                     'data_points': len(data)
                 }
-        
+
         self.data_stats['data_date_range'] = date_ranges
 
     def get_data_statistics(self) -> Dict[str, Any]:
@@ -409,17 +409,17 @@ class DataManager:
             数据统计字典
         """
         stats = self.data_stats.copy()
-        
+
         # 添加当前状态
         stats['cache_status'] = {
             'cached_stocks': len(self.cache._cache),
             'total_cache_size': sum(len(data) for data in self.cache._cache.values())
         }
-        
+
         return stats
 
-    def validate_data_availability(self, date: datetime, 
-                                 required_stocks: List[str] = None) -> Dict[str, bool]:
+    def validate_data_availability(self, date: datetime,
+                                   required_stocks: List[str] = None) -> Dict[str, bool]:
         """
         验证指定日期的数据可用性
         
@@ -432,13 +432,13 @@ class DataManager:
         """
         if required_stocks is None:
             required_stocks = self.stock_codes
-        
+
         availability = {}
-        
+
         for stock_code in required_stocks:
             price = self.get_stock_price(stock_code, date)
             availability[stock_code] = price > 0
-        
+
         return availability
 
     def get_stock_codes_list(self) -> List[str]:
@@ -455,4 +455,4 @@ class DataManager:
         Returns:
             是否有数据
         """
-        return stock_code in self.stock_data and not self.stock_data[stock_code].empty 
+        return stock_code in self.stock_data and not self.stock_data[stock_code].empty

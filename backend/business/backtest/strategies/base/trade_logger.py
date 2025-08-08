@@ -26,13 +26,13 @@ class TradeLogger:
         """初始化交易记录器"""
         # 所有交易记录
         self.trades = []
-        
+
         # 交易计数器
         self.trade_count = 0
-        
+
         # 日志记录器
         self.logger = logging.getLogger("backtest")
-        
+
         # 交易统计
         self.statistics = {
             'total_trades': 0,
@@ -44,7 +44,7 @@ class TradeLogger:
             'total_loss': 0.0
         }
 
-    def log_trade(self, action: str, stock_code: str, size: int, price: float, 
+    def log_trade(self, action: str, stock_code: str, size: int, price: float,
                   date: datetime, reason: str = '', confidence: float = 0.0,
                   returns: float = None, profit_amount: float = None,
                   buy_price: float = None, holding_days: int = None,
@@ -71,10 +71,10 @@ class TradeLogger:
         """
         # 生成交易ID
         trade_id = self.trade_count + 1
-        
+
         # 计算交易金额
         trade_value = size * price
-        
+
         # 构建基础交易记录
         trade_record = {
             # 基础信息
@@ -87,7 +87,7 @@ class TradeLogger:
             '交易金额': trade_value,
             '交易原因': reason,
             '信心度': confidence,
-            
+
             # 兼容性字段
             'date': date,
             'action': action,
@@ -98,11 +98,11 @@ class TradeLogger:
             'value': trade_value,
             'reason': reason,
             'confidence': confidence,
-            
+
             # 时间戳
             'logged_at': datetime.now()
         }
-        
+
         # 添加收益相关信息（卖出时）
         if action == 'SELL':
             trade_record.update({
@@ -110,14 +110,14 @@ class TradeLogger:
                 '绝对收益': profit_amount,
                 '买入价格': buy_price,
                 '持仓天数': holding_days,
-                
+
                 # 兼容性字段
                 'returns': returns,
                 'profit_amount': profit_amount,
                 'buy_price': buy_price,
                 'holding_days': holding_days
             })
-            
+
             # 如果有收益率信息，添加额外字段
             if returns is not None:
                 trade_record['收益率百分比'] = returns
@@ -126,20 +126,20 @@ class TradeLogger:
                         trade_record['交易结果'] = '盈利'
                     else:
                         trade_record['交易结果'] = '亏损'
-        
+
         # 添加其他附加数据
         trade_record.update(additional_data)
-        
+
         # 添加到交易记录
         self.trades.append(trade_record)
         self.trade_count += 1
-        
+
         # 更新统计信息
         self._update_statistics(trade_record)
-        
+
         # 记录日志
         self._log_trade_details(trade_record)
-        
+
         return trade_id
 
     def _update_statistics(self, trade_record: Dict[str, Any]):
@@ -150,14 +150,14 @@ class TradeLogger:
             trade_record: 交易记录
         """
         self.statistics['total_trades'] += 1
-        
+
         action = trade_record['交易动作']
-        
+
         if action == 'BUY':
             self.statistics['buy_trades'] += 1
         elif action == 'SELL':
             self.statistics['sell_trades'] += 1
-            
+
             # 更新盈亏统计
             profit_amount = trade_record.get('绝对收益')
             if profit_amount is not None:
@@ -179,14 +179,14 @@ class TradeLogger:
         stock_code = trade_record['股票代码']
         size = trade_record['交易数量']
         price = trade_record['交易价格']
-        
+
         if action == 'BUY':
             self.logger.info(f"交易记录: 买入 {stock_code} {size}股 @ {price:.2f}元")
         elif action == 'SELL':
             returns = trade_record.get('收益率')
             profit_amount = trade_record.get('绝对收益')
             holding_days = trade_record.get('持仓天数', 0)
-            
+
             if returns is not None and profit_amount is not None:
                 profit_sign = "+" if profit_amount >= 0 else ""
                 returns_sign = "+" if returns >= 0 else ""
@@ -231,8 +231,8 @@ class TradeLogger:
         """
         return [trade for trade in self.trades if trade['股票代码'] == stock_code]
 
-    def get_trades_by_date_range(self, start_date: datetime, 
-                                end_date: datetime) -> List[Dict[str, Any]]:
+    def get_trades_by_date_range(self, start_date: datetime,
+                                 end_date: datetime) -> List[Dict[str, Any]]:
         """
         按日期范围获取交易记录
         
@@ -257,7 +257,7 @@ class TradeLogger:
         """
         return [
             trade for trade in self.trades
-            if (trade['交易动作'] == 'SELL' and 
+            if (trade['交易动作'] == 'SELL' and
                 trade.get('绝对收益', 0) > 0)
         ]
 
@@ -270,7 +270,7 @@ class TradeLogger:
         """
         return [
             trade for trade in self.trades
-            if (trade['交易动作'] == 'SELL' and 
+            if (trade['交易动作'] == 'SELL' and
                 trade.get('绝对收益', 0) < 0)
         ]
 
@@ -291,7 +291,7 @@ class TradeLogger:
             交易统计字典
         """
         stats = self.statistics.copy()
-        
+
         # 计算衍生统计
         if stats['sell_trades'] > 0:
             stats['win_rate'] = (stats['profitable_trades'] / stats['sell_trades']) * 100
@@ -299,27 +299,27 @@ class TradeLogger:
         else:
             stats['win_rate'] = 0.0
             stats['loss_rate'] = 0.0
-        
+
         # 计算平均盈亏
         if stats['profitable_trades'] > 0:
             stats['avg_profit'] = stats['total_profit'] / stats['profitable_trades']
         else:
             stats['avg_profit'] = 0.0
-        
+
         if stats['losing_trades'] > 0:
             stats['avg_loss'] = stats['total_loss'] / stats['losing_trades']
         else:
             stats['avg_loss'] = 0.0
-        
+
         # 净盈亏
         stats['net_profit'] = stats['total_profit'] - stats['total_loss']
-        
+
         # 盈亏比
         if stats['avg_loss'] > 0:
             stats['profit_loss_ratio'] = stats['avg_profit'] / stats['avg_loss']
         else:
             stats['profit_loss_ratio'] = float('inf') if stats['avg_profit'] > 0 else 0.0
-        
+
         return stats
 
     def get_trade_summary_by_stock(self) -> Dict[str, Dict[str, Any]]:
@@ -330,10 +330,10 @@ class TradeLogger:
             按股票分组的交易汇总 {股票代码: 汇总信息}
         """
         stock_summary = {}
-        
+
         for trade in self.trades:
             stock_code = trade['股票代码']
-            
+
             if stock_code not in stock_summary:
                 stock_summary[stock_code] = {
                     'total_trades': 0,
@@ -345,25 +345,25 @@ class TradeLogger:
                     'profitable_trades': 0,
                     'losing_trades': 0
                 }
-            
+
             summary = stock_summary[stock_code]
             summary['total_trades'] += 1
             summary['total_volume'] += trade['交易数量']
             summary['total_value'] += trade['交易金额']
-            
+
             if trade['交易动作'] == 'BUY':
                 summary['buy_trades'] += 1
             elif trade['交易动作'] == 'SELL':
                 summary['sell_trades'] += 1
-                
+
                 profit = trade.get('绝对收益', 0)
                 if profit > 0:
                     summary['profitable_trades'] += 1
                 elif profit < 0:
                     summary['losing_trades'] += 1
-                
+
                 summary['total_profit'] += profit or 0
-        
+
         return stock_summary
 
     def export_trades_to_dataframe(self):
@@ -384,7 +384,7 @@ class TradeLogger:
         """清空所有交易记录"""
         self.trades.clear()
         self.trade_count = 0
-        
+
         # 重置统计
         self.statistics = {
             'total_trades': 0,
@@ -395,7 +395,7 @@ class TradeLogger:
             'total_profit': 0.0,
             'total_loss': 0.0
         }
-        
+
         self.logger.info("已清空所有交易记录")
 
     def get_last_trade(self) -> Optional[Dict[str, Any]]:
@@ -433,26 +433,26 @@ class TradeLogger:
             符合条件的交易记录列表
         """
         filtered_trades = []
-        
+
         for trade in self.trades:
             match = True
-            
+
             for key, value in filters.items():
                 # 支持中英文字段名
                 trade_value = trade.get(key) or trade.get({
-                    'action': '交易动作',
-                    'stock_code': '股票代码',
-                    'date': '交易日期',
-                    'size': '交易数量',
-                    'price': '交易价格',
-                    'value': '交易金额'
-                }.get(key, key))
-                
+                                                              'action': '交易动作',
+                                                              'stock_code': '股票代码',
+                                                              'date': '交易日期',
+                                                              'size': '交易数量',
+                                                              'price': '交易价格',
+                                                              'value': '交易金额'
+                                                          }.get(key, key))
+
                 if trade_value != value:
                     match = False
                     break
-            
+
             if match:
                 filtered_trades.append(trade)
-        
-        return filtered_trades 
+
+        return filtered_trades

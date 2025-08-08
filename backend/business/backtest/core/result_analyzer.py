@@ -6,12 +6,11 @@
 """
 
 import logging
-import numpy as np
-import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Any, List
 
 import backtrader as bt
+import numpy as np
 
 
 class ResultAnalyzer:
@@ -99,7 +98,8 @@ class ResultAnalyzer:
             absolute_return = final_value - initial_cash
             total_return = (final_value / initial_cash - 1) * 100
 
-            self.logger.info(f"基础指标 - 初始资金: {initial_cash}, 最终资金: {final_value}, 总收益率: {total_return:.2f}%")
+            self.logger.info(
+                f"基础指标 - 初始资金: {initial_cash}, 最终资金: {final_value}, 总收益率: {total_return:.2f}%")
 
             return {
                 "初始资金": initial_cash,
@@ -160,7 +160,7 @@ class ResultAnalyzer:
         try:
             # 获取组合价值历史数据
             portfolio_values = []
-            
+
             # 尝试从策略中获取价值记录
             if hasattr(strat, 'portfolio_values'):
                 portfolio_values = strat.portfolio_values
@@ -176,15 +176,15 @@ class ResultAnalyzer:
             # 计算收益率序列
             returns = []
             for i in range(1, len(portfolio_values)):
-                if portfolio_values[i-1] > 0:
-                    ret = (portfolio_values[i] / portfolio_values[i-1] - 1)
+                if portfolio_values[i - 1] > 0:
+                    ret = (portfolio_values[i] / portfolio_values[i - 1] - 1)
                     returns.append(ret)
 
             if not returns:
                 return {'sharpe_ratio': 0, 'max_drawdown': 0, 'max_drawdown_duration': 0}
 
             returns = np.array(returns)
-            
+
             # 计算夏普比率
             mean_return = np.mean(returns)
             std_return = np.std(returns)
@@ -211,7 +211,7 @@ class ResultAnalyzer:
     def _calculate_trade_metrics(self, strat) -> Dict[str, Any]:
         """计算交易指标 - 改进版本"""
         self.logger.info("开始计算交易指标...")
-        
+
         try:
             # 优先使用策略自定义的交易记录（trade_logger）
             strategy_trades = []
@@ -224,26 +224,27 @@ class ResultAnalyzer:
                 strategy_trades = getattr(strat, 'trades', []) or []
 
             self.logger.info(f"策略交易记录总数: {len(strategy_trades)}")
-            
+
             if len(strategy_trades) > 0:
                 self.logger.info("检测到策略自定义交易记录，直接使用策略数据进行分析")
                 return self._calculate_manual_trade_metrics(strat)
-            
+
             # 如果没有策略交易记录，尝试使用backtrader分析器
             trades_analysis = None
             total_trades = 0
             won_trades = 0
             lost_trades = 0
-            
+
             try:
                 trades_analysis = strat.analyzers.trades.get_analysis()
                 self.logger.debug(f"Backtrader交易分析结果: {trades_analysis}")
-                
+
                 if trades_analysis:
                     total_trades = trades_analysis.get('total', {}).get('total', 0)
                     won_trades = trades_analysis.get('won', {}).get('total', 0)
                     lost_trades = trades_analysis.get('lost', {}).get('total', 0)
-                    self.logger.info(f"Backtrader分析器数据 - 总交易:{total_trades}, 盈利:{won_trades}, 亏损:{lost_trades}")
+                    self.logger.info(
+                        f"Backtrader分析器数据 - 总交易:{total_trades}, 盈利:{won_trades}, 亏损:{lost_trades}")
             except Exception as e:
                 self.logger.debug(f"无法获取backtrader交易分析: {e}")
 
@@ -263,7 +264,7 @@ class ResultAnalyzer:
                 }
             else:
                 return self._get_empty_trade_metrics()
-            
+
         except Exception as e:
             self.logger.error(f"计算交易指标时发生异常: {e}")
             return self._calculate_manual_trade_metrics(strat)
@@ -271,7 +272,7 @@ class ResultAnalyzer:
     def _calculate_manual_trade_metrics(self, strat) -> Dict[str, Any]:
         """手动计算交易指标 - 改进版本"""
         self.logger.info("使用策略自定义交易记录进行手动计算...")
-        
+
         # 统一从trade_logger优先读取
         strategy_trades = []
         try:
@@ -282,29 +283,29 @@ class ResultAnalyzer:
         except Exception:
             strategy_trades = getattr(strat, 'trades', []) or []
         self.logger.info(f"策略交易记录总数: {len(strategy_trades)}")
-        
+
         if not strategy_trades:
             self.logger.warning("策略交易记录为空！")
             return self._get_empty_trade_metrics()
-        
+
         # 打印前几条交易记录的结构用于调试
         if len(strategy_trades) > 0:
             self.logger.debug(f"第一条交易记录结构: {list(strategy_trades[0].keys())}")
             self.logger.debug(f"第一条交易记录内容: {strategy_trades[0]}")
-        
+
         # 分别收集买入和卖出交易
         buy_trades = []
         sell_trades = []
-        
+
         for trade in strategy_trades:
             action = trade.get('action') or trade.get('交易动作', '')
             if action == 'SELL':
                 sell_trades.append(trade)
             elif action == 'BUY':
                 buy_trades.append(trade)
-        
+
         self.logger.info(f"筛选结果 - 卖出交易:{len(sell_trades)}, 买入交易:{len(buy_trades)}")
-        
+
         if not sell_trades:
             self.logger.warning("没有找到卖出交易记录！")
             # 如果没有卖出交易，但有买入交易，说明还在持仓中
@@ -335,12 +336,12 @@ class ResultAnalyzer:
         total_holding_days = 0
         valid_holding_periods = 0
         valid_returns = []
-        
+
         self.logger.info(f"开始分析 {total_trades} 笔卖出交易...")
-        
+
         for i, trade in enumerate(sell_trades):
-            self.logger.debug(f"分析第{i+1}笔交易: {trade}")
-            
+            self.logger.debug(f"分析第{i + 1}笔交易: {trade}")
+
             # 获取收益率
             returns = None
             for field in ['returns', '收益率', '收益率(%)', 'return_rate']:
@@ -348,11 +349,11 @@ class ResultAnalyzer:
                     returns = trade[field]
                     self.logger.debug(f"在字段'{field}'中找到收益率: {returns}")
                     break
-            
+
             if returns is None:
-                self.logger.warning(f"第{i+1}笔交易缺少收益率数据，跳过")
+                self.logger.warning(f"第{i + 1}笔交易缺少收益率数据，跳过")
                 continue
-            
+
             # 处理收益率数据类型
             try:
                 if hasattr(returns, 'item'):
@@ -362,10 +363,10 @@ class ResultAnalyzer:
             except (ValueError, TypeError) as e:
                 self.logger.warning(f"收益率转换失败: {returns}, 错误: {e}")
                 continue
-            
+
             # 记录有效的收益率（用于波动率计算）
             valid_returns.append(returns)
-            
+
             # 分类盈利和亏损交易
             if returns > 0:
                 won_trades += 1
@@ -377,16 +378,16 @@ class ResultAnalyzer:
                 # 收益率为0的交易计入亏损
                 lost_trades += 1
                 self.logger.debug(f"无收益交易: {returns:.2f}%")
-            
+
             total_returns += returns
             max_profit = max(max_profit, returns)
             max_loss = min(max_loss, returns)
-            
+
             # 尝试获取持仓时间信息
             try:
                 buy_date = trade.get('buy_date')
                 sell_date = trade.get('date') or trade.get('交易日期')
-                
+
                 if buy_date and sell_date:
                     holding_days = self._calculate_holding_days(buy_date, sell_date)
                     if holding_days > 0:
@@ -400,24 +401,24 @@ class ResultAnalyzer:
                         valid_holding_periods += 1
             except Exception as e:
                 self.logger.debug(f"计算持仓天数失败: {e}")
-        
+
         # 如果没有有效的收益率数据
         if not valid_returns:
             self.logger.warning("没有找到有效的收益率数据！")
             return self._get_empty_trade_metrics()
-        
+
         # 计算平均指标
         effective_trades = len(valid_returns)
         avg_returns = total_returns / effective_trades if effective_trades > 0 else 0
         win_rate = (won_trades / effective_trades * 100) if effective_trades > 0 else 0
         avg_holding_days = total_holding_days / valid_holding_periods if valid_holding_periods > 0 else 0
-        
+
         # 确保最大值有效
         if max_profit == float('-inf'):
             max_profit = 0
         if max_loss == float('inf'):
             max_loss = 0
-        
+
         self.logger.info(f"交易分析完成:")
         self.logger.info(f"  有效交易数: {effective_trades}")
         self.logger.info(f"  盈利交易: {won_trades}")
@@ -427,7 +428,7 @@ class ResultAnalyzer:
         self.logger.info(f"  最大单笔收益: {max_profit:.2f}%")
         self.logger.info(f"  最大单笔亏损: {max_loss:.2f}%")
         self.logger.info(f"  平均持仓天数: {avg_holding_days:.1f}")
-        
+
         return {
             "交易次数": effective_trades,
             "盈利交易": won_trades,
@@ -443,7 +444,7 @@ class ResultAnalyzer:
     def _create_trade_pairs(self, buy_trades: List[Dict], sell_trades: List[Dict]) -> List[Dict]:
         """创建买卖交易配对"""
         trade_pairs = []
-        
+
         # 按股票代码和日期对买入交易进行分组和排序
         buy_trades_by_stock = {}
         for trade in buy_trades:
@@ -451,23 +452,23 @@ class ResultAnalyzer:
             if stock_code not in buy_trades_by_stock:
                 buy_trades_by_stock[stock_code] = []
             buy_trades_by_stock[stock_code].append(trade)
-        
+
         # 对每只股票的买入交易按日期排序
         for stock_code in buy_trades_by_stock:
             buy_trades_by_stock[stock_code].sort(key=lambda x: x.get('date', x.get('交易日期', datetime.min)))
-        
+
         # 为每个卖出交易寻找对应的买入交易
         for sell_trade in sell_trades:
             stock_code = sell_trade.get('stock_code') or sell_trade.get('股票代码', '')
             sell_date = sell_trade.get('date') or sell_trade.get('交易日期')
-            
+
             if not stock_code or not sell_date:
                 continue
-            
+
             # 查找该股票的买入交易
             if stock_code in buy_trades_by_stock:
                 buy_trades_for_stock = buy_trades_by_stock[stock_code]
-                
+
                 # 寻找最近的买入交易（FIFO原则）
                 matching_buy = None
                 for i, buy_trade in enumerate(buy_trades_for_stock):
@@ -477,11 +478,11 @@ class ResultAnalyzer:
                         # 从可用买入交易中移除（避免重复配对）
                         buy_trades_for_stock.pop(i)
                         break
-                
+
                 if matching_buy:
                     # 计算收益率
                     returns = self._calculate_trade_returns(matching_buy, sell_trade)
-                    
+
                     trade_pair = {
                         'buy_trade': matching_buy,
                         'sell_trade': sell_trade,
@@ -496,11 +497,11 @@ class ResultAnalyzer:
                             sell_date
                         )
                     }
-                    
+
                     trade_pairs.append(trade_pair)
                     self.logger.debug(f"配对成功: {stock_code}, 买入价格: {trade_pair['buy_price']:.2f}, "
-                                    f"卖出价格: {trade_pair['sell_price']:.2f}, 收益率: {returns:.2f}%")
-        
+                                      f"卖出价格: {trade_pair['sell_price']:.2f}, 收益率: {returns:.2f}%")
+
         return trade_pairs
 
     def _calculate_trade_returns(self, buy_trade: Dict, sell_trade: Dict) -> float:
@@ -513,17 +514,17 @@ class ResultAnalyzer:
                     if hasattr(returns, 'item'):
                         returns = returns.item()
                     return float(returns)
-            
+
             # 如果没有直接的收益率，通过价格计算
             buy_price = buy_trade.get('price') or buy_trade.get('交易价格', 0)
             sell_price = sell_trade.get('price') or sell_trade.get('交易价格', 0)
-            
+
             if buy_price > 0 and sell_price > 0:
                 returns = (sell_price / buy_price - 1) * 100
                 return returns
-            
+
             return 0.0
-            
+
         except (ValueError, TypeError) as e:
             self.logger.debug(f"计算收益率失败: {e}")
             return 0.0
@@ -538,10 +539,10 @@ class ResultAnalyzer:
         max_loss = 0
         total_holding_days = 0
         valid_holding_periods = 0
-        
+
         for pair in trade_pairs:
             returns = pair['returns']
-            
+
             # 分类盈利和亏损交易
             if returns > 0:
                 won_trades += 1
@@ -549,22 +550,22 @@ class ResultAnalyzer:
                 lost_trades += 1
             else:
                 lost_trades += 1  # 无收益视为亏损
-            
+
             total_returns += returns
             max_profit = max(max_profit, returns)
             max_loss = min(max_loss, returns)
-            
+
             # 统计持仓天数
             holding_days = pair.get('holding_days', 0)
             if holding_days > 0:
                 total_holding_days += holding_days
                 valid_holding_periods += 1
-        
+
         # 计算平均指标
         avg_returns = total_returns / total_trades if total_trades > 0 else 0
         win_rate = (won_trades / total_trades * 100) if total_trades > 0 else 0
         avg_holding_days = total_holding_days / valid_holding_periods if valid_holding_periods > 0 else 0
-        
+
         self.logger.info(f"交易配对分析完成:")
         self.logger.info(f"  总交易数: {total_trades}")
         self.logger.info(f"  盈利交易: {won_trades}")
@@ -574,7 +575,7 @@ class ResultAnalyzer:
         self.logger.info(f"  最大单笔收益: {max_profit:.2f}%")
         self.logger.info(f"  最大单笔亏损: {max_loss:.2f}%")
         self.logger.info(f"  平均持仓天数: {avg_holding_days:.1f}")
-        
+
         return {
             "交易次数": total_trades,
             "盈利交易": won_trades,
@@ -585,7 +586,7 @@ class ResultAnalyzer:
             "最大单笔亏损": abs(max_loss),  # 转换为正值显示
             "平均持仓时间": avg_holding_days
         }
-    
+
     def _get_empty_trade_metrics(self) -> Dict[str, Any]:
         """返回空的交易指标"""
         return {
@@ -598,7 +599,7 @@ class ResultAnalyzer:
             "最大单笔亏损": 0,
             "平均持仓时间": 0
         }
-    
+
     def _calculate_holding_days(self, buy_date, sell_date):
         """计算持仓天数"""
         try:
@@ -609,17 +610,17 @@ class ResultAnalyzer:
                 buy_dt = datetime.strptime(buy_date, '%Y-%m-%d')
             else:
                 buy_dt = buy_date
-                
+
             if hasattr(sell_date, 'strftime'):
                 sell_dt = sell_date
             elif isinstance(sell_date, str):
                 sell_dt = datetime.strptime(sell_date, '%Y-%m-%d')
             else:
                 sell_dt = sell_date
-            
+
             delta = sell_dt - buy_dt
             return max(delta.days, 1)  # 至少1天
-            
+
         except Exception as e:
             self.logger.debug(f"计算持仓天数失败: {e}")
             return 1
@@ -630,36 +631,37 @@ class ResultAnalyzer:
             # 首先尝试使用backtrader分析器
             backtrader_annual_return = 0
             backtrader_annual_volatility = 0
-            
+
             try:
                 returns_analysis = strat.analyzers.returns.get_analysis()
                 backtrader_annual_return = returns_analysis.get('rnorm100', 0)
                 backtrader_annual_volatility = returns_analysis.get('std', 0) * 100
-                
-                self.logger.debug(f"Backtrader性能指标 - 年化收益率: {backtrader_annual_return}%, 年化波动率: {backtrader_annual_volatility}%")
-                
+
+                self.logger.debug(
+                    f"Backtrader性能指标 - 年化收益率: {backtrader_annual_return}%, 年化波动率: {backtrader_annual_volatility}%")
+
             except Exception as e:
                 self.logger.debug(f"获取backtrader性能指标失败: {e}")
 
             # 总是执行手动计算，然后与backtrader结果比较
             manual_metrics = self._manual_calculate_performance_metrics(strat, cerebro)
             self.logger.info(f"手动计算性能指标 - 年化收益率: {manual_metrics['年化收益率']:.2f}%, "
-                           f"年化波动率: {manual_metrics['年化波动率']:.2f}%")
-            
+                             f"年化波动率: {manual_metrics['年化波动率']:.2f}%")
+
             # 选择更好的结果：优先使用有年化波动率的结果
             final_annual_return = manual_metrics['年化收益率']
             final_annual_volatility = manual_metrics['年化波动率']
-            
+
             # 如果手动计算的波动率为0，但backtrader有波动率，则使用backtrader的波动率
             if final_annual_volatility == 0 and backtrader_annual_volatility > 0:
                 final_annual_volatility = backtrader_annual_volatility
                 self.logger.info(f"使用backtrader的年化波动率: {final_annual_volatility:.2f}%")
-            
+
             # 如果手动计算的收益率为0，但backtrader有收益率，则使用backtrader的收益率
             if final_annual_return == 0 and backtrader_annual_return > 0:
                 final_annual_return = backtrader_annual_return
                 self.logger.info(f"使用backtrader的年化收益率: {final_annual_return:.2f}%")
-            
+
             return {
                 "年化收益率": final_annual_return,
                 "年化波动率": final_annual_volatility,
@@ -685,10 +687,10 @@ class ResultAnalyzer:
             initial_cash = cerebro.broker.startingcash
             final_value = cerebro.broker.getvalue()
             total_return_ratio = final_value / initial_cash - 1
-            
+
             # 获取实际回测天数 - 改进计算方法
             backtest_days = 252  # 默认一年
-            
+
             # 尝试从策略中获取更准确的回测时间
             if hasattr(strat, 'datas') and len(strat.datas) > 0:
                 # 从主数据源获取回测期间
@@ -700,7 +702,7 @@ class ResultAnalyzer:
                         # 假设是日线数据，直接使用bar数量
                         backtest_days = total_bars
                         self.logger.debug(f"从数据源获取回测天数: {backtest_days} 天")
-            
+
             # 如果上述方法失败，尝试从交易记录获取
             if backtest_days == 252:  # 仍然是默认值
                 strategy_trades = getattr(strat, 'trades', [])
@@ -708,7 +710,7 @@ class ResultAnalyzer:
                     # 获取第一个和最后一个交易的日期
                     first_date = None
                     last_date = None
-                    
+
                     for trade in strategy_trades:
                         trade_date = trade.get('date') or trade.get('交易日期')
                         if trade_date:
@@ -716,30 +718,31 @@ class ResultAnalyzer:
                                 first_date = trade_date
                             if last_date is None or trade_date > last_date:
                                 last_date = trade_date
-                    
+
                     if first_date and last_date:
                         delta = last_date - first_date
                         backtest_days = max(delta.days, 1)
                         self.logger.debug(f"从交易记录获取回测期间: {first_date} 到 {last_date}, 共 {backtest_days} 天")
-            
+
             # 计算年化收益率
             years = backtest_days / 365.25
             annual_return = ((final_value / initial_cash) ** (1 / years) - 1) * 100 if years > 0 else 0
-            
-            self.logger.debug(f"回测基础数据 - 天数: {backtest_days}, 年数: {years:.2f}, 总收益率: {total_return_ratio*100:.2f}%")
-            
+
+            self.logger.debug(
+                f"回测基础数据 - 天数: {backtest_days}, 年数: {years:.2f}, 总收益率: {total_return_ratio * 100:.2f}%")
+
             # 计算年化波动率 - 修复版本
             annual_volatility = 0
-            
+
             # 方法1：从交易收益率计算（修复交易频率问题）
             strategy_trades = getattr(strat, 'trades', [])
-            sell_trades = [t for t in strategy_trades if 
-                          t.get('action') == 'SELL' or t.get('交易动作') == 'SELL']
-            
+            sell_trades = [t for t in strategy_trades if
+                           t.get('action') == 'SELL' or t.get('交易动作') == 'SELL']
+
             if sell_trades:
                 returns = []
                 self.logger.debug(f"正在分析{len(sell_trades)}笔卖出交易的收益率...")
-                
+
                 for i, trade in enumerate(sell_trades):
                     # 检查多个可能的收益率字段
                     return_value = None
@@ -747,61 +750,61 @@ class ResultAnalyzer:
                         if field in trade and trade[field] is not None:
                             return_value = trade[field]
                             break
-                    
+
                     if return_value is not None:
                         try:
                             # 处理不同的收益率格式
                             if isinstance(return_value, str):
                                 if return_value.strip().upper() in ['N/A', 'NA', 'NULL', '']:
-                                    self.logger.debug(f"交易{i+1}收益率为空或N/A，跳过")
+                                    self.logger.debug(f"交易{i + 1}收益率为空或N/A，跳过")
                                     continue
                                 # 移除百分号
                                 return_value = return_value.strip().replace('%', '')
-                            
+
                             # 转换为数值
                             if hasattr(return_value, 'item'):
                                 return_value = return_value.item()
-                            
+
                             ret = float(return_value)
-                            
+
                             # 如果收益率是百分比格式（>1），转换为小数
                             if abs(ret) > 1:
                                 ret = ret / 100
-                            
+
                             returns.append(ret)
-                            self.logger.debug(f"交易{i+1}收益率: {ret:.4f}")
-                            
+                            self.logger.debug(f"交易{i + 1}收益率: {ret:.4f}")
+
                         except (ValueError, TypeError) as e:
-                            self.logger.debug(f"交易{i+1}收益率解析失败: {return_value}, 错误: {e}")
+                            self.logger.debug(f"交易{i + 1}收益率解析失败: {return_value}, 错误: {e}")
                             continue
                     else:
-                        self.logger.debug(f"交易{i+1}没有找到收益率字段")
-                
+                        self.logger.debug(f"交易{i + 1}没有找到收益率字段")
+
                 self.logger.info(f"成功解析{len(returns)}笔交易的收益率，总卖出交易{len(sell_trades)}笔")
-                
+
                 if len(returns) > 1:
                     returns_array = np.array(returns)
                     # 计算交易收益率的标准差
                     returns_std = np.std(returns_array, ddof=1)
                     returns_mean = np.mean(returns_array)
-                    
+
                     self.logger.debug(f"收益率统计: 均值={returns_mean:.4f}, 标准差={returns_std:.4f}")
-                    
+
                     # 修复：使用时间频率而不是交易频率来年化波动率
                     # 假设交易是均匀分布在回测期间的
                     average_holding_days = backtest_days / len(returns) if len(returns) > 0 else 30
-                    
+
                     # 年化系数：基于平均持仓天数
                     if average_holding_days > 0:
                         annualization_factor = np.sqrt(365.25 / average_holding_days)
                     else:
                         annualization_factor = np.sqrt(252)  # 默认日频
-                    
+
                     annual_volatility = returns_std * annualization_factor * 100
-                    
+
                     self.logger.info(f"基于{len(returns)}笔交易计算年化波动率: {annual_volatility:.2f}%")
                     self.logger.debug(f"平均持仓天数: {average_holding_days:.1f}, 年化系数: {annualization_factor:.2f}")
-                    
+
                 elif len(returns) == 1:
                     # 单笔交易，使用保守的估算
                     single_return = abs(returns[0])
@@ -810,24 +813,24 @@ class ResultAnalyzer:
                     self.logger.info(f"基于单笔交易估算年化波动率: {annual_volatility:.2f}%")
                 else:
                     self.logger.warning("没有有效的收益率数据用于计算波动率")
-            
+
             # 方法2：如果方法1失败，使用更保守的估算
             if annual_volatility == 0 and years > 0:
                 self.logger.info("尝试基于总收益率估算年化波动率...")
-                
+
                 # 使用总收益率进行保守估算
                 total_return_annual = abs(annual_return)  # 使用年化收益率
-                
+
                 # 对于股票策略，波动率通常是年化收益率的1.5-2.5倍
                 # 使用保守的倍数避免过高估算
                 estimated_volatility_multiplier = 1.8
                 annual_volatility = total_return_annual * estimated_volatility_multiplier
-                
+
                 # 确保在合理范围内（股票策略一般10%-60%）
                 annual_volatility = max(min(annual_volatility, 60.0), 10.0)
-                
+
                 self.logger.info(f"基于年化收益率估算年化波动率: {annual_volatility:.2f}%")
-            
+
             # 最终合理性检查：确保波动率在合理范围内
             if annual_volatility > 100:  # 超过100%很可能是计算错误
                 original_volatility = annual_volatility
@@ -837,24 +840,24 @@ class ResultAnalyzer:
                 original_volatility = annual_volatility
                 annual_volatility = 15.0  # 设置为合理的默认值
                 self.logger.warning(f"年化波动率过低({original_volatility:.2f}%)，调整为: {annual_volatility:.2f}%")
-            
+
             # 计算其他指标
             info_ratio = 0
             sortino_ratio = 0
-            
+
             if annual_volatility > 0:
                 info_ratio = annual_return / annual_volatility
                 # 简化的Sortino比率计算（假设负收益的标准差为总波动率的70%）
                 downside_volatility = annual_volatility * 0.7
                 sortino_ratio = annual_return / downside_volatility if downside_volatility > 0 else 0
-            
+
             return {
                 "年化收益率": annual_return,
                 "年化波动率": annual_volatility,
                 "信息比率": info_ratio,
                 "索提诺比率": sortino_ratio
             }
-            
+
         except Exception as e:
             self.logger.debug(f"手动计算性能指标失败: {e}")
             return {
@@ -903,9 +906,9 @@ class ResultAnalyzer:
 盈利交易: {safe_get('盈利交易', 0)}
 亏损交易: {safe_get('亏损交易', 0)}
 胜率: {safe_get('胜率', 0):.2f}%
-平均收益: {safe_get('平均收益', 0):.2f}
-最大单笔收益: {safe_get('最大单笔收益', 0):.2f}
-最大单笔亏损: {safe_get('最大单笔亏损', 0):.2f}
+平均收益: {safe_get('平均收益', 0):.2f}%
+最大单笔收益: {safe_get('最大单笔收益', 0):.2f}%
+最大单笔亏损: {safe_get('最大单笔亏损', 0):.2f}%
 平均持仓时间: {safe_get('平均持仓时间', 0):.1f} 天
 
 【性能指标】

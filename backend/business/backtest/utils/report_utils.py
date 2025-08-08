@@ -214,7 +214,7 @@ class ReportUtils:
                 # 计算基于总资本的总收益率
                 if total_capital_invested > 0:
                     total_return_rate = ((
-                                                     total_capital_returned - total_capital_invested) / total_capital_invested) * 100
+                                                 total_capital_returned - total_capital_invested) / total_capital_invested) * 100
                 else:
                     total_return_rate = 0
 
@@ -463,7 +463,7 @@ class ReportUtils:
 
             # 创建新的DataFrame，只包含需要的字段
             result_data = {}
-            
+
             for final_name, possible_sources in required_fields.items():
                 # 寻找可用的源字段
                 found_field = None
@@ -471,7 +471,7 @@ class ReportUtils:
                     if source_field in df.columns:
                         found_field = source_field
                         break
-                
+
                 if found_field:
                     result_data[final_name] = df[found_field]
                 else:
@@ -484,10 +484,10 @@ class ReportUtils:
             # 格式化数值列
             if '交易价格' in df_result.columns:
                 df_result['交易价格'] = pd.to_numeric(df_result['交易价格'], errors='coerce').round(2)
-            
+
             if '交易金额' in df_result.columns:
                 df_result['交易金额'] = pd.to_numeric(df_result['交易金额'], errors='coerce').round(2)
-                
+
             if '收益率(%)' in df_result.columns:
                 df_result['收益率(%)'] = pd.to_numeric(df_result['收益率(%)'], errors='coerce').round(2)
 

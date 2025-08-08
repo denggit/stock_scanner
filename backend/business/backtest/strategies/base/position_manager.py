@@ -24,7 +24,7 @@ class PositionManager:
         """初始化仓位管理器"""
         # 当前持仓信息 {股票代码: 持仓信息}
         self._positions = {}
-        
+
         # 持仓历史记录
         self._position_history = []
 
@@ -46,9 +46,9 @@ class PositionManager:
             'buy_value': shares * buy_price,
             'created_at': datetime.now()
         }
-        
+
         self._positions[stock_code] = position_info
-        
+
         # 记录历史
         self._position_history.append({
             'action': 'ADD',
@@ -69,10 +69,10 @@ class PositionManager:
         """
         if stock_code not in self._positions:
             return None
-        
+
         position_info = self._positions[stock_code].copy()
         del self._positions[stock_code]
-        
+
         # 记录历史
         self._position_history.append({
             'action': 'REMOVE',
@@ -80,7 +80,7 @@ class PositionManager:
             'position_info': position_info,
             'timestamp': datetime.now()
         })
-        
+
         return position_info
 
     def update_position(self, stock_code: str, shares: int = None, buy_price: float = None):
@@ -94,18 +94,18 @@ class PositionManager:
         """
         if stock_code not in self._positions:
             return
-        
+
         position = self._positions[stock_code]
         old_info = position.copy()
-        
+
         if shares is not None:
             position['shares'] = shares
             position['buy_value'] = shares * position['buy_price']
-        
+
         if buy_price is not None:
             position['buy_price'] = buy_price
             position['buy_value'] = position['shares'] * buy_price
-        
+
         # 记录历史
         self._position_history.append({
             'action': 'UPDATE',
@@ -187,7 +187,7 @@ class PositionManager:
             持仓统计字典
         """
         positions = [p for p in self._positions.values() if p['shares'] > 0]
-        
+
         if not positions:
             return {
                 'total_positions': 0,
@@ -196,9 +196,9 @@ class PositionManager:
                 'min_position_value': 0.0,
                 'max_position_value': 0.0
             }
-        
+
         values = [p['buy_value'] for p in positions]
-        
+
         return {
             'total_positions': len(positions),
             'total_value': sum(values),
@@ -224,7 +224,7 @@ class PositionManager:
             'cleared_positions': self._positions.copy(),
             'timestamp': datetime.now()
         })
-        
+
         self._positions.clear()
 
     def calculate_position_returns(self, stock_code: str, current_price: float) -> Optional[Dict[str, float]]:
@@ -241,18 +241,18 @@ class PositionManager:
         position = self.get_position(stock_code)
         if not position:
             return None
-        
+
         buy_price = position['buy_price']
         shares = position['shares']
-        
+
         if buy_price <= 0:
             return None
-        
+
         # 计算收益
         returns_pct = (current_price - buy_price) / buy_price * 100
         profit_amount = (current_price - buy_price) * shares
         current_value = current_price * shares
-        
+
         return {
             'returns_pct': returns_pct,
             'profit_amount': profit_amount,
@@ -261,4 +261,4 @@ class PositionManager:
             'buy_price': buy_price,
             'current_price': current_price,
             'shares': shares
-        } 
+        }

@@ -6,17 +6,17 @@
 """
 
 from .base_strategy import BaseStrategy
-from .trade_manager import TradeManager
-from .position_manager import PositionManager
-from .data_manager import DataManager
 from .channel_analyzer_manager import ChannelAnalyzerManager
+from .data_manager import DataManager
+from .position_manager import PositionManager
 from .trade_logger import TradeLogger
+from .trade_manager import TradeManager
 
 __all__ = [
     'BaseStrategy',
-    'TradeManager', 
+    'TradeManager',
     'PositionManager',
     'DataManager',
     'ChannelAnalyzerManager',
     'TradeLogger'
-] 
+]
