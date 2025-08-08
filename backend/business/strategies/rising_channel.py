@@ -3,7 +3,7 @@
 """
 @Author     : AI Assistant
 @Date       : 2025-01-31
-@File       : rising_channel.py
+@File       : rising_channel_strategy.py
 @Description: 上升通道策略 - 扫描所有符合上升通道条件的股票
 
 该策略基于上升通道回归分析，识别出所有当前处于有效上升通道的股票。

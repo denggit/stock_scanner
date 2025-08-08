@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 
 from .position_manager import PositionManager
+from backend.business.backtest.core.trading_rules import AShareTradingRules
 
 
 class FundAllocationStrategy(ABC):
@@ -60,9 +61,9 @@ class EqualWeightAllocation(FundAllocationStrategy):
         if price <= 0 or max_positions <= 0:
             return 0
 
-        # 预留少量手续费
-        commission_rate = 0.0003
-        usable_cash = available_cash * (1 - commission_rate)
+        # 预留少量手续费（粗略预留，精确校验在 TradeManager 内完成）
+        commission_rate = AShareTradingRules.COMMISSION_RATE
+        usable_cash = max(0.0, available_cash * (1 - commission_rate))
 
         # 平均分配资金
         cash_per_stock = usable_cash / max_positions
@@ -168,6 +169,59 @@ class TradeManager:
         self.allocation_strategy = strategy
         self.logger.info(f"切换资金分配策略: {strategy.__class__.__name__}")
 
+    def _apply_ashare_constraints(self, shares: int, price: float, available_cash: float) -> int:
+        """
+        应用A股交易约束：按手取整、最小金额校验、费用覆盖校验
+        
+        Args:
+            shares: 原始建议买入数量
+            price: 当前价格
+            available_cash: 可用现金
+        
+        Returns:
+            满足A股规则后的买入股数
+        """
+        if shares <= 0 or price <= 0:
+            return 0
+
+        # 1) 按手取整
+        shares = AShareTradingRules.adjust_trade_quantity(shares)
+        if shares <= 0:
+            return 0
+
+        # 2) 最小成交金额校验（如不足则尝试提升到满足最小金额的最近整数手）
+        trade_value = shares * price
+        if trade_value < AShareTradingRules.MIN_TRADE_AMOUNT:
+            import math
+            min_lots = math.ceil(AShareTradingRules.MIN_TRADE_AMOUNT / price / AShareTradingRules.MIN_TRADE_UNITS)
+            shares = max(shares, min_lots * AShareTradingRules.MIN_TRADE_UNITS)
+            trade_value = shares * price
+
+        # 3) 费用覆盖校验（买入：佣金+过户费）
+        total_fees = AShareTradingRules.calculate_total_fees(trade_value, is_buy=True)
+        total_cost = trade_value + total_fees
+        if total_cost > available_cash:
+            affordable_shares = int(available_cash / price)
+            affordable_shares = AShareTradingRules.adjust_trade_quantity(affordable_shares)
+            if affordable_shares <= 0:
+                return 0
+            trade_value = affordable_shares * price
+            total_fees = AShareTradingRules.calculate_total_fees(trade_value, is_buy=True)
+            total_cost = trade_value + total_fees
+            if total_cost > available_cash:
+                affordable_shares -= AShareTradingRules.MIN_TRADE_UNITS
+                affordable_shares = max(0, affordable_shares)
+                if affordable_shares <= 0:
+                    return 0
+                trade_value = affordable_shares * price
+                total_fees = AShareTradingRules.calculate_total_fees(trade_value, is_buy=True)
+                total_cost = trade_value + total_fees
+                if total_cost > available_cash:
+                    return 0
+            shares = affordable_shares
+
+        return shares
+
     def calculate_buy_size(self, price: float, max_positions: int) -> int:
         """
         计算买入数量
@@ -193,6 +247,9 @@ class TradeManager:
 
         # 风险控制检查
         shares = self._apply_risk_control(shares, price, available_cash)
+
+        # A股约束：按手、最小金额与费用覆盖
+        shares = self._apply_ashare_constraints(shares, price, available_cash)
 
         return shares
 

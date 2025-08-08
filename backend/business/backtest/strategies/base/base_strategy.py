@@ -16,6 +16,7 @@ from .data_manager import DataManager
 from .position_manager import PositionManager
 from .trade_logger import TradeLogger
 from .trade_manager import TradeManager
+from backend.business.backtest.core.trading_rules import is_trade_blocked_by_price_limit
 
 
 class BaseStrategy(bt.Strategy):
@@ -248,6 +249,20 @@ class BaseStrategy(bt.Strategy):
             if current_positions >= self.params.max_positions:
                 return False
 
+        # 涨跌停拦截（基于前收）
+        try:
+            stock_code = signal['stock_code']
+            price = float(signal['price'])
+            # 获取该股票在 current_date 的前一交易日收盘价
+            df = self.data_manager.get_stock_data_until(stock_code, self.current_date, min_data_points=2)
+            if df is not None and len(df) >= 2:
+                prev_close = float(df.iloc[-2]['close'])
+                if is_trade_blocked_by_price_limit(price, prev_close, signal['action'], is_st=False):
+                    return False
+        except Exception:
+            # 数据不足或异常时，不做强制拦截
+            pass
+
         return True
 
     def _execute_buy_signal(self, signal: Dict[str, Any]):
@@ -260,7 +275,7 @@ class BaseStrategy(bt.Strategy):
         stock_code = signal['stock_code']
         price = signal['price']
 
-        # 计算买入数量
+        # 计算买入数量（内部已按手、最小金额、费用覆盖）
         shares = self.trade_manager.calculate_buy_size(price, self.params.max_positions)
 
         if shares > 0:
@@ -299,6 +314,16 @@ class BaseStrategy(bt.Strategy):
         if not position_info:
             return
 
+        # 涨跌停拦截（跌停禁卖）
+        try:
+            df = self.data_manager.get_stock_data_until(stock_code, self.current_date, min_data_points=2)
+            if df is not None and len(df) >= 2:
+                prev_close = float(df.iloc[-2]['close'])
+                if is_trade_blocked_by_price_limit(price, prev_close, 'SELL', is_st=False):
+                    return
+        except Exception:
+            pass
+
         shares = position_info['shares']
 
         # 执行卖出
@@ -335,31 +360,3 @@ class BaseStrategy(bt.Strategy):
             self.logger.info(f"卖出 {stock_code}: {shares}股 @ {price:.2f}, "
                              f"收益: {profit_sign}{profit_amount:.2f}元 ({returns_pct:.2f}%), "
                              f"持仓{holding_days}天")
-
-    def get_strategy_info(self) -> Dict[str, Any]:
-        """获取策略信息"""
-        return {
-            'strategy_name': self.__class__.__name__,
-            'parameters': self._get_parameters(),
-            'current_status': {
-                'position_count': self.position_manager.get_position_count(),
-                'total_positions': self.position_manager.get_all_positions(),
-                'current_date': self.current_date
-            },
-            'performance': self.get_performance_summary()
-        }
-
-    def _get_parameters(self) -> Dict[str, Any]:
-        """获取策略参数"""
-        return {
-            'max_positions': self.params.max_positions,
-            'min_data_points': self.params.min_data_points,
-            'enable_logging': self.params.enable_logging
-        }
-
-    def get_performance_summary(self) -> Dict[str, Any]:
-        """获取性能摘要"""
-        return {
-            'total_trades': self.trade_logger.get_trade_count(),
-            'trades': self.trade_logger.get_all_trades()
-        }

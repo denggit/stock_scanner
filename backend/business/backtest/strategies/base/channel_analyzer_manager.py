@@ -126,7 +126,7 @@ class RealChannelAnalyzer(ChannelAnalyzerInterface):
     def _init_analyzer(self):
         """初始化实际的分析器"""
         try:
-            from backend.business.factor.core.engine.library.channel_analysis.ascending_channel import \
+            from backend.business.factor.core.engine.library.channel_analysis.rising_channel import \
                 AscendingChannelRegression
 
             self._analyzer = AscendingChannelRegression(**self.params)
@@ -331,7 +331,7 @@ class ChannelAnalyzerManager:
         status = channel_state.channel_status
 
         if status == ChannelStatus.NORMAL:
-            base_score = 70.0  # 提高NORMAL状态的基础评分
+            base_score = 60.0  # 提高NORMAL状态的基础评分
         elif status == ChannelStatus.ACCEL_BREAKOUT:
             base_score = 50.0
         elif status == ChannelStatus.BREAKDOWN:
@@ -339,19 +339,23 @@ class ChannelAnalyzerManager:
         else:
             base_score = 0.0
 
-        # R²评分（0-20分）
-        r2_score = 0.0
-        if hasattr(channel_state, 'r2') and channel_state.r2:
-            r2_score = min(channel_state.r2 * 20, 20.0)
+        # TODO：先不要做几分，之后我会在做，AI别修改评分标准
+        r2_score = 0
+        slope_score = 0
 
-        # 斜率评分（0-10分）
-        slope_score = 0.0
-        if hasattr(channel_state, 'slope') and channel_state.slope:
-            # 斜率在0.01-0.05之间得分较高
-            if 0.01 <= channel_state.slope <= 0.05:
-                slope_score = 10.0
-            elif channel_state.slope > 0:
-                slope_score = 5.0
+        # # R²评分（0-20分）
+        # r2_score = 0.0
+        # if hasattr(channel_state, 'r2') and channel_state.r2:
+        #     r2_score = min(channel_state.r2 * 20, 20.0)
+        #
+        # # 斜率评分（0-10分）
+        # slope_score = 0.0
+        # if hasattr(channel_state, 'slope') and channel_state.slope:
+        #     # 斜率在0.01-0.05之间得分较高
+        #     if 0.01 <= channel_state.slope <= 0.05:
+        #         slope_score = 10.0
+        #     elif channel_state.slope > 0:
+        #         slope_score = 5.0
 
         total_score = base_score + r2_score + slope_score
         return min(total_score, 100.0)

@@ -3,7 +3,7 @@
 """
 @Author     : AI Assistant
 @Date       : 2024-12-19
-@File       : ascending_channel.py
+@File       : rising_channel.py
 @Description: 上升通道回归模块
 
 该模块实现了上升通道回归分析算法，主要功能包括：

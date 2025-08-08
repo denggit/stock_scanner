@@ -176,7 +176,7 @@ class RisingChannelStrategy(BaseStrategy):
     def _generate_buy_signals(self) -> List[Dict[str, Any]]:
         """
         生成买入信号
-        选择符合条件的NORMAL通道股票
+        选择符合条件的NORMAL通道股票，且要求股价位于通道内（>下沿 且 ≤上沿）
         
         Returns:
             买入信号列表
@@ -205,6 +205,13 @@ class RisingChannelStrategy(BaseStrategy):
             # 获取当前价格
             current_price = self.data_manager.get_stock_price(stock_code, self.current_date)
             if current_price <= 0:
+                continue
+
+            # 要求价格在通道内：严格大于下沿，且不超过上沿
+            lower_ok = hasattr(channel_state, 'lower_today') and current_price > getattr(channel_state, 'lower_today', 0)
+            upper_ok = hasattr(channel_state, 'upper_today') and current_price <= getattr(channel_state, 'upper_today', float('inf'))
+            if not (lower_ok and upper_ok):
+                # 不在通道内，跳过
                 continue
 
             # 计算距离下沿的百分比距离
@@ -240,8 +247,8 @@ class RisingChannelStrategy(BaseStrategy):
                 signal = self._create_buy_signal(
                     stock_code,
                     stock_info['current_price'],
-                    f"通道NORMAL，距离下沿{stock_info['distance_to_lower']:.2f}%，评分{stock_info['score']:.1f}",
-                    stock_info['score'] / 100.0  # 转换为0-1的信心度
+                    f"通道NORMAL，价格位于通道内，距离下沿{stock_info['distance_to_lower']:.2f}% ，评分{stock_info['score']:.1f}",
+                    stock_info['score'] / 100.0
                 )
                 buy_signals.append(signal)
 

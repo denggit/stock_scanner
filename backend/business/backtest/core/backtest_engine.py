@@ -13,6 +13,7 @@ import backtrader as bt
 from .base_strategy import BaseStrategy
 from .data_manager import DataManager
 from .result_analyzer import ResultAnalyzer
+from .trading_rules import AStockCommissionInfo, AShareTradingRules
 
 
 class BacktestEngine:
@@ -27,7 +28,7 @@ class BacktestEngine:
         
         Args:
             initial_cash: 初始资金
-            commission: 手续费率
+            commission: 手续费率（作为后备配置；优先使用 A股自定义手续费模型）
         """
         self.initial_cash = initial_cash
         self.commission = commission
@@ -95,6 +96,30 @@ class BacktestEngine:
 
             self.cerebro.addanalyzer(analyzer_class, _name=name, **kwargs_copy)
 
+    def _configure_broker(self):
+        """
+        配置broker的资金与手续费模型
+        优先使用A股的自定义手续费模型（佣金+过户费+印花税），否则退化为仅佣金费率。
+        """
+        # 设置初始资金
+        self.cerebro.broker.setcash(self.initial_cash)
+
+        # 优先使用自定义的A股手续费模型
+        try:
+            comminfo = AStockCommissionInfo(
+                commission=AShareTradingRules.COMMISSION_RATE,
+                stamp_tax_rate=AShareTradingRules.STAMP_TAX_RATE,
+                transfer_fee_rate=AShareTradingRules.TRANSFER_FEE_RATE,
+                min_commission=AShareTradingRules.MIN_COMMISSION,
+            )
+            self.cerebro.broker.addcommissioninfo(comminfo)
+            # 关闭默认滑点/其它影响（如需，可在外部另行设置）
+            self.logger.info("已启用A股自定义手续费模型")
+        except Exception as e:
+            # 后备：仅设置佣金费率
+            self.cerebro.broker.setcommission(commission=self.commission)
+            self.logger.warning(f"启用A股手续费模型失败，退化为固定佣金率: {e}")
+
     def run(self, strategy_name: str = "策略") -> Dict[str, Any]:
         """
         运行回测
@@ -108,11 +133,8 @@ class BacktestEngine:
         if self.cerebro is None:
             raise ValueError("请先添加数据和策略")
 
-        # 设置初始资金
-        self.cerebro.broker.setcash(self.initial_cash)
-
-        # 设置手续费
-        self.cerebro.broker.setcommission(commission=self.commission)
+        # 配置资金与手续费
+        self._configure_broker()
 
         # 添加分析器
         self.add_analyzers()
@@ -221,7 +243,7 @@ class BacktestFactory:
         # 运行回测
         results = engine.run(strategy_name)
 
-        # 绘制图表
+        # 绘图
         if plot:
             engine.plot()
 

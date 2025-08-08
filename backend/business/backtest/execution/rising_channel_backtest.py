@@ -12,7 +12,7 @@ import sys
 # 添加项目根目录到路径（保留以兼容独立运行）
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../../..'))
 
-from backend.business.backtest.strategies.rising_channel import RisingChannelBacktestStrategy
+from backend.business.backtest.strategies.rising_channel_strategy import RisingChannelBacktestStrategy
 from backend.business.backtest.configs.rising_channel_config import RisingChannelConfig
 from backend.business.backtest.execution.base.base_runner import BaseBacktestRunner
 
