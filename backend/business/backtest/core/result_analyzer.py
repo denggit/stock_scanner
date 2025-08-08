@@ -57,10 +57,10 @@ class ResultAnalyzer:
         # 基础指标
         basic_metrics = self._calculate_basic_metrics(cerebro, strat)
 
-        # 风险指标
-        risk_metrics = self._calculate_risk_metrics(strat)
+        # 风险指标（调整为依赖cerebro，保持与年化指标一致）
+        risk_metrics = self._calculate_risk_metrics(strat, cerebro)
 
-        # 交易指标
+        # 交易指标（优先使用策略自定义交易记录）
         trade_metrics = self._calculate_trade_metrics(strat)
 
         # 性能指标
@@ -74,9 +74,19 @@ class ResultAnalyzer:
             **performance_metrics
         }
 
+        # 优先从trade_logger获取交易记录，保证与交易指标一致
+        trade_records = []
+        try:
+            if hasattr(strat, 'trade_logger'):
+                trade_records = strat.trade_logger.get_all_trades() or []
+            elif hasattr(strat, 'trades'):
+                trade_records = getattr(strat, 'trades', []) or []
+        except Exception:
+            trade_records = getattr(strat, 'trades', []) or []
+
         return {
             "metrics": all_metrics,
-            "trades": getattr(strat, 'trades', []),
+            "trades": trade_records,
             "portfolio_value": cerebro.broker.getvalue(),
             "total_return": all_metrics.get('总收益率', 0)
         }
@@ -106,46 +116,28 @@ class ResultAnalyzer:
                 "总收益率": 0
             }
 
-    def _calculate_risk_metrics(self, strat) -> Dict[str, Any]:
-        """计算风险指标"""
+    def _calculate_risk_metrics(self, strat, cerebro) -> Dict[str, Any]:
+        """计算风险指标（与年化指标对齐）"""
         try:
-            # 尝试使用backtrader分析器
-            sharpe_ratio = 0
+            # 先尝试backtrader分析器（用于回撤）
             max_drawdown = 0
             max_drawdown_duration = 0
             current_drawdown = 0
 
             try:
-                # 获取夏普比率
-                sharpe_analysis = strat.analyzers.sharpe.get_analysis()
-                sharpe_ratio = sharpe_analysis.get('sharperatio', 0)
-                if sharpe_ratio is None:
-                    sharpe_ratio = 0
-                
-                self.logger.debug(f"Backtrader夏普比率: {sharpe_ratio}")
-            except Exception as e:
-                self.logger.debug(f"获取夏普比率失败: {e}")
-
-            try:
-                # 获取回撤指标
                 drawdown_analysis = strat.analyzers.drawdown.get_analysis()
                 max_drawdown = drawdown_analysis.get('max', {}).get('drawdown', 0) or 0
                 max_drawdown_duration = drawdown_analysis.get('max', {}).get('len', 0) or 0
-                
-                self.logger.debug(f"Backtrader最大回撤: {max_drawdown}%, 持续天数: {max_drawdown_duration}")
             except Exception as e:
                 self.logger.debug(f"获取回撤数据失败: {e}")
 
-            # 如果backtrader分析器没有数据，尝试手动计算
-            if sharpe_ratio == 0 or max_drawdown == 0:
-                manual_metrics = self._manual_calculate_risk_metrics(strat)
-                if sharpe_ratio == 0:
-                    sharpe_ratio = manual_metrics.get('sharpe_ratio', 0)
-                if max_drawdown == 0:
-                    max_drawdown = manual_metrics.get('max_drawdown', 0)
-                    max_drawdown_duration = manual_metrics.get('max_drawdown_duration', 0)
+            # 与性能指标一致的夏普比率：Sharpe = 年化收益率 / 年化波动率（rf≈0）
+            perf = self._manual_calculate_performance_metrics(strat, cerebro)
+            annual_return = perf.get('年化收益率', 0)
+            annual_vol = perf.get('年化波动率', 0)
+            sharpe_ratio = (annual_return / annual_vol) if (annual_vol and annual_vol != 0) else 0
 
-            self.logger.info(f"风险指标 - 夏普比率: {sharpe_ratio:.4f}, 最大回撤: {max_drawdown:.2f}%")
+            self.logger.info(f"风险指标 - 夏普比率(统一口径): {sharpe_ratio:.4f}, 最大回撤: {abs(max_drawdown):.2f}%")
 
             return {
                 "夏普比率": sharpe_ratio,
@@ -221,16 +213,23 @@ class ResultAnalyzer:
         self.logger.info("开始计算交易指标...")
         
         try:
-            # 对于多股票策略，直接使用策略自定义的交易记录
-            # 因为backtrader的TradeAnalyzer无法正确处理多股票组合交易
-            strategy_trades = getattr(strat, 'trades', [])
+            # 优先使用策略自定义的交易记录（trade_logger）
+            strategy_trades = []
+            try:
+                if hasattr(strat, 'trade_logger'):
+                    strategy_trades = strat.trade_logger.get_all_trades() or []
+                elif hasattr(strat, 'trades'):
+                    strategy_trades = getattr(strat, 'trades', []) or []
+            except Exception:
+                strategy_trades = getattr(strat, 'trades', []) or []
+
             self.logger.info(f"策略交易记录总数: {len(strategy_trades)}")
             
             if len(strategy_trades) > 0:
                 self.logger.info("检测到策略自定义交易记录，直接使用策略数据进行分析")
                 return self._calculate_manual_trade_metrics(strat)
             
-            # 如果没有策略交易记录，才尝试使用backtrader分析器
+            # 如果没有策略交易记录，尝试使用backtrader分析器
             trades_analysis = None
             total_trades = 0
             won_trades = 0
@@ -248,7 +247,6 @@ class ResultAnalyzer:
             except Exception as e:
                 self.logger.debug(f"无法获取backtrader交易分析: {e}")
 
-            # 如果backtrader分析器有数据，使用其结果
             if total_trades > 0:
                 win_rate = (won_trades / total_trades * 100) if total_trades > 0 else 0
                 self.logger.info(f"使用Backtrader分析器数据 - 胜率: {win_rate:.2f}%")
@@ -264,7 +262,6 @@ class ResultAnalyzer:
                     "平均持仓时间": trades_analysis.get('len', {}).get('average', 0)
                 }
             else:
-                # 没有任何交易数据
                 return self._get_empty_trade_metrics()
             
         except Exception as e:
@@ -275,7 +272,15 @@ class ResultAnalyzer:
         """手动计算交易指标 - 改进版本"""
         self.logger.info("使用策略自定义交易记录进行手动计算...")
         
-        strategy_trades = getattr(strat, 'trades', [])
+        # 统一从trade_logger优先读取
+        strategy_trades = []
+        try:
+            if hasattr(strat, 'trade_logger'):
+                strategy_trades = strat.trade_logger.get_all_trades() or []
+            elif hasattr(strat, 'trades'):
+                strategy_trades = getattr(strat, 'trades', []) or []
+        except Exception:
+            strategy_trades = getattr(strat, 'trades', []) or []
         self.logger.info(f"策略交易记录总数: {len(strategy_trades)}")
         
         if not strategy_trades:
@@ -674,43 +679,60 @@ class ResultAnalyzer:
             }
 
     def _manual_calculate_performance_metrics(self, strat, cerebro) -> Dict[str, Any]:
-        """手动计算性能指标 - 改进版本"""
+        """手动计算性能指标 - 修复版本"""
         try:
-            # 计算总收益率和回测时间
+            # 计算总收益率
             initial_cash = cerebro.broker.startingcash
             final_value = cerebro.broker.getvalue()
             total_return_ratio = final_value / initial_cash - 1
             
-            # 从策略中获取交易数据来估算回测时间
-            strategy_trades = getattr(strat, 'trades', [])
+            # 获取实际回测天数 - 改进计算方法
             backtest_days = 252  # 默认一年
             
-            if strategy_trades:
-                # 获取第一个和最后一个交易的日期
-                first_date = None
-                last_date = None
-                
-                for trade in strategy_trades:
-                    trade_date = trade.get('date') or trade.get('交易日期')
-                    if trade_date:
-                        if first_date is None or trade_date < first_date:
-                            first_date = trade_date
-                        if last_date is None or trade_date > last_date:
-                            last_date = trade_date
-                
-                if first_date and last_date:
-                    delta = last_date - first_date
-                    backtest_days = max(delta.days, 1)
-                    self.logger.debug(f"回测期间: {first_date} 到 {last_date}, 共 {backtest_days} 天")
+            # 尝试从策略中获取更准确的回测时间
+            if hasattr(strat, 'datas') and len(strat.datas) > 0:
+                # 从主数据源获取回测期间
+                data = strat.datas[0]
+                if hasattr(data, 'datetime') and len(data.datetime) > 0:
+                    # 计算数据的实际天数
+                    total_bars = len(data.datetime)
+                    if total_bars > 0:
+                        # 假设是日线数据，直接使用bar数量
+                        backtest_days = total_bars
+                        self.logger.debug(f"从数据源获取回测天数: {backtest_days} 天")
+            
+            # 如果上述方法失败，尝试从交易记录获取
+            if backtest_days == 252:  # 仍然是默认值
+                strategy_trades = getattr(strat, 'trades', [])
+                if strategy_trades:
+                    # 获取第一个和最后一个交易的日期
+                    first_date = None
+                    last_date = None
+                    
+                    for trade in strategy_trades:
+                        trade_date = trade.get('date') or trade.get('交易日期')
+                        if trade_date:
+                            if first_date is None or trade_date < first_date:
+                                first_date = trade_date
+                            if last_date is None or trade_date > last_date:
+                                last_date = trade_date
+                    
+                    if first_date and last_date:
+                        delta = last_date - first_date
+                        backtest_days = max(delta.days, 1)
+                        self.logger.debug(f"从交易记录获取回测期间: {first_date} 到 {last_date}, 共 {backtest_days} 天")
             
             # 计算年化收益率
             years = backtest_days / 365.25
             annual_return = ((final_value / initial_cash) ** (1 / years) - 1) * 100 if years > 0 else 0
             
-            # 计算年化波动率 - 改进版本
+            self.logger.debug(f"回测基础数据 - 天数: {backtest_days}, 年数: {years:.2f}, 总收益率: {total_return_ratio*100:.2f}%")
+            
+            # 计算年化波动率 - 修复版本
             annual_volatility = 0
             
-            # 方法1：从交易收益率计算
+            # 方法1：从交易收益率计算（修复交易频率问题）
+            strategy_trades = getattr(strat, 'trades', [])
             sell_trades = [t for t in strategy_trades if 
                           t.get('action') == 'SELL' or t.get('交易动作') == 'SELL']
             
@@ -765,47 +787,56 @@ class ResultAnalyzer:
                     
                     self.logger.debug(f"收益率统计: 均值={returns_mean:.4f}, 标准差={returns_std:.4f}")
                     
-                    # 根据交易频率调整年化系数
-                    trades_per_year = len(returns) / years if years > 0 else len(returns)
+                    # 修复：使用时间频率而不是交易频率来年化波动率
+                    # 假设交易是均匀分布在回测期间的
+                    average_holding_days = backtest_days / len(returns) if len(returns) > 0 else 30
                     
-                    # 年化波动率计算
-                    annual_volatility = returns_std * np.sqrt(max(trades_per_year, 12)) * 100  # 至少按月频率计算
+                    # 年化系数：基于平均持仓天数
+                    if average_holding_days > 0:
+                        annualization_factor = np.sqrt(365.25 / average_holding_days)
+                    else:
+                        annualization_factor = np.sqrt(252)  # 默认日频
+                    
+                    annual_volatility = returns_std * annualization_factor * 100
                     
                     self.logger.info(f"基于{len(returns)}笔交易计算年化波动率: {annual_volatility:.2f}%")
-                    self.logger.debug(f"交易频率: {trades_per_year:.2f}次/年")
+                    self.logger.debug(f"平均持仓天数: {average_holding_days:.1f}, 年化系数: {annualization_factor:.2f}")
                     
                 elif len(returns) == 1:
-                    # 单笔交易，使用简单估算
+                    # 单笔交易，使用保守的估算
                     single_return = abs(returns[0])
-                    annual_volatility = single_return * np.sqrt(252) * 100  # 假设日频交易
+                    # 假设月频交易
+                    annual_volatility = single_return * np.sqrt(12) * 100
                     self.logger.info(f"基于单笔交易估算年化波动率: {annual_volatility:.2f}%")
                 else:
                     self.logger.warning("没有有效的收益率数据用于计算波动率")
             
-            # 方法2：如果方法1失败，使用资金变化计算
+            # 方法2：如果方法1失败，使用更保守的估算
             if annual_volatility == 0 and years > 0:
-                self.logger.info("尝试基于资金变化计算年化波动率...")
+                self.logger.info("尝试基于总收益率估算年化波动率...")
                 
-                # 使用总收益率和时间长度进行估算
-                total_return_annual = annual_return / 100  # 转换为小数
+                # 使用总收益率进行保守估算
+                total_return_annual = abs(annual_return)  # 使用年化收益率
                 
-                # 估算方法：假设波动率为年化收益率的某个倍数
-                # 对于股票策略，波动率通常是收益率的2-4倍
-                estimated_volatility_multiplier = 3.0
-                annual_volatility = abs(total_return_annual) * estimated_volatility_multiplier * 100
+                # 对于股票策略，波动率通常是年化收益率的1.5-2.5倍
+                # 使用保守的倍数避免过高估算
+                estimated_volatility_multiplier = 1.8
+                annual_volatility = total_return_annual * estimated_volatility_multiplier
                 
-                # 确保最小波动率（股票策略一般不会低于10%）
-                annual_volatility = max(annual_volatility, 10.0)
+                # 确保在合理范围内（股票策略一般10%-60%）
+                annual_volatility = max(min(annual_volatility, 60.0), 10.0)
                 
-                self.logger.info(f"基于总收益率估算年化波动率: {annual_volatility:.2f}%")
+                self.logger.info(f"基于年化收益率估算年化波动率: {annual_volatility:.2f}%")
             
-            # 确保波动率在合理范围内
-            if annual_volatility > 200:  # 超过200%可能是计算错误
-                annual_volatility = min(annual_volatility, 200)
-                self.logger.warning(f"年化波动率过高，调整为: {annual_volatility:.2f}%")
+            # 最终合理性检查：确保波动率在合理范围内
+            if annual_volatility > 100:  # 超过100%很可能是计算错误
+                original_volatility = annual_volatility
+                annual_volatility = min(annual_volatility, 60.0)  # 限制为60%
+                self.logger.warning(f"年化波动率过高({original_volatility:.2f}%)，调整为: {annual_volatility:.2f}%")
             elif annual_volatility > 0 and annual_volatility < 5:  # 低于5%可能是计算错误
-                annual_volatility = max(annual_volatility, 5.0)
-                self.logger.warning(f"年化波动率过低，调整为: {annual_volatility:.2f}%")
+                original_volatility = annual_volatility
+                annual_volatility = 15.0  # 设置为合理的默认值
+                self.logger.warning(f"年化波动率过低({original_volatility:.2f}%)，调整为: {annual_volatility:.2f}%")
             
             # 计算其他指标
             info_ratio = 0
