@@ -47,6 +47,8 @@ class BacktestEngine:
         self.result_analyzer.add_analyzer('drawdown', bt.analyzers.DrawDown, _name='drawdown')
         self.result_analyzer.add_analyzer('returns', bt.analyzers.Returns, _name='returns')
         self.result_analyzer.add_analyzer('trades', bt.analyzers.TradeAnalyzer, _name='trades')
+        # 增加日频收益分析器，便于构建每日收益表
+        self.result_analyzer.add_analyzer('timereturn', bt.analyzers.TimeReturn, _name='timereturn', timeframe=bt.TimeFrame.Days)
 
     def add_data(self, data, name: str = "data") -> None:
         """

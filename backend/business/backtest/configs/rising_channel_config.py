@@ -42,7 +42,7 @@ class RisingChannelConfig:
 
     # ==================== 基础配置 ====================
     BASE_CONFIG = {
-        'initial_cash': 1000000.0,  # 初始资金100万
+        'initial_cash': 200000.0,  # 初始资金20万
         'commission': 0.0003,  # 手续费率
         'stock_pool': 'no_st',  # 股票池：非ST股票
         'start_date': '2024-01-01',  # 开始日期

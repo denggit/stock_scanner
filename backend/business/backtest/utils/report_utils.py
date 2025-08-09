@@ -401,6 +401,11 @@ class ReportUtils:
                     if not trades_df.empty:
                         trades_df.to_excel(writer, sheet_name='交易记录', index=False)
 
+                # 每日收益表（使用日收益和交易记录构建）
+                daily_table = ReportUtils.create_daily_returns_table(results)
+                if not daily_table.empty:
+                    daily_table.to_excel(writer, sheet_name='每日收益', index=False)
+
                 # 策略报告
                 if 'report' in results and results['report']:
                     report_df = pd.DataFrame({'报告': [results['report']]})
@@ -604,3 +609,77 @@ class ReportUtils:
                 '信息类型': ['策略名称', '处理状态'],
                 '数值': [strategy_info.get('strategy_name', '未知策略'), f'处理失败: {str(e)}']
             })
+
+    @staticmethod
+    def create_daily_returns_table(results: Dict[str, Any]) -> pd.DataFrame:
+        """
+        创建每日收益表。
+        字段：日期、买入次数、卖出次数、今日收益率、整体收益率。
+        今日收益率来源于TimeReturn分析器（results['daily_returns']，日频小数），
+        买入/卖出次数来自交易记录（当日汇总）。
+        """
+        try:
+            trades = results.get('trades', []) or []
+            daily_ret = results.get('daily_returns', {}) or {}
+            active_start_date = results.get('active_start_date')
+
+            # 解析交易记录生成每日买卖次数
+            buy_counts = {}
+            sell_counts = {}
+            if trades:
+                df_t = pd.DataFrame(trades)
+                # 兼容列名
+                date_col = None
+                for c in ['交易日期', 'date']:
+                    if c in df_t.columns:
+                        date_col = c
+                        break
+                action_col = 'action' if 'action' in df_t.columns else ('交易动作' if '交易动作' in df_t.columns else None)
+                if date_col is not None and action_col is not None:
+                    # 规范日期
+                    dates = pd.to_datetime(df_t[date_col], errors='coerce').dt.date
+                    actions = df_t[action_col].fillna('')
+                    for d, a in zip(dates, actions):
+                        if pd.isna(d):
+                            continue
+                        if active_start_date and d < active_start_date:
+                            continue
+                        if a == 'BUY':
+                            buy_counts[d] = buy_counts.get(d, 0) + 1
+                        elif a == 'SELL':
+                            sell_counts[d] = sell_counts.get(d, 0) + 1
+
+            # 统一日期集合
+            date_set = set()
+            date_set.update(buy_counts.keys())
+            date_set.update(sell_counts.keys())
+            # 过滤daily_ret到active_start_date及之后
+            if active_start_date:
+                daily_ret = {d: v for d, v in daily_ret.items() if d >= active_start_date}
+            date_set.update(daily_ret.keys())
+            if not date_set:
+                return pd.DataFrame()
+
+            dates_sorted = sorted(date_set)
+
+            rows = []
+            cumulative = 1.0
+            for d in dates_sorted:
+                day_ret = daily_ret.get(d, 0.0)
+                try:
+                    day_ret = float(day_ret)
+                except Exception:
+                    day_ret = 0.0
+                cumulative *= (1.0 + day_ret)
+                rows.append({
+                    '日期': pd.to_datetime(d).strftime('%Y-%m-%d'),
+                    '买入次数': int(buy_counts.get(d, 0)),
+                    '卖出次数': int(sell_counts.get(d, 0)),
+                    '今日收益率': round(day_ret * 100.0, 2),
+                    '整体收益率': round((cumulative - 1.0) * 100.0, 2),
+                })
+
+            return pd.DataFrame(rows)
+        except Exception as e:
+            print(f"创建每日收益表时出错: {e}")
+            return pd.DataFrame()

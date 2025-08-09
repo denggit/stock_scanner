@@ -65,6 +65,12 @@ class ResultAnalyzer:
         # 性能指标
         performance_metrics = self._calculate_performance_metrics(strat, cerebro)
 
+        # 提取日收益序列（来自TimeReturn分析器），返回为 {date: daily_return_decimal}
+        daily_returns = self._get_daily_returns_from_analyzer(strat)
+
+        # 推导策略开始生效日期（剔除min_data_points之前的日期）
+        active_start_date = self._derive_active_start_date(strat, daily_returns)
+
         # 合并所有指标
         all_metrics = {
             **basic_metrics,
@@ -87,7 +93,9 @@ class ResultAnalyzer:
             "metrics": all_metrics,
             "trades": trade_records,
             "portfolio_value": cerebro.broker.getvalue(),
-            "total_return": all_metrics.get('总收益率', 0)
+            "total_return": all_metrics.get('总收益率', 0),
+            "daily_returns": daily_returns,
+            "active_start_date": active_start_date,
         }
 
     def _calculate_basic_metrics(self, cerebro: bt.Cerebro, strat) -> Dict[str, Any]:
@@ -866,6 +874,64 @@ class ResultAnalyzer:
                 "信息比率": 0,
                 "索提诺比率": 0
             }
+
+    def _get_daily_returns_from_analyzer(self, strat) -> Dict:
+        """从TimeReturn分析器获取日收益序列。
+        返回 {datetime.date: float_return_decimal}，若不可用返回空dict。
+        """
+        try:
+            if hasattr(strat, 'analyzers') and hasattr(strat.analyzers, 'timereturn'):
+                analysis = strat.analyzers.timereturn.get_analysis()
+                if not analysis:
+                    return {}
+                normalized = {}
+                for k, v in analysis.items():
+                    # k 可能是 datetime/date/num，将其转为date
+                    try:
+                        if hasattr(k, 'date'):
+                            d = k.date()
+                        else:
+                            d = k
+                    except Exception:
+                        d = k
+                    try:
+                        val = float(v)
+                    except Exception:
+                        continue
+                    normalized[d] = val
+                return normalized
+        except Exception:
+            return {}
+        return {}
+
+    def _derive_active_start_date(self, strat, daily_returns: Dict) -> Any:
+        """根据策略的min_data_points与daily_returns推导开始生效日期。
+        规则：当 len(self.data) < min_data_points 时跳过，所以第一天生效为排序后第(min_data_points-1)个日期。
+        若无法获取min_data_points或daily_returns为空，则返回None。
+        """
+        try:
+            min_pts = None
+            # 优先从params获取
+            if hasattr(strat, 'params') and hasattr(strat.params, 'min_data_points'):
+                min_pts = getattr(strat.params, 'min_data_points', None)
+            elif hasattr(strat, 'min_data_points'):
+                min_pts = getattr(strat, 'min_data_points', None)
+
+            if not min_pts or min_pts <= 1:
+                return None
+
+            if not daily_returns:
+                return None
+
+            # 对daily_returns的日期排序
+            sorted_dates = sorted(daily_returns.keys())
+            if len(sorted_dates) < min_pts:
+                return None
+
+            # 第一生效日为第(min_pts-1)个
+            return sorted_dates[min_pts - 1]
+        except Exception:
+            return None
 
     def generate_report(self, results: Dict[str, Any], strategy_name: str = "策略") -> str:
         """
