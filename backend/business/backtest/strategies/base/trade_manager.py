@@ -40,14 +40,15 @@ class FundAllocationStrategy(ABC):
 
 class EqualWeightAllocation(FundAllocationStrategy):
     """
-    等权重资金分配策略
-    将资金平均分配给所有股票
+    等权重资金分配策略（按剩余空位等权）
+    将可用资金平均分配给“剩余可建仓的空位数”，而不是按 max_positions 直接等分。
+    例如：初始 20 万、max_positions=20，已经持有 10 只且剩余现金 10 万，则单只目标金额≈ 10万 / (20-10) = 1 万。
     """
 
     def calculate_allocation(self, available_cash: float, price: float,
                              max_positions: int, current_positions: int) -> int:
         """
-        等权重分配计算
+        等权重分配计算（按剩余空位）
         
         Args:
             available_cash: 可用资金
@@ -65,8 +66,9 @@ class EqualWeightAllocation(FundAllocationStrategy):
         commission_rate = AShareTradingRules.COMMISSION_RATE
         usable_cash = max(0.0, available_cash * (1 - commission_rate))
 
-        # 平均分配资金
-        cash_per_stock = usable_cash / max_positions
+        # 按剩余空位等分：若已满仓则视为1（避免除零且返回0股）
+        remaining_slots = max(1, max_positions - current_positions)
+        cash_per_stock = usable_cash / remaining_slots
         shares = int(cash_per_stock / price)
 
         return max(0, shares)
@@ -149,9 +151,9 @@ class TradeManager:
         # 风险控制参数
         self.risk_params = {
             'max_single_position_percent': 0.1,  # 单只股票最大占比10%
-            'min_cash_reserve': 0.05,  # 最低现金储备5%
+            'min_cash_reserve': 0.01,  # 最低现金储备1%
             'max_daily_trades': 20,  # 每日最大交易次数
-            'min_price': 1.0,  # 最低股价
+            'min_price': 2.0,  # 最低股价
             'max_price': 1000.0  # 最高股价
         }
 
@@ -222,13 +224,14 @@ class TradeManager:
 
         return shares
 
-    def calculate_buy_size(self, price: float, max_positions: int) -> int:
+    def calculate_buy_size(self, price: float, max_positions: int, available_cash_override: Optional[float] = None) -> int:
         """
         计算买入数量
         
         Args:
             price: 股票价格
             max_positions: 最大持仓数量
+            available_cash_override: 可选，外部传入的预算现金，用于同一交易日多笔下单时防止超额
             
         Returns:
             建议买入数量
@@ -237,7 +240,7 @@ class TradeManager:
             return 0
 
         # 获取可用资金
-        available_cash = self.broker.getcash()
+        available_cash = self.broker.getcash() if available_cash_override is None else max(0.0, float(available_cash_override))
         current_positions = self.position_manager.get_position_count()
 
         # 使用当前的资金分配策略
@@ -252,6 +255,22 @@ class TradeManager:
         shares = self._apply_ashare_constraints(shares, price, available_cash)
 
         return shares
+
+    def estimate_buy_total_cost(self, shares: int, price: float) -> float:
+        """
+        估算买入总成本（含费用）
+        
+        Args:
+            shares: 买入股数
+            price: 价格
+        Returns:
+            总成本=成交额+佣金/过户费（买入不含印花税）
+        """
+        if shares <= 0 or price <= 0:
+            return 0.0
+        trade_value = float(shares) * float(price)
+        total_fees = AShareTradingRules.calculate_total_fees(trade_value, is_buy=True)
+        return trade_value + total_fees
 
     def _apply_risk_control(self, shares: int, price: float, available_cash: float) -> int:
         """
@@ -273,30 +292,32 @@ class TradeManager:
             self.logger.warning(f"价格 {price} 超出允许范围，跳过交易")
             return 0
 
-        # 计算交易金额
-        trade_value = shares * price
-
-        # 检查单只股票最大占比
+        # 统一以“最严格的限制”为准：
+        # - 单票最大占比（基于总资产）
+        # - 最低现金留存（基于总资产）
         total_value = self.broker.getvalue() if self.broker else available_cash
-        if trade_value > total_value * self.risk_params['max_single_position_percent']:
-            # 调整为最大允许金额
-            max_trade_value = total_value * self.risk_params['max_single_position_percent']
-            shares = int(max_trade_value / price)
-            self.logger.info(f"单只股票占比过高，调整买入数量至 {shares}")
-
-        # 检查现金储备
-        remaining_cash = available_cash - trade_value
         min_cash_reserve = total_value * self.risk_params['min_cash_reserve']
+        max_trade_value_by_percent = total_value * self.risk_params['max_single_position_percent']
+        max_trade_value_by_reserve = max(0.0, available_cash - min_cash_reserve)
 
-        if remaining_cash < min_cash_reserve:
-            # 调整买入数量以保持现金储备
-            max_trade_value = available_cash - min_cash_reserve
-            if max_trade_value > 0:
-                shares = int(max_trade_value / price)
-                self.logger.info(f"为保持现金储备，调整买入数量至 {shares}")
-            else:
-                shares = 0
-                self.logger.warning("资金不足，无法满足现金储备要求")
+        # 允许的最大交易金额取二者较小值
+        max_allowable_trade_value = min(max_trade_value_by_percent, max_trade_value_by_reserve)
+
+        # 若当前建议超过限制，则下调
+        current_trade_value = shares * price
+        if current_trade_value > max_allowable_trade_value:
+            limited_shares = int(max_allowable_trade_value / price)
+            # 仅在改变时输出一次日志
+            if current_trade_value > max_trade_value_by_percent:
+                self.logger.info(f"单只股票占比过高，调整买入数量至 {limited_shares}")
+            if current_trade_value > max_trade_value_by_reserve:
+                self.logger.info(f"为保持现金储备，调整买入数量至 {limited_shares}")
+            shares = limited_shares
+
+        # 若不可交易金额为0，则清零
+        if max_allowable_trade_value <= 0:
+            shares = 0
+            self.logger.warning("资金不足，无法满足现金/占比约束")
 
         return shares
 

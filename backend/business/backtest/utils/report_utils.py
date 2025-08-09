@@ -471,6 +471,11 @@ class ReportUtils:
                     trades_df = ReportUtils.create_detailed_trade_records(trades)
                     if not trades_df.empty:
                         trades_df.to_excel(writer, sheet_name='交易记录', index=False)
+                    
+                    # 交易分析表 - 新增
+                    trade_analysis_df = ReportUtils.create_trade_analysis(trades)
+                    if not trade_analysis_df.empty:
+                        trade_analysis_df.to_excel(writer, sheet_name='交易分析', index=False)
 
                 # 每日收益表（使用日收益和交易记录构建）
                 daily_table = ReportUtils.create_daily_returns_table(results)
@@ -754,4 +759,102 @@ class ReportUtils:
             return pd.DataFrame(rows)
         except Exception as e:
             print(f"创建每日收益表时出错: {e}")
+            return pd.DataFrame()
+
+    @staticmethod
+    def create_trade_analysis(trades: List[Dict]) -> pd.DataFrame:
+        """
+        创建交易分析表，包含买入卖出配对和通道数据
+        
+        Args:
+            trades: 交易记录列表
+            
+        Returns:
+            交易分析DataFrame
+        """
+        if not trades:
+            return pd.DataFrame()
+        
+        try:
+            # 分离买入和卖出交易
+            buy_trades = {}  # stock_code -> list of buy trades
+            sell_trades = []
+            
+            for trade in trades:
+                action = trade.get('action', trade.get('交易动作', ''))
+                stock_code = trade.get('stock_code', trade.get('股票代码', ''))
+                
+                if action == 'BUY':
+                    if stock_code not in buy_trades:
+                        buy_trades[stock_code] = []
+                    buy_trades[stock_code].append(trade)
+                elif action == 'SELL':
+                    sell_trades.append(trade)
+            
+            # 按股票代码和日期排序买入交易
+            for stock_code in buy_trades:
+                buy_trades[stock_code].sort(key=lambda x: x.get('date', x.get('交易日期', '')))
+            
+            # 创建交易分析记录
+            analysis_records = []
+            
+            for sell_trade in sell_trades:
+                stock_code = sell_trade.get('stock_code', sell_trade.get('股票代码', ''))
+                
+                # 找到对应的买入交易（FIFO原则）
+                if stock_code in buy_trades and buy_trades[stock_code]:
+                    buy_trade = buy_trades[stock_code].pop(0)  # 取出最早的买入交易
+                    
+                    # 提取数据
+                    buy_date = buy_trade.get('date', buy_trade.get('交易日期', ''))
+                    sell_date = sell_trade.get('date', sell_trade.get('交易日期', ''))
+                    buy_price = buy_trade.get('price', buy_trade.get('交易价格', 0))
+                    sell_price = sell_trade.get('price', sell_trade.get('交易价格', 0))
+                    
+                    # 计算收益率
+                    returns = 0
+                    if buy_price > 0:
+                        returns = (sell_price - buy_price) / buy_price * 100
+                    
+                    # 如果卖出交易中已有收益率，使用它
+                    if 'returns' in sell_trade and sell_trade['returns'] is not None:
+                        returns = sell_trade['returns']
+                    elif '收益率' in sell_trade and sell_trade['收益率'] is not None:
+                        returns = sell_trade['收益率']
+                    
+                    # 提取通道数据（从买入交易）
+                    record = {
+                        '买入日期': buy_date,
+                        '卖出日期': sell_date,
+                        '股票代码': stock_code,
+                        '买入价格': round(buy_price, 2) if buy_price else 0,
+                        '卖出价格': round(sell_price, 2) if sell_price else 0,
+                        '收益率(%)': round(returns, 2) if returns else 0,
+                        '通道评分': buy_trade.get('通道评分', ''),
+                        '斜率β': buy_trade.get('斜率β', ''),
+                        'R²': buy_trade.get('R²', ''),
+                        '买入中轴': round(buy_trade.get('今日中轴', 0), 2) if buy_trade.get('今日中轴') else '',
+                        '买入下沿': round(buy_trade.get('今日下沿', 0), 2) if buy_trade.get('今日下沿') else '',
+                        '买入上沿': round(buy_trade.get('今日上沿', 0), 2) if buy_trade.get('今日上沿') else '',
+                        '通道宽度': round(buy_trade.get('通道宽度', 0), 2) if buy_trade.get('通道宽度') else '',
+                        '距下沿(%)': buy_trade.get('距下沿(%)', ''),
+                    }
+                    
+                    analysis_records.append(record)
+            
+            # 创建DataFrame
+            df = pd.DataFrame(analysis_records)
+            
+            # 格式化日期
+            if not df.empty:
+                for date_col in ['买入日期', '卖出日期']:
+                    if date_col in df.columns:
+                        df[date_col] = pd.to_datetime(df[date_col]).dt.strftime('%Y-%m-%d')
+            
+            return df
+            
+        except Exception as e:
+            print(f"创建交易分析表时出错: {e}")
+            import traceback
+            traceback.print_exc()
             return pd.DataFrame()

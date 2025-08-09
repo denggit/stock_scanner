@@ -106,6 +106,9 @@ class ResultAnalyzer:
             final_value = cerebro.broker.getvalue()
             absolute_return = final_value - initial_cash
             total_return = (final_value / initial_cash - 1) * 100
+            # 现实策略（无杠杆）下总收益率不会小于 -100%，若资产异常为负，做展示层兜底
+            if total_return < -100:
+                total_return = -100.0
 
             self.logger.info(
                 f"基础指标 - 初始资金: {initial_cash}, 最终资金: {final_value}, 总收益率: {total_return:.2f}%")
@@ -144,13 +147,21 @@ class ResultAnalyzer:
             perf = self._manual_calculate_performance_metrics(strat, cerebro)
             annual_return = perf.get('年化收益率', 0)
             annual_vol = perf.get('年化波动率', 0)
-            sharpe_ratio = (annual_return / annual_vol) if (annual_vol and annual_vol != 0) else 0
+            # 避免复数/无穷：只在波动率为正且数值有效时计算
+            try:
+                annual_return = float(annual_return)
+                annual_vol = float(annual_vol)
+            except Exception:
+                annual_return, annual_vol = 0.0, 0.0
+            sharpe_ratio = (annual_return / annual_vol) if (annual_vol and annual_vol > 0) else 0.0
 
-            self.logger.info(f"风险指标 - 夏普比率(统一口径): {sharpe_ratio:.4f}, 最大回撤: {abs(max_drawdown):.2f}%")
+            # 最大回撤同样做合理范围约束（0~100%）
+            max_drawdown = min(abs(max_drawdown), 100.0)
+            self.logger.info(f"风险指标 - 夏普比率(统一口径): {sharpe_ratio:.4f}, 最大回撤: {max_drawdown:.2f}%")
 
             return {
                 "夏普比率": sharpe_ratio,
-                "最大回撤": abs(max_drawdown),  # 确保回撤为正值
+                "最大回撤": max_drawdown,  # 确保回撤为正值且不过 100%
                 "最大回撤期间": max_drawdown_duration,
                 "当前回撤": abs(current_drawdown)
             }
@@ -733,9 +744,15 @@ class ResultAnalyzer:
                         backtest_days = max(delta.days, 1)
                         self.logger.debug(f"从交易记录获取回测期间: {first_date} 到 {last_date}, 共 {backtest_days} 天")
 
-            # 计算年化收益率
+            # 计算年化收益率（避免复数）：
+            # 若最终资产<=0，则认为年化收益率为-100%（展示层合理兜底，根因应由撮合/风控去避免负资产）
             years = backtest_days / 365.25
-            annual_return = ((final_value / initial_cash) ** (1 / years) - 1) * 100 if years > 0 else 0
+            if years <= 0:
+                annual_return = 0.0
+            elif final_value <= 0:
+                annual_return = -100.0
+            else:
+                annual_return = ((final_value / initial_cash) ** (1 / years) - 1) * 100
 
             self.logger.debug(
                 f"回测基础数据 - 天数: {backtest_days}, 年数: {years:.2f}, 总收益率: {total_return_ratio * 100:.2f}%")

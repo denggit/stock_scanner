@@ -180,15 +180,83 @@ class BaseStrategy(bt.Strategy):
         Args:
             signals: 经过风险控制的交易信号
         """
-        for signal in signals:
-            try:
-                if signal['action'] == 'BUY':
-                    self._execute_buy_signal(signal)
-                elif signal['action'] == 'SELL':
-                    self._execute_sell_signal(signal)
+        # 为避免同日多笔买入超额，先执行卖出释放现金，再按预算执行买入
+        sell_signals = [s for s in signals if s.get('action') == 'SELL']
+        buy_signals = [s for s in signals if s.get('action') == 'BUY']
 
+        # 1) 先执行卖出
+        for signal in sell_signals:
+            try:
+                self._execute_sell_signal(signal)
             except Exception as e:
-                self.logger.error(f"执行交易信号失败: {signal}, 错误: {e}")
+                self.logger.error(f"执行卖出信号失败: {signal}, 错误: {e}")
+
+        # 2) 再执行买入（带预算）
+        if buy_signals:
+            # 当前可用现金作为当日买入预算基数（卖出已释放）
+            remaining_budget = float(self.broker.getcash())
+            # 顺序执行买入信号，逐单扣减预算
+            for signal in buy_signals:
+                try:
+                    stock_code = signal['stock_code']
+                    price = float(signal['price'])
+
+                    # 预算不足直接跳过
+                    if remaining_budget <= 0:
+                        break
+
+                    # 计算基于预算的买入股数
+                    shares = self.trade_manager.calculate_buy_size(
+                        price, self.params.max_positions, available_cash_override=remaining_budget
+                    )
+                    if shares <= 0:
+                        continue
+
+                    # 估算总成本，做预算校验
+                    est_cost = self.trade_manager.estimate_buy_total_cost(shares, price)
+                    if est_cost > remaining_budget:
+                        # 退一步：尝试减少一个最小交易单位
+                        from backend.business.backtest.core.trading_rules import AShareTradingRules
+                        reduced_shares = max(0, shares - AShareTradingRules.MIN_TRADE_UNITS)
+                        if reduced_shares > 0:
+                            shares = self.trade_manager.calculate_buy_size(
+                                price, self.params.max_positions, available_cash_override=remaining_budget
+                            )
+                            est_cost = self.trade_manager.estimate_buy_total_cost(shares, price)
+                        else:
+                            continue
+
+                    # 执行买入前再次检查现金
+                    current_cash = float(self.broker.getcash())
+                    if current_cash < est_cost:
+                        self.logger.warning(f"现金不足，跳过买入 {stock_code}。需要: {est_cost:.2f}, 可用: {current_cash:.2f}")
+                        continue
+
+                    # 执行买入
+                    self.buy(size=shares)
+                    
+                    # 扣减预算（使用估算成本，因为backtrader订单执行是延迟的）
+                    remaining_budget -= est_cost
+
+                    # 更新持仓及记录
+                    self.position_manager.add_position(stock_code, shares, price, self.current_date)
+                    extra_fields = {k: v for k, v in signal.items() if
+                                    k not in ['action', 'stock_code', 'price', 'reason', 'confidence']}
+                    self.trade_logger.log_trade(
+                        action='BUY',
+                        stock_code=stock_code,
+                        size=shares,
+                        price=price,
+                        date=self.current_date,
+                        reason=signal.get('reason', ''),
+                        confidence=signal.get('confidence', 0.0),
+                        **extra_fields
+                    )
+                    if self.params.enable_logging:
+                        self.logger.info(f"买入 {stock_code}: {shares}股 @ {price:.2f}，预算剩余: {remaining_budget:.2f}")
+
+                except Exception as e:
+                    self.logger.error(f"执行买入信号失败: {signal}, 错误: {e}")
 
     def log_results(self):
         """

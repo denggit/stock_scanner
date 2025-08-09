@@ -123,6 +123,8 @@ class BacktestEngine:
             self.cerebro.broker.setcommission(commission=self.commission)
             self.logger.warning(f"启用A股手续费模型失败，退化为固定佣金率: {e}")
 
+        self.logger.info(f"Broker配置完成 - 初始资金: {self.initial_cash}")
+
     def run(self, strategy_name: str = "策略") -> Dict[str, Any]:
         """
         运行回测

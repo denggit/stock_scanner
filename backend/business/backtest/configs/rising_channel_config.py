@@ -19,9 +19,9 @@ class RisingChannelConfig:
     # ==================== 环境配置 ====================
     ENVIRONMENTS = {
         "development": {
-            "max_stocks": 100,
+            "max_stocks": 1000,
             "description": "开发环境 - 快速验证策略逻辑",
-            "max_positions": 5,
+            "max_positions": 20,
         },
         "optimization": {
             "max_stocks": 500,
