@@ -167,7 +167,18 @@ class RisingChannelStrategy(BaseStrategy):
                     channel_state.channel_status != ChannelStatus.NORMAL):
 
                 reason = f"通道状态变化: {channel_state.channel_status.value if channel_state else 'None'}"
-                signal = self._create_sell_signal(stock_code, reason)
+                current_price = self.data_manager.get_stock_price(stock_code, self.current_date)
+                extras = {
+                    '通道状态': getattr(getattr(channel_state, 'channel_status', None), 'value', None),
+                    '斜率β': getattr(channel_state, 'beta', None),
+                    'R²': getattr(channel_state, 'r2', None),
+                    '今日中轴': getattr(channel_state, 'mid_today', None),
+                    '今日上沿': getattr(channel_state, 'upper_today', None),
+                    '今日下沿': getattr(channel_state, 'lower_today', None),
+                    '距下沿(%)': self._calculate_distance_to_lower(current_price, channel_state) if current_price and channel_state else None,
+                    '通道宽度': (getattr(channel_state, 'upper_today', None) - getattr(channel_state, 'lower_today', None)) if getattr(channel_state, 'upper_today', None) is not None and getattr(channel_state, 'lower_today', None) is not None else None,
+                }
+                signal = self._create_sell_signal(stock_code, reason, extra=extras)
                 if signal:
                     sell_signals.append(signal)
 
@@ -244,11 +255,24 @@ class RisingChannelStrategy(BaseStrategy):
 
             # 检查是否已经持仓
             if not self.position_manager.has_position(stock_code):
+                chs = stock_info['channel_state']
+                extras = {
+                    '通道状态': getattr(getattr(chs, 'channel_status', None), 'value', None),
+                    '通道评分': round(float(stock_info['score']), 2) if 'score' in stock_info and stock_info['score'] is not None else None,
+                    '斜率β': getattr(chs, 'beta', None),
+                    'R²': getattr(chs, 'r2', None),
+                    '今日中轴': getattr(chs, 'mid_today', None),
+                    '今日上沿': getattr(chs, 'upper_today', None),
+                    '今日下沿': getattr(chs, 'lower_today', None),
+                    '距下沿(%)': round(float(stock_info['distance_to_lower']), 2) if 'distance_to_lower' in stock_info and stock_info['distance_to_lower'] is not None else None,
+                    '通道宽度': (getattr(chs, 'upper_today', None) - getattr(chs, 'lower_today', None)) if getattr(chs, 'upper_today', None) is not None and getattr(chs, 'lower_today', None) is not None else None,
+                }
                 signal = self._create_buy_signal(
                     stock_code,
                     stock_info['current_price'],
                     f"通道NORMAL，价格位于通道内，距离下沿{stock_info['distance_to_lower']:.2f}% ，评分{stock_info['score']:.1f}",
-                    stock_info['score'] / 100.0
+                    stock_info['score'] / 100.0,
+                    extra=extras
                 )
                 buy_signals.append(signal)
 
@@ -285,28 +309,40 @@ class RisingChannelStrategy(BaseStrategy):
         Returns:
             距离下沿的百分比距离
         """
-        if not channel_state or not hasattr(channel_state, 'lower_today'):
-            # 如果没有下沿价格，使用配置的默认值
-            distance_config = RisingChannelConfig.get_distance_config()
+        distance_config = RisingChannelConfig.get_distance_config()
+
+        # 无通道或缺少下沿字段
+        if channel_state is None or not hasattr(channel_state, 'lower_today'):
             return distance_config['fallback_distance_no_state']
 
-        lower_price = channel_state.lower_today
-        if lower_price <= 0:
-            distance_config = RisingChannelConfig.get_distance_config()
+        # 取值并做None/类型保护
+        try:
+            lower_price_raw = getattr(channel_state, 'lower_today', None)
+            lower_price = float(lower_price_raw) if lower_price_raw is not None else None
+        except Exception:
+            lower_price = None
+
+        try:
+            current = float(current_price) if current_price is not None else None
+        except Exception:
+            current = None
+
+        # 下沿无效
+        if lower_price is None or lower_price <= 0:
             return distance_config['fallback_distance_invalid']
 
-        # 计算距离下沿的百分比
-        distance = (current_price - lower_price) / lower_price * 100
+        # 当前价格无效
+        if current is None or current <= 0:
+            return distance_config['min_distance_below_lower']
 
-        # 确保距离不为负数
+        # 计算距离
+        distance = (current - lower_price) / lower_price * 100
         if distance < 0:
-            distance_config = RisingChannelConfig.get_distance_config()
             distance = distance_config['min_distance_below_lower']
-
         return distance
 
     def _create_buy_signal(self, stock_code: str, price: float,
-                           reason: str, confidence: float) -> Dict[str, Any]:
+                           reason: str, confidence: float, extra: Dict[str, Any] | None = None) -> Dict[str, Any]:
         """
         创建买入信号
         
@@ -315,25 +351,30 @@ class RisingChannelStrategy(BaseStrategy):
             price: 价格
             reason: 买入原因
             confidence: 信心度
+            extra: 额外字段（如通道信息）
             
         Returns:
             买入信号字典
         """
-        return {
+        signal = {
             'action': 'BUY',
             'stock_code': stock_code,
             'price': price,
             'reason': reason,
             'confidence': confidence
         }
+        if extra:
+            signal.update(extra)
+        return signal
 
-    def _create_sell_signal(self, stock_code: str, reason: str) -> Dict[str, Any]:
+    def _create_sell_signal(self, stock_code: str, reason: str, extra: Dict[str, Any] | None = None) -> Dict[str, Any]:
         """
         创建卖出信号
         
         Args:
             stock_code: 股票代码
             reason: 卖出原因
+            extra: 额外字段（如通道信息）
             
         Returns:
             卖出信号字典，如果无法获取价格则返回None
@@ -343,13 +384,16 @@ class RisingChannelStrategy(BaseStrategy):
             self.logger.warning(f"无法获取股票 {stock_code} 的价格，跳过卖出")
             return None
 
-        return {
+        signal = {
             'action': 'SELL',
             'stock_code': stock_code,
             'price': price,
             'reason': reason,
             'confidence': 1.0  # 卖出信号通常是高信心度的
         }
+        if extra:
+            signal.update(extra)
+        return signal
 
     def _get_main_stock_code(self) -> str:
         """获取主数据源股票代码"""

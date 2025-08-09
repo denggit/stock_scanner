@@ -481,6 +481,26 @@ class ReportUtils:
             # 创建新的DataFrame，只包含指定的字段
             df_result = pd.DataFrame(result_data)
 
+            # 追加通道字段（放在收益率(%)之后）
+            channel_fields_in_order = [
+                '通道状态',
+                '通道评分',
+                '斜率β',
+                'R²',
+                '今日中轴',
+                '今日上沿',
+                '今日下沿',
+                '通道宽度',
+                '距下沿(%)',
+            ]
+
+            # 收集存在于原df中的通道字段
+            available_channel_fields = [f for f in channel_fields_in_order if f in df.columns]
+
+            # 将可用通道字段添加到结果df，并构建新的列顺序
+            for f in available_channel_fields:
+                df_result[f] = df[f]
+
             # 格式化数值列
             if '交易价格' in df_result.columns:
                 df_result['交易价格'] = pd.to_numeric(df_result['交易价格'], errors='coerce').round(2)
@@ -491,6 +511,14 @@ class ReportUtils:
             if '收益率(%)' in df_result.columns:
                 df_result['收益率(%)'] = pd.to_numeric(df_result['收益率(%)'], errors='coerce').round(2)
 
+            # 对通道数值列进行格式化
+            numeric_channel_fields = [
+                '通道评分', '斜率β', 'R²', '今日中轴', '今日上沿', '今日下沿', '通道宽度', '距下沿(%)'
+            ]
+            for f in available_channel_fields:
+                if f in numeric_channel_fields:
+                    df_result[f] = pd.to_numeric(df_result[f], errors='coerce').round(2)
+
             # 格式化日期列
             if '交易日期' in df_result.columns:
                 df_result['交易日期'] = pd.to_datetime(df_result['交易日期'], errors='coerce')
@@ -498,19 +526,27 @@ class ReportUtils:
 
             # 格式化整数列
             if '交易数量' in df_result.columns:
-                df_result['交易数量'] = pd.to_numeric(df_result['交易数量'], errors='coerce').fillna(0).astype('int64')
+                df_result['交易数量'] = pd.to_numeric(df_result['交易数量'], errors='coerce').fillna(0).astype(int)
+
+            # 重新排序列：确保通道字段位于“收益率(%)”之后
+            if available_channel_fields:
+                base_cols = list(df_result.columns)
+                if '收益率(%)' in base_cols:
+                    # 先移除已添加的通道列
+                    base_cols_no_channels = [c for c in base_cols if c not in available_channel_fields]
+                    insert_pos = base_cols_no_channels.index('收益率(%)') + 1
+                    new_cols = (
+                        base_cols_no_channels[:insert_pos]
+                        + available_channel_fields
+                        + base_cols_no_channels[insert_pos:]
+                    )
+                    df_result = df_result[new_cols]
 
             return df_result
 
         except Exception as e:
-            print(f"创建详细交易记录失败: {e}")
-            # 如果出错，返回原始数据的简化版本
-            try:
-                basic_df = pd.DataFrame(trades)
-                return basic_df
-            except Exception as e2:
-                print(f"创建基本交易记录也失败: {e2}")
-                return pd.DataFrame()
+            print(f"创建详细交易记录时出错: {e}")
+            return pd.DataFrame()
 
     @staticmethod
     def create_strategy_info_table(strategy_info: Dict[str, Any]) -> pd.DataFrame:

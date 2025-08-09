@@ -286,6 +286,7 @@ class BaseStrategy(bt.Strategy):
             self.position_manager.add_position(stock_code, shares, price, self.current_date)
 
             # 记录交易
+            extra_fields = {k: v for k, v in signal.items() if k not in ['action', 'stock_code', 'price', 'reason', 'confidence']}
             self.trade_logger.log_trade(
                 action='BUY',
                 stock_code=stock_code,
@@ -293,7 +294,8 @@ class BaseStrategy(bt.Strategy):
                 price=price,
                 date=self.current_date,
                 reason=signal.get('reason', ''),
-                confidence=signal.get('confidence', 0.0)
+                confidence=signal.get('confidence', 0.0),
+                **extra_fields
             )
 
             if self.params.enable_logging:
@@ -341,6 +343,7 @@ class BaseStrategy(bt.Strategy):
         self.position_manager.remove_position(stock_code)
 
         # 记录交易
+        extra_fields = {k: v for k, v in signal.items() if k not in ['action', 'stock_code', 'price', 'reason', 'confidence']}
         self.trade_logger.log_trade(
             action='SELL',
             stock_code=stock_code,
@@ -352,7 +355,8 @@ class BaseStrategy(bt.Strategy):
             returns=returns_pct,
             profit_amount=profit_amount,
             buy_price=buy_price,
-            holding_days=holding_days
+            holding_days=holding_days,
+            **extra_fields
         )
 
         if self.params.enable_logging:
