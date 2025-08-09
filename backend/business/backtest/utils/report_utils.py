@@ -541,9 +541,9 @@ class ReportUtils:
                     base_cols_no_channels = [c for c in base_cols if c not in available_channel_fields]
                     insert_pos = base_cols_no_channels.index('收益率(%)') + 1
                     new_cols = (
-                        base_cols_no_channels[:insert_pos]
-                        + available_channel_fields
-                        + base_cols_no_channels[insert_pos:]
+                            base_cols_no_channels[:insert_pos]
+                            + available_channel_fields
+                            + base_cols_no_channels[insert_pos:]
                     )
                     df_result = df_result[new_cols]
 
@@ -634,7 +634,8 @@ class ReportUtils:
                     if c in df_t.columns:
                         date_col = c
                         break
-                action_col = 'action' if 'action' in df_t.columns else ('交易动作' if '交易动作' in df_t.columns else None)
+                action_col = 'action' if 'action' in df_t.columns else (
+                    '交易动作' if '交易动作' in df_t.columns else None)
                 if date_col is not None and action_col is not None:
                     # 规范日期
                     dates = pd.to_datetime(df_t[date_col], errors='coerce').dt.date

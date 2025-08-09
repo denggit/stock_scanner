@@ -175,8 +175,13 @@ class RisingChannelStrategy(BaseStrategy):
                     '今日中轴': getattr(channel_state, 'mid_today', None),
                     '今日上沿': getattr(channel_state, 'upper_today', None),
                     '今日下沿': getattr(channel_state, 'lower_today', None),
-                    '距下沿(%)': self._calculate_distance_to_lower(current_price, channel_state) if current_price and channel_state else None,
-                    '通道宽度': (getattr(channel_state, 'upper_today', None) - getattr(channel_state, 'lower_today', None)) if getattr(channel_state, 'upper_today', None) is not None and getattr(channel_state, 'lower_today', None) is not None else None,
+                    '距下沿(%)': self._calculate_distance_to_lower(current_price,
+                                                                   channel_state) if current_price and channel_state else None,
+                    '通道宽度': (getattr(channel_state, 'upper_today', None) - getattr(channel_state, 'lower_today',
+                                                                                       None)) if getattr(channel_state,
+                                                                                                         'upper_today',
+                                                                                                         None) is not None and getattr(
+                        channel_state, 'lower_today', None) is not None else None,
                 }
                 signal = self._create_sell_signal(stock_code, reason, extra=extras)
                 if signal:
@@ -219,8 +224,10 @@ class RisingChannelStrategy(BaseStrategy):
                 continue
 
             # 要求价格在通道内：严格大于下沿，且不超过上沿
-            lower_ok = hasattr(channel_state, 'lower_today') and current_price > getattr(channel_state, 'lower_today', 0)
-            upper_ok = hasattr(channel_state, 'upper_today') and current_price <= getattr(channel_state, 'upper_today', float('inf'))
+            lower_ok = hasattr(channel_state, 'lower_today') and current_price > getattr(channel_state, 'lower_today',
+                                                                                         0)
+            upper_ok = hasattr(channel_state, 'upper_today') and current_price <= getattr(channel_state, 'upper_today',
+                                                                                          float('inf'))
             if not (lower_ok and upper_ok):
                 # 不在通道内，跳过
                 continue
@@ -258,14 +265,20 @@ class RisingChannelStrategy(BaseStrategy):
                 chs = stock_info['channel_state']
                 extras = {
                     '通道状态': getattr(getattr(chs, 'channel_status', None), 'value', None),
-                    '通道评分': round(float(stock_info['score']), 2) if 'score' in stock_info and stock_info['score'] is not None else None,
+                    '通道评分': round(float(stock_info['score']), 2) if 'score' in stock_info and stock_info[
+                        'score'] is not None else None,
                     '斜率β': getattr(chs, 'beta', None),
                     'R²': getattr(chs, 'r2', None),
                     '今日中轴': getattr(chs, 'mid_today', None),
                     '今日上沿': getattr(chs, 'upper_today', None),
                     '今日下沿': getattr(chs, 'lower_today', None),
-                    '距下沿(%)': round(float(stock_info['distance_to_lower']), 2) if 'distance_to_lower' in stock_info and stock_info['distance_to_lower'] is not None else None,
-                    '通道宽度': (getattr(chs, 'upper_today', None) - getattr(chs, 'lower_today', None)) if getattr(chs, 'upper_today', None) is not None and getattr(chs, 'lower_today', None) is not None else None,
+                    '距下沿(%)': round(float(stock_info['distance_to_lower']),
+                                       2) if 'distance_to_lower' in stock_info and stock_info[
+                        'distance_to_lower'] is not None else None,
+                    '通道宽度': (getattr(chs, 'upper_today', None) - getattr(chs, 'lower_today', None)) if getattr(chs,
+                                                                                                                   'upper_today',
+                                                                                                                   None) is not None and getattr(
+                        chs, 'lower_today', None) is not None else None,
                 }
                 signal = self._create_buy_signal(
                     stock_code,

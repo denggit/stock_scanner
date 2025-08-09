@@ -5,12 +5,13 @@
 使用观察者模式分析回测结果
 """
 
-import logging
 from datetime import datetime
 from typing import Dict, Any, List
 
 import backtrader as bt
 import numpy as np
+
+from backend.utils.logger import setup_logger
 
 
 class ResultAnalyzer:
@@ -24,7 +25,7 @@ class ResultAnalyzer:
         self.analyzers = {}
         self.results = {}
         # 添加日志记录器
-        self.logger = logging.getLogger("backtest")
+        self.logger = setup_logger("backtest")
 
     def add_analyzer(self, name: str, analyzer_class, **kwargs):
         """

@@ -18,9 +18,9 @@
 - 支持多种通道状态监控
 """
 
-from .rising_channel import AscendingChannelRegression
 from .channel_state import ChannelState
 from .pivot_detector import PivotDetector
+from .rising_channel import AscendingChannelRegression
 
 __all__ = [
     'AscendingChannelRegression',

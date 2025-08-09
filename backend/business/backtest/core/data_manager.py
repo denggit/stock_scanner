@@ -5,11 +5,12 @@
 使用单例模式管理回测数据
 """
 
-import logging
 from typing import Dict, Any, Optional, List
 
 import backtrader as bt
 import pandas as pd
+
+from backend.utils.logger import setup_logger
 
 
 class DataManager:
@@ -33,7 +34,7 @@ class DataManager:
             return
 
         # 统一使用backtest主日志记录器，便于全局日志管理和追踪
-        self.logger = logging.getLogger("backtest")
+        self.logger = setup_logger("backtest")
         self.data_cache = {}
         self._initialized = True
 

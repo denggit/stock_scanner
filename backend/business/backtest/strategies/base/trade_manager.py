@@ -6,12 +6,12 @@
 使用策略模式处理不同的资金分配策略
 """
 
-import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 
-from .position_manager import PositionManager
 from backend.business.backtest.core.trading_rules import AShareTradingRules
+from backend.utils.logger import setup_logger
+from .position_manager import PositionManager
 
 
 class FundAllocationStrategy(ABC):
@@ -132,7 +132,7 @@ class TradeManager:
         """
         self.broker = broker
         self.position_manager = position_manager or PositionManager()
-        self.logger = logging.getLogger("backtest")
+        self.logger = setup_logger("backtest")
 
         # 资金分配策略（默认使用等权重）
         self.allocation_strategy = EqualWeightAllocation()

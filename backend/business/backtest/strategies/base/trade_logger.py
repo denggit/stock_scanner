@@ -6,9 +6,10 @@
 提供详细的交易数据记录和查询功能
 """
 
-import logging
 from datetime import datetime
 from typing import Dict, List, Any, Optional
+
+from backend.utils.logger import setup_logger
 
 
 class TradeLogger:
@@ -31,7 +32,7 @@ class TradeLogger:
         self.trade_count = 0
 
         # 日志记录器
-        self.logger = logging.getLogger("backtest")
+        self.logger = setup_logger("backtest")
 
         # 交易统计
         self.statistics = {

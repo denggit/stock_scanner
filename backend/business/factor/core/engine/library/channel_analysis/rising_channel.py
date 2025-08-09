@@ -270,7 +270,7 @@ class HistoryCalculationTemplate:
                     # 计算通道宽度百分比
                     if result.state.mid_today and result.state.mid_today > 0:
                         base_record['width_pct'] = (
-                                                               result.state.upper_today - result.state.lower_today) / result.state.mid_today
+                                                           result.state.upper_today - result.state.lower_today) / result.state.mid_today
                     # 计算斜率角度
                     if result.beta:
                         base_record['slope_deg'] = np.degrees(np.arctan(result.beta))
@@ -303,7 +303,7 @@ class HistoryCalculationTemplate:
                 'reanchor_fail_down': state.reanchor_fail_down,
                 'break_reason': None,  # 有效通道没有break_reason
                 'width_pct': (
-                                         state.upper_today - state.lower_today) / state.mid_today if state.mid_today and state.mid_today > 0 else None,
+                                     state.upper_today - state.lower_today) / state.mid_today if state.mid_today and state.mid_today > 0 else None,
                 'slope_deg': np.degrees(np.arctan(result.beta)) if result.beta else None,
                 'volatility': result.sigma / state.mid_today if result.sigma and state.mid_today and state.mid_today > 0 else None
             })

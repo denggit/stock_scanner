@@ -6,17 +6,17 @@
 提供可复用的基础策略功能
 """
 
-import logging
 from typing import Dict, Any, List
 
 import backtrader as bt
 import pandas as pd
 
+from backend.business.backtest.core.trading_rules import is_trade_blocked_by_price_limit
+from backend.utils.logger import setup_logger
 from .data_manager import DataManager
 from .position_manager import PositionManager
 from .trade_logger import TradeLogger
 from .trade_manager import TradeManager
-from backend.business.backtest.core.trading_rules import is_trade_blocked_by_price_limit
 
 
 class BaseStrategy(bt.Strategy):
@@ -48,7 +48,7 @@ class BaseStrategy(bt.Strategy):
         super().__init__()
 
         # 设置日志记录器
-        self.logger = logging.getLogger("backtest")
+        self.logger = setup_logger("backtest")
 
         # 初始化各个管理器
         self._init_managers()
@@ -286,7 +286,8 @@ class BaseStrategy(bt.Strategy):
             self.position_manager.add_position(stock_code, shares, price, self.current_date)
 
             # 记录交易
-            extra_fields = {k: v for k, v in signal.items() if k not in ['action', 'stock_code', 'price', 'reason', 'confidence']}
+            extra_fields = {k: v for k, v in signal.items() if
+                            k not in ['action', 'stock_code', 'price', 'reason', 'confidence']}
             self.trade_logger.log_trade(
                 action='BUY',
                 stock_code=stock_code,
@@ -343,7 +344,8 @@ class BaseStrategy(bt.Strategy):
         self.position_manager.remove_position(stock_code)
 
         # 记录交易
-        extra_fields = {k: v for k, v in signal.items() if k not in ['action', 'stock_code', 'price', 'reason', 'confidence']}
+        extra_fields = {k: v for k, v in signal.items() if
+                        k not in ['action', 'stock_code', 'price', 'reason', 'confidence']}
         self.trade_logger.log_trade(
             action='SELL',
             stock_code=stock_code,

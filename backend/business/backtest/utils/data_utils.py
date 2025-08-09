@@ -11,6 +11,8 @@ from typing import Dict, Any, Optional
 import numpy as np
 import pandas as pd
 
+from backend.utils.logger import setup_logger
+
 # 导入数据获取器
 try:
     from backend.business.data.data_fetcher import StockDataFetcher
@@ -67,7 +69,7 @@ class DataUtils:
             raise ImportError("无法导入StockDataFetcher，请确保数据模块可用")
 
         # 统一使用backtest主日志记录器，便于全局日志管理和追踪
-        logger = logging.getLogger("backtest")
+        logger = setup_logger("backtest")
         data_fetcher = StockDataFetcher()
 
         # 设置默认日期

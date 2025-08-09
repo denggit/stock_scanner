@@ -123,7 +123,7 @@ class ChannelState:
             "last_update": pd.Timestamp(self.last_update).isoformat(),
             "window_size": len(self.window_df) if hasattr(self, 'window_df') and not self.window_df.empty else 0,
             "days_since_anchor": (
-                        self.last_update - self.anchor_date).days if self.last_update and self.anchor_date else None,
+                    self.last_update - self.anchor_date).days if self.last_update and self.anchor_date else None,
             "width_pct": width_pct,  # 通道宽度百分比
             "slope_deg": slope_deg,  # 斜率角度
             "volatility": volatility  # 波动率

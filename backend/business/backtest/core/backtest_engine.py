@@ -5,11 +5,11 @@
 使用工厂模式管理回测流程
 """
 
-import logging
 from typing import Dict, Any, Optional, List, Type
 
 import backtrader as bt
 
+from backend.utils.logger import setup_logger
 from .base_strategy import BaseStrategy
 from .data_manager import DataManager
 from .result_analyzer import ResultAnalyzer
@@ -36,7 +36,7 @@ class BacktestEngine:
         self.data_manager = DataManager()
         self.result_analyzer = ResultAnalyzer()
         # 统一使用backtest主日志记录器，便于全局日志管理和追踪
-        self.logger = logging.getLogger("backtest")
+        self.logger = setup_logger("backtest")
 
         # 初始化分析器
         self._init_analyzers()
@@ -48,7 +48,8 @@ class BacktestEngine:
         self.result_analyzer.add_analyzer('returns', bt.analyzers.Returns, _name='returns')
         self.result_analyzer.add_analyzer('trades', bt.analyzers.TradeAnalyzer, _name='trades')
         # 增加日频收益分析器，便于构建每日收益表
-        self.result_analyzer.add_analyzer('timereturn', bt.analyzers.TimeReturn, _name='timereturn', timeframe=bt.TimeFrame.Days)
+        self.result_analyzer.add_analyzer('timereturn', bt.analyzers.TimeReturn, _name='timereturn',
+                                          timeframe=bt.TimeFrame.Days)
 
     def add_data(self, data, name: str = "data") -> None:
         """

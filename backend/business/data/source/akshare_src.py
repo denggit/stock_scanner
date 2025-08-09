@@ -11,8 +11,8 @@ import logging
 import akshare as ak
 import pandas as pd
 
-from .base import DataSource
 from backend.utils import format_info
+from .base import DataSource
 
 
 class AKShareSource(DataSource):

@@ -6,7 +6,6 @@
 提供统一的通道分析接口
 """
 
-import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Dict, Any, Optional, List
@@ -14,6 +13,7 @@ from typing import Dict, Any, Optional, List
 import pandas as pd
 
 from backend.business.factor.core.engine.library.channel_analysis.channel_state import ChannelStatus
+from backend.utils.logger import setup_logger
 
 
 class ChannelAnalyzerInterface(ABC):
@@ -50,7 +50,7 @@ class MockChannelAnalyzer(ChannelAnalyzerInterface):
             **params: 分析器参数
         """
         self.params = params
-        self.logger = logging.getLogger("backtest")
+        self.logger = setup_logger("backtest")
 
     def fit_channel(self, data: pd.DataFrame) -> 'MockChannelState':
         """
@@ -119,7 +119,7 @@ class RealChannelAnalyzer(ChannelAnalyzerInterface):
             **params: 分析器参数
         """
         self.params = params
-        self.logger = logging.getLogger("backtest")
+        self.logger = setup_logger("backtest")
         self._analyzer = None
         self._init_analyzer()
 
@@ -218,7 +218,7 @@ class ChannelAnalyzerManager:
             analyzer_type: 分析器类型
             **analyzer_params: 分析器参数
         """
-        self.logger = logging.getLogger("backtest")
+        self.logger = setup_logger("backtest")
 
         # 创建分析器
         self.analyzer = ChannelAnalyzerFactory.create_analyzer(analyzer_type, **analyzer_params)

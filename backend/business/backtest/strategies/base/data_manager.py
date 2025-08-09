@@ -6,12 +6,13 @@
 使用观察者模式通知数据更新
 """
 
-import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 
 import pandas as pd
+
+from backend.utils.logger import setup_logger
 
 
 class DataObserver(ABC):
@@ -47,7 +48,7 @@ class DataCache:
         """
         self.max_cache_size = max_cache_size
         self._cache = {}  # {股票代码: 数据列表}
-        self.logger = logging.getLogger("backtest")
+        self.logger = setup_logger("backtest")
 
     def add_data(self, stock_code: str, data_record: Dict[str, Any]):
         """
@@ -140,7 +141,7 @@ class DataManager:
         self.observers = []
 
         # 日志记录器
-        self.logger = logging.getLogger("backtest")
+        self.logger = setup_logger("backtest")
 
         # 数据统计
         self.data_stats = {

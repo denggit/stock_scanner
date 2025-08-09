@@ -186,7 +186,8 @@ class AShareTradingRules:
         }
 
 
-def is_trade_blocked_by_price_limit(current_price: float, reference_price: float, action: str, is_st: bool = False) -> bool:
+def is_trade_blocked_by_price_limit(current_price: float, reference_price: float, action: str,
+                                    is_st: bool = False) -> bool:
     """
     纯函数：基于涨跌停规则判断是否应拦截交易
     
@@ -254,7 +255,6 @@ if bt is not None:
             # 印花税：仅卖出时收取
             stamp_tax = trade_value * float(self.p.stamp_tax_rate) if size < 0 else 0.0
             return commission + transfer_fee + stamp_tax
-
 
 # 全局交易规则实例
 ASHARE_RULES = AShareTradingRules()

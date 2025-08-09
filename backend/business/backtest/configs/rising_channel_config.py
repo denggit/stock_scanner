@@ -19,9 +19,9 @@ class RisingChannelConfig:
     # ==================== 环境配置 ====================
     ENVIRONMENTS = {
         "development": {
-            "max_stocks": 100,
+            "max_stocks": None,
             "description": "开发环境 - 快速验证策略逻辑",
-            "max_positions": 5,
+            "max_positions": 20,
         },
         "optimization": {
             "max_stocks": 500,
@@ -31,12 +31,12 @@ class RisingChannelConfig:
         "production": {
             "max_stocks": None,  # 不限制
             "description": "生产环境 - 全量股票回测",
-            "max_positions": 50,  # 默认值
+            "max_positions": 20,  # 默认值
         },
         "full_backtest": {
             "max_stocks": None,
             "description": "完整回测 - 大量股票测试",
-            "max_positions": 50,
+            "max_positions": 20,
         }
     }
 
@@ -45,7 +45,7 @@ class RisingChannelConfig:
         'initial_cash': 200000.0,  # 初始资金20万
         'commission': 0.0003,  # 手续费率
         'stock_pool': 'no_st',  # 股票池：非ST股票
-        'start_date': '2024-01-01',  # 开始日期
+        'start_date': '2020-01-01',  # 开始日期
         'end_date': datetime.today().strftime("%Y-%m-%d"),  # 结束日期
         'min_data_days': 120  # 最小数据天数
     }
@@ -64,11 +64,11 @@ class RisingChannelConfig:
 
     # ==================== 参数优化范围 ====================
     OPTIMIZATION_RANGES = {
-        'max_positions': [30, 50, 70],  # 持仓数量范围
-        'min_channel_score': [50.0, 60.0, 70.0],  # 通道评分范围
-        'k': [1.5, 2.0, 2.5],  # 通道斜率范围
+        'max_positions': [5, 10, 20],  # 持仓数量范围
+        'min_channel_score': [60.0],  # 通道评分范围
+        # 'k': [1.5, 2.0, 2.5],  # 通道斜率范围
         'gain_trigger': [0.25, 0.30, 0.35],  # 收益触发阈值范围
-        'R2_min': [0.15, 0.20, 0.25],  # 最小R²值范围
+        # 'R2_min': [0.15, 0.20, 0.25],  # 最小R²值范围
         'width_pct_min': [0.03, 0.04, 0.05]  # 最小通道宽度范围
     }
 
@@ -125,7 +125,7 @@ class RisingChannelConfig:
 
     # ==================== 优化配置 ====================
     OPTIMIZATION_CONFIG = {
-        'max_stocks_for_optimization': 20,  # 优化时使用的股票数量
+        'max_stocks_for_optimization': 500,  # 优化时使用的股票数量
         'target_metric': 'total_return',  # 优化目标指标
     }
 
