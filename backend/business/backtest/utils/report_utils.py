@@ -823,6 +823,29 @@ class ReportUtils:
                         returns = sell_trade['收益率']
                     
                     # 提取通道数据（从买入交易）
+                    buy_mid = buy_trade.get('今日中轴')
+                    buy_upper = buy_trade.get('今日上沿')
+                    buy_lower = buy_trade.get('今日下沿')
+
+                    # 计算通道宽度（绝对值）
+                    width_abs = None
+                    try:
+                        if buy_upper is not None and buy_lower is not None:
+                            width_abs = float(buy_upper) - float(buy_lower)
+                        elif buy_trade.get('通道宽度') is not None:
+                            width_abs = float(buy_trade.get('通道宽度'))
+                    except Exception:
+                        width_abs = None
+
+                    # 计算通道宽度（百分比） = (上沿-下沿)/中轴 * 100
+                    width_pct = None
+                    try:
+                        if buy_mid is not None and buy_mid:
+                            if buy_upper is not None and buy_lower is not None:
+                                width_pct = (float(buy_upper) - float(buy_lower)) / float(buy_mid) * 100.0
+                    except Exception:
+                        width_pct = None
+
                     record = {
                         '买入日期': buy_date,
                         '卖出日期': sell_date,
@@ -833,10 +856,11 @@ class ReportUtils:
                         '通道评分': buy_trade.get('通道评分', ''),
                         '斜率β': buy_trade.get('斜率β', ''),
                         'R²': buy_trade.get('R²', ''),
-                        '买入中轴': round(buy_trade.get('今日中轴', 0), 2) if buy_trade.get('今日中轴') else '',
-                        '买入下沿': round(buy_trade.get('今日下沿', 0), 2) if buy_trade.get('今日下沿') else '',
-                        '买入上沿': round(buy_trade.get('今日上沿', 0), 2) if buy_trade.get('今日上沿') else '',
-                        '通道宽度': round(buy_trade.get('通道宽度', 0), 2) if buy_trade.get('通道宽度') else '',
+                        '买入中轴': round(buy_mid, 2) if buy_mid else '',
+                        '买入下沿': round(buy_lower, 2) if buy_lower else '',
+                        '买入上沿': round(buy_upper, 2) if buy_upper else '',
+                        '通道宽度(绝对值)': round(width_abs, 2) if width_abs is not None else '',
+                        '通道宽度(%)': round(width_pct, 2) if width_pct is not None else '',
                         '距下沿(%)': buy_trade.get('距下沿(%)', ''),
                     }
                     

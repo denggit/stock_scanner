@@ -251,6 +251,10 @@ class HistoryCalculationTemplate:
         if not result.is_valid:
             # 无效通道
             if result.anchor_date is not None:
+                # 计算累计涨幅（如果有anchor_price）
+                cumulative_gain = None
+                if result.anchor_price is not None and result.anchor_price > 0:
+                    cumulative_gain = (current_close - result.anchor_price) / result.anchor_price
                 base_record.update({
                     'anchor_date': result.anchor_date,
                     'anchor_price': result.anchor_price,
@@ -259,7 +263,8 @@ class HistoryCalculationTemplate:
                     'r2': result.r2,
                     'window_size': len(result.window_df) if not result.window_df.empty else None,
                     'days_since_anchor': (current_date - result.anchor_date).days if result.anchor_date else None,
-                    'break_reason': result.break_reason
+                    'break_reason': result.break_reason,
+                    'cumulative_gain': cumulative_gain
                 })
                 if result.state:
                     base_record.update({
@@ -419,6 +424,9 @@ class AscendingChannelRegression:
 
         if not result.is_valid:
             # 返回BROKEN状态
+            cumulative_gain = None
+            if result.anchor_price is not None and result.anchor_price > 0:
+                cumulative_gain = (current_close - result.anchor_price) / result.anchor_price
             state = ChannelState(
                 anchor_date=result.anchor_date, anchor_price=result.anchor_price,
                 window_df=result.window_df, beta=result.beta, sigma=result.sigma,
@@ -429,7 +437,8 @@ class AscendingChannelRegression:
                 mid_tomorrow=result.state.mid_tomorrow if result.state else None,
                 upper_tomorrow=result.state.upper_tomorrow if result.state else None,
                 lower_tomorrow=result.state.lower_tomorrow if result.state else None,
-                channel_status=ChannelStatus.BROKEN
+                channel_status=ChannelStatus.BROKEN,
+                cumulative_gain=cumulative_gain
             )
             return state
 
