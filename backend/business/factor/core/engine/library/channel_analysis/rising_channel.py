@@ -82,7 +82,7 @@ class StandardChannelStrategy(ChannelCalculationStrategy):
             )
 
         # 2. 全局pivot_low锚点查找
-        search_df = df.tail(config['L_max']).copy()
+        search_df = df.tail(config['L_max'])
         pivots = self.pivot_detector.get_anchor_candidates(search_df, n_candidates=20)
         today = search_df['trade_date'].iloc[-1]
         valid_pivots = [(d, p) for d, p in pivots if (today - pd.to_datetime(d)).days >= config['min_data_points']]
@@ -97,7 +97,7 @@ class StandardChannelStrategy(ChannelCalculationStrategy):
         # 3. 选择最早最低锚点
         anchor_date, anchor_price = min(valid_pivots, key=lambda x: x[1])
         anchor_date = pd.to_datetime(anchor_date)
-        window_df = df[df['trade_date'] >= anchor_date].copy()
+        window_df = df[df['trade_date'] >= anchor_date]
 
         # 4. 回归计算
         beta, sigma, r2 = self._calculate_regression(window_df, anchor_date)
@@ -179,7 +179,7 @@ class HistoryCalculationTemplate:
         with self._suppress_logs():
             # 主循环
             for i in range(min_window_size, len(df), step_days):
-                current_df = df.iloc[:i + 1].copy()
+                current_df = df.iloc[:i + 1]
                 current_date = current_df.iloc[-1]['trade_date']
                 current_close = current_df.iloc[-1]['close']
 
@@ -813,7 +813,7 @@ class AscendingChannelRegression:
 
         last_history_idx = last_history_idx[0]
         start_idx = max(0, last_history_idx - window_size + 1)
-        window_df = original_df.iloc[start_idx:last_history_idx + 1].copy()
+        window_df = original_df.iloc[start_idx:last_history_idx + 1]
 
         if len(window_df) != window_size:
             logger.warning(f"窗口大小不匹配: 期望 {window_size}, 实际 {len(window_df)}")

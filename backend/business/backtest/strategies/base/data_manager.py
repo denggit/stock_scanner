@@ -254,7 +254,7 @@ class DataManager:
         if stock_code not in self.stock_data:
             return None
 
-        stock_df = self.stock_data[stock_code].copy()
+        stock_df = self.stock_data[stock_code]
 
         # 确保date是datetime类型
         if isinstance(date, datetime):
@@ -265,7 +265,7 @@ class DataManager:
             target_datetime = pd.to_datetime(date).to_pydatetime()
 
         # 过滤到指定日期之前的数据
-        filtered_df = stock_df[stock_df['trade_date'] <= target_datetime.date()].copy()
+        filtered_df = stock_df[stock_df['trade_date'] <= target_datetime.date()]
 
         if len(filtered_df) < min_data_points:
             self.logger.debug(f"股票 {stock_code} 数据不足: {len(filtered_df)} < {min_data_points}")

@@ -184,7 +184,7 @@ class PivotDetector:
             Optional[Tuple[pd.Timestamp, float]]: (日期, 价格) 或 None
         """
         # 只考虑当前锚点之后的数据
-        recent_df = df[df['trade_date'] > current_anchor_date].copy()
+        recent_df = df[df['trade_date'] > current_anchor_date]
 
         if len(recent_df) < self.pivot_m * 2:
             logger.warning("重锚数据不足")
@@ -207,7 +207,7 @@ class PivotDetector:
             bool: 锚点是否有效
         """
         # 检查锚点后的价格走势
-        future_df = df[df['trade_date'] > anchor_date].copy()
+        future_df = df[df['trade_date'] > anchor_date]
 
         if len(future_df) < 10:  # 至少需要10个交易日的数据
             return False

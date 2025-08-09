@@ -17,6 +17,133 @@ class ReportUtils:
     """
 
     @staticmethod
+    def _build_equity_series(results: Dict[str, Any]) -> pd.DataFrame:
+        """
+        基于 daily_returns 重建权益曲线
+        返回包含两列：'return'(日收益小数) 与 'equity'(权益数值)
+        优先读取 metrics['初始资金'] 作为初始权益，否则回退为 1.0
+        """
+        daily_ret_map = results.get('daily_returns') or {}
+        if not daily_ret_map:
+            return pd.DataFrame(columns=['return', 'equity'])
+
+        # 解析初始资金
+        init_equity = 1.0
+        metrics = results.get('metrics') or {}
+        if metrics:
+            try:
+                init_equity = float(metrics.get('初始资金', init_equity))
+            except Exception:
+                pass
+
+        # 构造日收益序列
+        try:
+            ser = pd.Series(daily_ret_map)
+            # 索引转为 datetime
+            ser.index = pd.to_datetime(ser.index)
+            ser = ser.sort_index()
+            ser = ser.astype(float)
+        except Exception:
+            # 退化处理：尝试把 key 当作日期字符串
+            keys = list(daily_ret_map.keys())
+            vals = [float(daily_ret_map[k]) for k in keys]
+            ser = pd.Series(vals, index=pd.to_datetime(keys)).sort_index()
+
+        equity = (1.0 + ser).cumprod() * init_equity
+        df = pd.DataFrame({'return': ser, 'equity': equity})
+        return df
+
+    @staticmethod
+    def _aggregate_period_returns(results: Dict[str, Any], trades: List[Dict],
+                                  period_col_name: str, period_code: str) -> pd.DataFrame:
+        """
+        基于权益曲线聚合周期收益（与整体业绩一致），必要时回退到卖出交易聚合。
+        period_code: 'W' 周, 'M' 月, 'Y' 年
+        """
+        eq = ReportUtils._build_equity_series(results)
+        if not eq.empty:
+            # 构建周期标签
+            eq = eq.copy()
+            eq[period_col_name] = eq.index.to_period(period_code)
+
+            rows = []
+            for period, g in eq.groupby(period_col_name):
+                start_equity = g['equity'].iloc[0]
+                end_equity = g['equity'].iloc[-1]
+                period_return = (end_equity / start_equity - 1.0) * 100.0 if start_equity > 0 else 0.0
+                avg_daily = g['return'].mean() * 100.0 if len(g) > 0 else 0.0
+
+                # 交易统计（可选）
+                trade_cnt = 0
+                total_value = 0.0
+                invested_capital = 0.0
+                returned_capital = 0.0
+                if trades:
+                    df_t = pd.DataFrame(trades)
+                    # 日期列
+                    date_col = None
+                    for c in ['date', '交易日期']:
+                        if c in df_t.columns:
+                            date_col = c
+                            break
+                    if date_col is not None:
+                        df_t = df_t.copy()
+                        df_t['__date__'] = pd.to_datetime(df_t[date_col], errors='coerce')
+                        df_t.dropna(subset=['__date__'], inplace=True)
+                        df_t['__period__'] = df_t['__date__'].dt.to_period(period_code)
+                        gtr = df_t[df_t['__period__'] == period]
+                        # 仅卖出交易用于金额和投资估算
+                        if 'action' in gtr.columns:
+                            g_sell = gtr[gtr['action'] == 'SELL']
+                        else:
+                            g_sell = gtr
+                        trade_cnt = int(len(g_sell))
+                        if trade_cnt > 0:
+                            # 交易金额
+                            for vc in ['value', '交易金额']:
+                                if vc in g_sell.columns:
+                                    total_value = float(pd.to_numeric(g_sell[vc], errors='coerce').fillna(0).sum())
+                                    break
+                            # 投入/收回资本估算
+                            returns_col = None
+                            for rc in ['returns', '收益率', '收益率(%)']:
+                                if rc in g_sell.columns:
+                                    returns_col = rc
+                                    break
+                            if returns_col is not None:
+                                for _, r in g_sell.iterrows():
+                                    try:
+                                        v = float(r.get('value', r.get('交易金额', 0)) or 0)
+                                        rr = float(r.get(returns_col, 0) or 0)
+                                    except Exception:
+                                        v, rr = 0.0, 0.0
+                                    invested = v / (1 + rr / 100.0) if rr != -100 else v
+                                    invested_capital += invested
+                                    returned_capital += v
+
+                rows.append({
+                    period_col_name: str(period),
+                    '交易次数': trade_cnt,
+                    '总收益率': round(period_return, 2),
+                    '平均收益率': round(avg_daily, 2),
+                    '交易金额': round(total_value, 2),
+                    '投入资本': round(invested_capital, 2),
+                    '收回资本': round(returned_capital, 2),
+                })
+
+            return pd.DataFrame(rows)
+
+        # 回退：无 daily_returns 时，仍按卖出交易粗略聚合（与原实现一致）
+        if period_code == 'M':
+            return ReportUtils.create_monthly_returns(trades)
+        if period_code == 'W':
+            return ReportUtils.create_weekly_returns(trades)
+        if period_code == 'Y':
+            # 退化汇总（基于交易），与月/周类似
+            return ReportUtils.create_yearly_returns(trades)
+        return pd.DataFrame()
+
+    @staticmethod
     def create_performance_summary(results: Dict[str, Any]) -> pd.DataFrame:
         """
         创建性能汇总表
@@ -142,113 +269,46 @@ class ReportUtils:
         Returns:
             月度收益表
         """
-        if not trades:
-            return pd.DataFrame()
+        # 为保持向后兼容，这里仍支持仅传 trades 的老签名
+        results_like = {'daily_returns': {}, 'metrics': {}, 'trades': trades}
+        return ReportUtils._aggregate_period_returns(results_like, trades, '月份', 'M')
 
-        try:
-            df = pd.DataFrame(trades)
+    @staticmethod
+    def create_weekly_returns(trades: List[Dict]) -> pd.DataFrame:
+        """
+        创建周度收益表
+        
+        说明：
+        - 基于 SELL 交易，按周聚合；
+        - 周定义采用 pandas Period('W')（自然周），输出字符串化的周标识；
+        - 同月度收益一致，包含总收益率（基于总资本变化）、平均收益率、交易金额、投入资本、收回资本。
+        
+        Args:
+            trades: 交易记录列表
+        
+        Returns:
+            周度收益表 DataFrame
+        """
+        results_like = {'daily_returns': {}, 'metrics': {}, 'trades': trades}
+        return ReportUtils._aggregate_period_returns(results_like, trades, '周', 'W')
 
-            # 兼容不同的列名
-            returns_col = None
-            for col in ['returns', '收益率', '收益率(%)']:
-                if col in df.columns:
-                    returns_col = col
-                    break
-
-            if returns_col is None:
-                return pd.DataFrame()
-
-            sell_trades = df[df['action'] == 'SELL'].copy()
-
-            if len(sell_trades) == 0:
-                return pd.DataFrame()
-
-            # 转换日期格式
-            date_col = None
-            for col in ['date', '交易日期']:
-                if col in sell_trades.columns:
-                    date_col = col
-                    break
-
-            if date_col is None:
-                return pd.DataFrame()
-
-            sell_trades['date'] = pd.to_datetime(sell_trades[date_col])
-            sell_trades['month'] = sell_trades['date'].dt.to_period('M')
-
-            # 按月度汇总 - 基于总资本变化计算总收益率
-            monthly_data = []
-
-            for month, group in sell_trades.groupby('month'):
-                # 获取交易金额列
-                value_col = None
-                for col in ['value', '交易金额']:
-                    if col in group.columns:
-                        value_col = col
-                        break
-
-                if not value_col:
-                    continue
-
-                # 计算总资本变化
-                total_capital_invested = 0  # 总投入资本
-                total_capital_returned = 0  # 总收回资本
-
-                for _, trade in group.iterrows():
-                    trade_value = trade.get(value_col, 0)
-                    trade_return = trade.get(returns_col, 0)
-
-                    if trade_value > 0 and trade_return is not None:
-                        # 根据收益率计算投入资本
-                        # 收益率 = (卖出价格 - 买入价格) / 买入价格
-                        # 投入资本 = 交易金额 / (1 + 收益率/100)
-                        if trade_return != -100:  # 避免除零错误
-                            invested_capital = trade_value / (1 + trade_return / 100)
-                        else:
-                            # 如果收益率是-100%，说明全部亏损
-                            invested_capital = trade_value
-
-                        total_capital_invested += invested_capital
-                        total_capital_returned += trade_value
-
-                # 计算基于总资本的总收益率
-                if total_capital_invested > 0:
-                    total_return_rate = ((
-                                                 total_capital_returned - total_capital_invested) / total_capital_invested) * 100
-                else:
-                    total_return_rate = 0
-
-                # 计算平均收益率（基于单笔交易收益率）
-                avg_return_rate = group[returns_col].mean() if returns_col in group.columns else 0
-
-                month_data = {
-                    '月份': str(month),
-                    '交易次数': len(group),
-                    '总收益率': total_return_rate,  # 基于总资本变化
-                    '平均收益率': avg_return_rate,  # 基于单笔交易收益率
-                    '交易金额': group[value_col].sum() if value_col else 0,
-                    '投入资本': total_capital_invested,  # 新增：显示投入资本
-                    '收回资本': total_capital_returned  # 新增：显示收回资本
-                }
-
-                monthly_data.append(month_data)
-
-            if monthly_data:
-                result_df = pd.DataFrame(monthly_data)
-                # 格式化数值
-                numeric_cols = ['总收益率', '平均收益率', '交易金额', '投入资本', '收回资本']
-                for col in numeric_cols:
-                    if col in result_df.columns:
-                        result_df[col] = pd.to_numeric(result_df[col], errors='coerce').round(2)
-
-                return result_df
-            else:
-                return pd.DataFrame()
-
-        except Exception as e:
-            # 如果处理失败，返回空的DataFrame
-            print(f"创建月度收益表时出错: {e}")
-            return pd.DataFrame()
+    @staticmethod
+    def create_yearly_returns(trades: List[Dict]) -> pd.DataFrame:
+        """
+        创建年度收益表
+        
+        说明：
+        - 基于 SELL 交易，按年聚合（自然年，Period('Y')）；
+        - 指标与月度/周度一致：总收益率（基于总资本变化）、平均收益率、交易金额、投入资本、收回资本。
+        
+        Args:
+            trades: 交易记录列表
+        
+        Returns:
+            年度收益表 DataFrame
+        """
+        results_like = {'daily_returns': {}, 'metrics': {}, 'trades': trades}
+        return ReportUtils._aggregate_period_returns(results_like, trades, '年度', 'Y')
 
     @staticmethod
     def plot_performance_comparison(strategy_results: Dict[str, Dict],
@@ -392,9 +452,20 @@ class ReportUtils:
                         trade_summary.to_excel(writer, sheet_name='交易汇总', index=False)
 
                     # 月度收益表
-                    monthly_returns = ReportUtils.create_monthly_returns(trades)
+                    # 优先基于权益曲线聚合，保持与整体业绩一致
+                    monthly_returns = ReportUtils._aggregate_period_returns(results, trades, '月份', 'M')
                     if not monthly_returns.empty:
                         monthly_returns.to_excel(writer, sheet_name='月度收益', index=False)
+
+                    # 周度收益表
+                    weekly_returns = ReportUtils._aggregate_period_returns(results, trades, '周', 'W')
+                    if not weekly_returns.empty:
+                        weekly_returns.to_excel(writer, sheet_name='周度收益', index=False)
+
+                    # 年度收益表（新增）
+                    yearly_returns = ReportUtils._aggregate_period_returns(results, trades, '年度', 'Y')
+                    if not yearly_returns.empty:
+                        yearly_returns.to_excel(writer, sheet_name='年度收益', index=False)
 
                     # 详细交易记录 - 保存到"交易记录"sheet
                     trades_df = ReportUtils.create_detailed_trade_records(trades)
