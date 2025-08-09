@@ -46,7 +46,7 @@ def main():
     print("上升通道多股票策略回测示例")
     print("=" * 50)
 
-    environment = 'development'
+    environment = 'optimization'
     print(f"当前运行环境: {environment}")
 
     runner = RisingChannelBacktestRunner(log_level=logging.INFO, environment=environment)

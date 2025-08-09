@@ -332,8 +332,17 @@ class BaseBacktestRunner:
         print("\n前5个最优结果:")
         sorted_results = sorted(results['optimization_results'], key=lambda x: x['target_value'], reverse=True)
         for i, r in enumerate(sorted_results[:5]):
+            def safe_get_metrics(key, default=0):
+                metrics = r['result'].get('metrics', {}) if r.get('result') else {}
+                v = metrics.get(key, default)
+                return v if v is not None else default
+            
             print(f"{i + 1}. 参数: {r['parameters']}")
-            print(f"   收益率: {r['target_value']:.2f}%\n")
+            print(f"   收益率: {r['target_value']:.2f}%")
+            print(f"   夏普比率: {safe_get_metrics('夏普比率', 0):.4f}")
+            print(f"   最大回撤: {safe_get_metrics('最大回撤', 0):.2f}%")
+            print(f"   交易次数: {safe_get_metrics('交易次数', 0)}")
+            print(f"   胜率: {safe_get_metrics('胜率', 0):.2f}%\n")
 
     def _print_comparison_results(self, results: Optional[Dict[str, Any]]) -> None:
         if not results:
@@ -410,7 +419,8 @@ class BaseBacktestRunner:
                     '收益率': r.get('target_value', 0),
                     '夏普比率': safe_get_metrics('夏普比率', 0),
                     '最大回撤': safe_get_metrics('最大回撤', 0),
-                    '交易次数': safe_get_metrics('交易次数', 0)
+                    '交易次数': safe_get_metrics('交易次数', 0),
+                    '胜率': safe_get_metrics('胜率', 0)
                 }
                 optimization_data.append(row)
             df = pd.DataFrame(optimization_data).sort_values('收益率', ascending=False)

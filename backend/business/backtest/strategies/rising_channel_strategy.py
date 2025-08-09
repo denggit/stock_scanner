@@ -12,7 +12,7 @@
 5. 当未满N只股票时，重新选股并买入至N只
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
 import pandas as pd
 
@@ -49,6 +49,8 @@ class RisingChannelStrategy(BaseStrategy):
         ('break_days', 3),  # 突破天数
         ('reanchor_fail_max', 2),  # 重锚定失败最大次数
         ('R2_min', 0.20),  # 最小R2值
+        ('R2_max', None),  # 最大R2值（仅用于选股过滤；None 表示不设上限）
+        ('R2_range', None),  # 参数优化时可传入 [R2_min, R2_max]，两者均可为 None
         ('width_pct_min', 0.04),  # 最小宽度百分比
         ('width_pct_max', 0.20),  # 最大宽度百分比
     )
@@ -203,9 +205,12 @@ class RisingChannelStrategy(BaseStrategy):
         self._update_channel_analysis()
 
         # 筛选NORMAL状态的股票
+        r2_min, r2_max = self._get_effective_r2_bounds()
         normal_stocks = self.channel_manager.filter_normal_channels(
             self.current_analysis_results,
-            self.params.min_channel_score
+            self.params.min_channel_score,
+            r2_min=r2_min,
+            r2_max=r2_max
         )
 
         if not normal_stocks:
@@ -420,7 +425,8 @@ class RisingChannelStrategy(BaseStrategy):
 
     def _get_channel_params(self) -> Dict[str, Any]:
         """获取通道分析器参数"""
-        return {
+        # 注意：若用户将 R2_min 设为 None，我们不传入该键，让底层分析器使用其默认值（避免回归有效性检查出错）
+        params = {
             "k": self.params.k,
             "L_max": self.params.L_max,
             "delta_cut": self.params.delta_cut,
@@ -430,10 +436,12 @@ class RisingChannelStrategy(BaseStrategy):
             "break_days": self.params.break_days,
             "reanchor_fail_max": self.params.reanchor_fail_max,
             "min_data_points": self.params.min_data_points,
-            "R2_min": self.params.R2_min,
             "width_pct_min": self.params.width_pct_min,
             "width_pct_max": self.params.width_pct_max
         }
+        if self.params.R2_min is not None:
+            params["R2_min"] = self.params.R2_min
+        return params
 
     def _get_parameters(self) -> Dict[str, Any]:
         """获取策略参数（覆盖父类方法）"""
@@ -451,6 +459,8 @@ class RisingChannelStrategy(BaseStrategy):
             'break_days': self.params.break_days,
             'reanchor_fail_max': self.params.reanchor_fail_max,
             'R2_min': self.params.R2_min,
+            'R2_max': self.params.R2_max,
+            'R2_range': self.params.R2_range,
             'width_pct_min': self.params.width_pct_min,
             'width_pct_max': self.params.width_pct_max
         }
@@ -468,9 +478,12 @@ class RisingChannelStrategy(BaseStrategy):
 
         # 添加当前分析结果统计
         if self.current_analysis_results:
+            r2_min, r2_max = self._get_effective_r2_bounds()
             normal_count = len(self.channel_manager.filter_normal_channels(
                 self.current_analysis_results,
-                self.params.min_channel_score
+                self.params.min_channel_score,
+                r2_min=r2_min,
+                r2_max=r2_max
             ))
 
             base_info['current_analysis'] = {
@@ -480,6 +493,32 @@ class RisingChannelStrategy(BaseStrategy):
             }
 
         return base_info
+
+    def _get_effective_r2_bounds(self) -> tuple[float | None, float | None]:
+        """
+        解析当前有效的 R² 过滤区间。
+        优先使用 `R2_range=[min, max]`，若未提供，则使用 `R2_min` 与 `R2_max`。
+        两端为 None 表示不做该侧限制。
+        """
+        return _parse_r2_bounds(
+            getattr(self.params, 'R2_min', None),
+            getattr(self.params, 'R2_max', None),
+            getattr(self.params, 'R2_range', None)
+        )
+
+
+def _parse_r2_bounds(r2_min: float | None, r2_max: float | None, r2_range: Any) -> Tuple[float | None, float | None]:
+    """
+    解析 R² 区间参数的工具函数。
+    逻辑：若提供 `r2_range=[min, max]`，优先使用；否则使用 `r2_min/r2_max`。
+    任一端为 None 表示不限制该端。
+    """
+    try:
+        if isinstance(r2_range, (list, tuple)) and len(r2_range) == 2:
+            return r2_range[0], r2_range[1]
+    except Exception:
+        pass
+    return r2_min, r2_max
 
 
 # 为了保持与原有代码的兼容性，保留原来的类名

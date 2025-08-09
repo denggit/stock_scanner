@@ -399,13 +399,17 @@ class ChannelAnalyzerManager:
         return results
 
     def filter_normal_channels(self, analysis_results: Dict[str, Dict[str, Any]],
-                               min_score: float = 60.0) -> List[Dict[str, Any]]:
+                               min_score: float = 60.0,
+                               r2_min: float | None = None,
+                               r2_max: float | None = None) -> List[Dict[str, Any]]:
         """
         筛选NORMAL状态的通道
         
         Args:
             analysis_results: 批量分析结果
             min_score: 最小评分阈值
+            r2_min: 选股阶段的 R² 下限（None 表示不限制）
+            r2_max: 选股阶段的 R² 上限（None 表示不限制）
             
         Returns:
             符合条件的股票列表
@@ -420,6 +424,16 @@ class ChannelAnalyzerManager:
                     hasattr(channel_state, 'channel_status') and
                     channel_state.channel_status == ChannelStatus.NORMAL and
                     score >= min_score):
+                # R² 区间过滤（仅用于选股阶段）
+                if (r2_min is not None) or (r2_max is not None):
+                    # 缺失 r2 时不通过过滤
+                    r2_value = getattr(channel_state, 'r2', None)
+                    if r2_value is None:
+                        continue
+                    if (r2_min is not None) and (r2_value < r2_min):
+                        continue
+                    if (r2_max is not None) and (r2_value > r2_max):
+                        continue
                 normal_stocks.append({
                     'stock_code': stock_code,
                     'channel_state': channel_state,
