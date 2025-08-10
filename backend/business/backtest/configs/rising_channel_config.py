@@ -3,6 +3,13 @@
 """
 上升通道策略配置文件
 包含所有策略相关的常量配置
+
+配置层次说明：
+1. BASE_CONFIG: 基础配置（回测框架级别）
+2. ENVIRONMENTS: 环境配置（运行环境级别）
+3. STRATEGY_PARAMS: 策略参数（策略级别，可被环境配置覆盖）
+4. OPTIMIZATION_RANGES: 参数优化范围
+5. STRATEGY_VARIANTS: 策略变体配置
 """
 
 import os
@@ -14,58 +21,88 @@ class RisingChannelConfig:
     """
     上升通道策略配置类
     集中管理所有策略相关的常量
+    
+    配置优先级（从高到低）：
+    1. 用户传入的params参数
+    2. ENVIRONMENTS[environment]中的配置
+    3. STRATEGY_PARAMS中的默认值
+    4. BASE_CONFIG中的基础值
     """
-
-    # ==================== 环境配置 ====================
-    ENVIRONMENTS = {
-        "development": {
-            "max_stocks": 100,
-            "description": "开发环境 - 快速验证策略逻辑",
-            "max_positions": 10,
-        },
-        "optimization": {
-            "max_stocks": 1000,
-            "description": (
-                "优化基线环境（仅在单次回测/对比回测中生效）。\n"
-                "注意：当运行'参数优化'流程时，不使用此处的 max_stocks 与 max_positions；\n"
-                "优化流程会使用 OPTIMIZATION_CONFIG.max_stocks_for_optimization 控制抽样规模，"
-                "并使用 OPTIMIZATION_RANGES 里的参数网格进行穷举。"
-            ),
-            "max_positions": 20,
-        },
-        "production": {
-            "max_stocks": None,  # 不限制
-            "description": "生产环境 - 全量股票回测",
-            "max_positions": 20,  # 默认值
-        },
-        "full_backtest": {
-            "max_stocks": None,
-            "description": "完整回测 - 大量股票测试",
-            "max_positions": 20,
-        }
-    }
 
     # ==================== 基础配置 ====================
     BASE_CONFIG = {
         'initial_cash': 200000.0,  # 初始资金20万
         'commission': 0.0003,  # 手续费率
         'stock_pool': 'no_st',  # 股票池：非ST股票
-        'start_date': '2024-01-01',  # 开始日期
+        'start_date': '2020-01-01',  # 开始日期
         'end_date': datetime.today().strftime("%Y-%m-%d"),  # 结束日期
         'min_data_days': 120  # 最小数据天数
     }
 
-    # ==================== 策略参数 ====================
+    # ==================== 环境配置 ====================
+    ENVIRONMENTS = {
+        "development": {
+            "max_stocks": None,
+            "description": "开发环境 - 快速验证策略逻辑",
+            # 环境级别的策略参数覆盖
+            "strategy_overrides": {
+                "max_positions": 20,  # 覆盖策略默认值
+                "min_channel_score": 60.0,  # 覆盖策略默认值
+            }
+        },
+        "optimization": {
+            "max_stocks": 1000,
+            "description": (
+                "优化基线环境（仅在单次回测/对比回测中生效）。\n"
+                "注意：当运行'参数优化'流程时，不使用此处的 max_stocks 与 strategy_overrides；\n"
+                "优化流程会使用 OPTIMIZATION_CONFIG.max_stocks_for_optimization 控制抽样规模，"
+                "并使用 OPTIMIZATION_RANGES 里的参数网格进行穷举。"
+            ),
+            "strategy_overrides": {
+                "max_positions": 20,
+                "min_channel_score": 60.0,
+            }
+        },
+        "production": {
+            "max_stocks": None,  # 不限制
+            "description": "生产环境 - 全量股票回测",
+            "strategy_overrides": {
+                "max_positions": 20,  # 生产环境默认值
+                "min_channel_score": 60.0,
+            }
+        },
+        "full_backtest": {
+            "max_stocks": None,
+            "description": "完整回测 - 大量股票测试",
+            "strategy_overrides": {
+                "max_positions": 20,
+                "min_channel_score": 60.0,
+            }
+        }
+    }
+
+    # ==================== 策略参数（默认值） ====================
     STRATEGY_PARAMS = {
-        'min_channel_score': 60.0,  # 最小通道评分
+        # 策略基础参数
+        'max_positions': 50,  # 最大持仓数量（默认值，可被环境配置覆盖）
+        'min_data_points': 60,  # 最小数据点数
+        'min_channel_score': 60.0,  # 最小通道评分（默认值，可被环境配置覆盖）
+        'enable_logging': True,  # 是否启用日志
+        
+        # 通道分析参数
         'k': 2.0,  # 通道斜率参数
-        'L_max': 120,  # 最大通道长度
+        'L_max': 120,  # 最大回看天数
+        'delta_cut': 5,  # 切割参数
+        'pivot_m': 3,  # 枢轴参数
         'gain_trigger': 0.30,  # 收益触发阈值
         'beta_delta': 0.15,  # Beta变化阈值
+        'break_days': 3,  # 突破天数
+        'reanchor_fail_max': 2,  # 重锚定失败最大次数
         'R2_min': 0.20,  # 最小R²值（用于通道有效性判定）；若在选股阶段想取消下限，可将选股用的 R2_min 设为 None
-        'R2_max': 0.4,  # 最大R²值上限（仅用于选股过滤；None 表示不设上限）
+        'R2_max': None,  # 最大R²值上限（仅用于选股过滤；None 表示不设上限）
+        'R2_range': None,  # 参数优化时可传入 [R2_min, R2_max]，两者均可为 None
         'width_pct_min': 0.04,  # 最小通道宽度
-        'width_pct_max': 0.15,  # 最大通道宽度 - 调整为更宽松的值
+        'width_pct_max': 0.15,  # 最大通道宽度
         'max_distance_from_lower': 10.0  # 买入时距离通道下沿的最大百分比距离（%）
     }
 
@@ -142,20 +179,11 @@ class RisingChannelConfig:
     }
 
     # 说明：
-    # - 当调用 run_basic_backtest / run_comparison_backtest 时，将使用 ENVIRONMENTS[env] 中的 max_stocks 与 max_positions。
+    # - 当调用 run_basic_backtest / run_comparison_backtest 时，将使用 ENVIRONMENTS[env] 中的 max_stocks 与 strategy_overrides。
     # - 当调用 run_parameter_optimization（参数优化）时：
     #   * 股票样本由 OPTIMIZATION_CONFIG['max_stocks_for_optimization'] 控制，而非 ENVIRONMENTS[env]['max_stocks']；
     #   * 参与穷举的策略参数取自 OPTIMIZATION_RANGES 指定的键；未在网格中的键不会自动继承 ENVIRONMENTS 的值，
     #     将回落到策略类默认值（例如 RisingChannelStrategy.params 中的默认值）。
-
-    # ==================== 通道分析配置 ====================
-    CHANNEL_ANALYSIS_CONFIG = {
-        'delta_cut': 5,  # 切割参数
-        'pivot_m': 3,  # 枢轴参数
-        'break_days': 3,  # 突破天数
-        'reanchor_fail_max': 2,  # 重锚定失败最大次数
-        'min_data_points': 60,  # 最小数据点数
-    }
 
     @classmethod
     def get_environment_config(cls, environment: str, params: dict = None) -> Dict[str, Any]:
@@ -189,24 +217,23 @@ class RisingChannelConfig:
         return base_config
 
     @classmethod
-    def get_strategy_params(cls, max_positions: int = None) -> Dict[str, Any]:
+    def get_strategy_params(cls, environment_overrides: dict = None) -> Dict[str, Any]:
         """
         获取策略参数
         
         Args:
-            max_positions: 最大持仓数量，如果为None则使用默认值
+            environment_overrides: 环境级别的策略参数覆盖，如果为None则使用默认值
             
         Returns:
             策略参数字典
         """
         params = cls.STRATEGY_PARAMS.copy()
 
-        # 添加通道分析配置
-        params.update(cls.CHANNEL_ANALYSIS_CONFIG)
-
-        # 如果指定了max_positions，则使用指定值
-        if max_positions is not None:
-            params['max_positions'] = max_positions
+        # 如果传入了环境覆盖参数，则覆盖默认值
+        if environment_overrides is not None:
+            for k, v in environment_overrides.items():
+                if k in params:  # 只覆盖策略参数中存在的键
+                    params[k] = v
 
         return params
 
@@ -273,12 +300,21 @@ class RisingChannelConfig:
     @classmethod
     def get_channel_analysis_config(cls) -> Dict[str, Any]:
         """
-        获取通道分析配置
+        获取通道分析配置（已废弃，请使用get_strategy_params）
         
         Returns:
             通道分析配置字典
         """
-        return cls.CHANNEL_ANALYSIS_CONFIG.copy()
+        # 从STRATEGY_PARAMS中提取通道分析相关参数
+        strategy_params = cls.get_strategy_params()
+        channel_params = {
+            'delta_cut': strategy_params.get('delta_cut'),
+            'pivot_m': strategy_params.get('pivot_m'),
+            'break_days': strategy_params.get('break_days'),
+            'reanchor_fail_max': strategy_params.get('reanchor_fail_max'),
+            'min_data_points': strategy_params.get('min_data_points'),
+        }
+        return channel_params
 
 
 # 导出配置实例

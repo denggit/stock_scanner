@@ -30,29 +30,17 @@ class RisingChannelStrategy(BaseStrategy):
     使用组合模式整合各个管理器组件
     """
 
-    # 策略参数
-    params = (
-        ('max_positions', 50),  # 最大持仓数量
-        ('min_data_points', 60),  # 最小数据点数
-        ('min_channel_score', 60.0),  # 最小通道评分
-        ('enable_logging', True),  # 是否启用日志
-
-        # 通道分析参数
-        ('k', 2.0),  # 通道斜率参数
-        ('L_max', 120),  # 最大回看天数
-        ('delta_cut', 5),  # 切割参数
-        ('pivot_m', 3),  # 枢轴参数
-        ('gain_trigger', 0.30),  # 收益触发阈值
-        ('beta_delta', 0.15),  # beta增量
-        ('break_days', 3),  # 突破天数
-        ('reanchor_fail_max', 2),  # 重锚定失败最大次数
-        ('R2_min', 0.20),  # 最小R2值
-        ('R2_max', None),  # 最大R2值（仅用于选股过滤；None 表示不设上限）
-        ('R2_range', None),  # 参数优化时可传入 [R2_min, R2_max]，两者均可为 None
-        ('width_pct_min', 0.04),  # 最小宽度百分比
-        ('width_pct_max', 0.20),  # 最大宽度百分比
-        ('max_distance_from_lower', 15.0),  # 买入时距离通道下沿的最大百分比距离（%）
-    )
+    # 策略参数 - 从配置文件动态获取
+    @classmethod
+    def get_default_params(cls):
+        """从配置文件获取默认参数"""
+        config_params = RisingChannelConfig.get_strategy_params()
+        # 转换为backtrader需要的元组格式
+        return tuple((key, value) for key, value in config_params.items())
+    
+    # 在类定义时获取默认参数
+    _default_config_params = RisingChannelConfig.get_strategy_params()
+    params = tuple((key, value) for key, value in _default_config_params.items())
 
     def __init__(self, stock_data_dict: Dict[str, pd.DataFrame] = None, cache_adapter=None, **kwargs):
         """

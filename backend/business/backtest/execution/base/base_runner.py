@@ -73,8 +73,9 @@ class BaseBacktestRunner:
         self.environment = environment
         self.config = self.config_cls.get_environment_config(environment)
 
-        # 策略参数
-        self.strategy_params = self.config_cls.get_strategy_params(self.config.get('max_positions'))
+        # 策略参数 - 使用环境配置中的策略覆盖参数
+        environment_overrides = self.config.get('strategy_overrides', {})
+        self.strategy_params = self.config_cls.get_strategy_params(environment_overrides)
 
         # 初始化缓存适配器
         self.cache_adapter = self._init_cache_adapter()
@@ -82,8 +83,10 @@ class BaseBacktestRunner:
         # 记录关键信息
         self.logger.info(f"环境配置: {self.environment}")
         self.logger.info(f"最大股票数量: {self.config.get('max_stocks')}")
-        self.logger.info(f"最大持仓数量: {self.config.get('max_positions')}")
+        self.logger.info(f"最大持仓数量: {self.strategy_params.get('max_positions')}")
         self.logger.info(f"配置描述: {self.config.get('description')}")
+        if environment_overrides:
+            self.logger.info(f"环境策略覆盖: {environment_overrides}")
 
     def _init_cache_adapter(self) -> ChannelCacheAdapter:
         """

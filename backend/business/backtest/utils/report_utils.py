@@ -4,10 +4,13 @@
 报告工具类
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Union
+import logging
 
 import matplotlib.pyplot as plt
 import pandas as pd
+
+from backend.utils.logger import setup_logger
 
 
 class ReportUtils:
@@ -15,6 +18,272 @@ class ReportUtils:
     报告工具类
     提供报告生成和可视化功能
     """
+
+    @staticmethod
+    def calculate_profit_factor(trades: List[Dict]) -> Dict[str, Any]:
+        """
+        计算盈亏比(PF) - 多股策略合并计算
+        
+        盈亏比 = 盈利总和 / 亏损总和
+        这是所有策略都能使用的通用工具
+        
+        Args:
+            trades: 交易记录列表，包含所有股票的交易记录
+            
+        Returns:
+            盈亏比计算结果字典
+        """
+        if not trades:
+            return {
+                'profit_factor': 0.0,
+                'total_profit': 0.0,
+                'total_loss': 0.0,
+                'profit_trades_count': 0,
+                'loss_trades_count': 0,
+                'total_trades_count': 0,
+                'avg_profit': 0.0,
+                'avg_loss': 0.0,
+                'net_profit': 0.0
+            }
+        
+        try:
+            # 转换为DataFrame便于处理
+            df = pd.DataFrame(trades)
+            
+            # 识别盈利和亏损交易
+            # 支持多种字段名格式
+            profit_col = None
+            for col in ['绝对收益', 'profit_amount', 'profit', '收益', '盈亏']:
+                if col in df.columns:
+                    profit_col = col
+                    break
+            
+            if profit_col is None:
+                # 如果没有直接的盈亏字段，尝试从收益率和交易金额计算
+                if '收益率' in df.columns and '交易金额' in df.columns:
+                    df['calculated_profit'] = df['收益率'] * df['交易金额']
+                    profit_col = 'calculated_profit'
+                elif 'returns' in df.columns and 'value' in df.columns:
+                    df['calculated_profit'] = df['returns'] * df['value']
+                    profit_col = 'calculated_profit'
+                else:
+                    # 如果无法计算，返回默认值
+                    return {
+                        'profit_factor': 0.0,
+                        'total_profit': 0.0,
+                        'total_loss': 0.0,
+                        'profit_trades_count': 0,
+                        'loss_trades_count': 0,
+                        'total_trades_count': len(trades),
+                        'avg_profit': 0.0,
+                        'avg_loss': 0.0,
+                        'net_profit': 0.0,
+                        'error': '无法识别盈亏字段'
+                    }
+            
+            # 分离盈利和亏损交易
+            profit_trades = df[df[profit_col] > 0]
+            loss_trades = df[df[profit_col] < 0]
+            
+            # 计算汇总数据
+            total_profit = profit_trades[profit_col].sum() if not profit_trades.empty else 0.0
+            total_loss = abs(loss_trades[profit_col].sum()) if not loss_trades.empty else 0.0
+            
+            profit_trades_count = len(profit_trades)
+            loss_trades_count = len(loss_trades)
+            total_trades_count = len(trades)
+            
+            # 计算平均值
+            avg_profit = profit_trades[profit_col].mean() if profit_trades_count > 0 else 0.0
+            avg_loss = abs(loss_trades[profit_col].mean()) if loss_trades_count > 0 else 0.0
+            
+            # 计算净盈亏
+            net_profit = total_profit - total_loss
+            
+            # 计算盈亏比(PF)
+            if total_loss > 0:
+                profit_factor = total_profit / total_loss
+            else:
+                # 如果没有亏损，盈亏比为无穷大或0
+                profit_factor = float('inf') if total_profit > 0 else 0.0
+            
+            return {
+                'profit_factor': profit_factor,
+                'total_profit': total_profit,
+                'total_loss': total_loss,
+                'profit_trades_count': profit_trades_count,
+                'loss_trades_count': loss_trades_count,
+                'total_trades_count': total_trades_count,
+                'avg_profit': avg_profit,
+                'avg_loss': avg_loss,
+                'net_profit': net_profit,
+                'win_rate': (profit_trades_count / total_trades_count * 100) if total_trades_count > 0 else 0.0
+            }
+            
+        except Exception as e:
+            logger = setup_logger("backtest")
+            logger.error(f"计算盈亏比时出错: {e}")
+            return {
+                'profit_factor': 0.0,
+                'total_profit': 0.0,
+                'total_loss': 0.0,
+                'profit_trades_count': 0,
+                'loss_trades_count': 0,
+                'total_trades_count': len(trades),
+                'avg_profit': 0.0,
+                'avg_loss': 0.0,
+                'net_profit': 0.0,
+                'error': str(e)
+            }
+
+    @staticmethod
+    def create_enhanced_performance_summary(results: Dict[str, Any], trades: Optional[List[Dict]] = None) -> pd.DataFrame:
+        """
+        创建增强版性能汇总表，包含盈亏比
+        
+        Args:
+            results: 回测结果
+            trades: 交易记录列表（可选）
+            
+        Returns:
+            增强版性能汇总表
+        """
+        metrics = results.get('metrics', {})
+
+        # 安全获取指标值，处理None值
+        def safe_get(key, default=0):
+            value = metrics.get(key, default)
+            return value if value is not None else default
+
+        # 计算盈亏比
+        pf_result = ReportUtils.calculate_profit_factor(trades or [])
+        
+        # 格式化盈亏比显示
+        if pf_result['profit_factor'] == float('inf'):
+            pf_display = "∞"
+        elif pf_result['profit_factor'] == 0:
+            pf_display = "0.00"
+        else:
+            pf_display = f"{pf_result['profit_factor']:.2f}"
+
+        # 构建基础指标列表
+        base_metrics = [
+            '初始资金', '最终资金', '总收益率', '绝对收益',
+            '夏普比率', '最大回撤', '交易次数', '胜率',
+            '年化收益率', '年化波动率'
+        ]
+        
+        base_values = [
+            f"{safe_get('初始资金', 0):,.2f}",
+            f"{safe_get('最终资金', 0):,.2f}",
+            f"{safe_get('总收益率', 0):.2f}%",
+            f"{safe_get('绝对收益', 0):,.2f}",
+            f"{safe_get('夏普比率', 0):.4f}",
+            f"{safe_get('最大回撤', 0):.2f}%",
+            f"{safe_get('交易次数', 0)}",
+            f"{safe_get('胜率', 0):.2f}%",
+            f"{safe_get('年化收益率', 0):.2f}%",
+            f"{safe_get('年化波动率', 0):.2f}%"
+        ]
+        
+        # 添加盈亏比相关指标
+        enhanced_metrics = base_metrics + [
+            '盈亏比(PF)', '盈利交易数', '亏损交易数', '平均盈利', '平均亏损', '净盈亏'
+        ]
+        
+        enhanced_values = base_values + [
+            pf_display,
+            str(pf_result['profit_trades_count']),
+            str(pf_result['loss_trades_count']),
+            f"{pf_result['avg_profit']:,.2f}",
+            f"{pf_result['avg_loss']:,.2f}",
+            f"{pf_result['net_profit']:,.2f}"
+        ]
+
+        summary_data = {
+            '指标': enhanced_metrics,
+            '数值': enhanced_values
+        }
+
+        # 确保数据长度一致
+        if len(summary_data['指标']) != len(summary_data['数值']):
+            min_length = min(len(summary_data['指标']), len(summary_data['数值']))
+            summary_data['指标'] = summary_data['指标'][:min_length]
+            summary_data['数值'] = summary_data['数值'][:min_length]
+
+        return pd.DataFrame(summary_data)
+
+    @staticmethod
+    def create_profit_factor_analysis(trades: List[Dict]) -> pd.DataFrame:
+        """
+        创建盈亏比详细分析表
+        
+        Args:
+            trades: 交易记录列表
+            
+        Returns:
+            盈亏比分析表
+        """
+        if not trades:
+            return pd.DataFrame()
+        
+        pf_result = ReportUtils.calculate_profit_factor(trades)
+        
+        analysis_data = {
+            '分析项目': [
+                '盈亏比(PF)',
+                '总盈利',
+                '总亏损', 
+                '净盈亏',
+                '盈利交易数',
+                '亏损交易数',
+                '总交易数',
+                '胜率',
+                '平均盈利',
+                '平均亏损',
+                '最大单笔盈利',
+                '最大单笔亏损'
+            ],
+            '数值': [
+                f"{pf_result['profit_factor']:.2f}" if pf_result['profit_factor'] != float('inf') else "∞",
+                f"{pf_result['total_profit']:,.2f}",
+                f"{pf_result['total_loss']:,.2f}",
+                f"{pf_result['net_profit']:,.2f}",
+                str(pf_result['profit_trades_count']),
+                str(pf_result['loss_trades_count']),
+                str(pf_result['total_trades_count']),
+                f"{pf_result['win_rate']:.2f}%",
+                f"{pf_result['avg_profit']:,.2f}",
+                f"{pf_result['avg_loss']:,.2f}",
+                "N/A",  # 需要从原始数据计算
+                "N/A"   # 需要从原始数据计算
+            ]
+        }
+        
+        # 计算最大单笔盈利和亏损
+        try:
+            df = pd.DataFrame(trades)
+            profit_col = None
+            for col in ['绝对收益', 'profit_amount', 'profit', '收益', '盈亏']:
+                if col in df.columns:
+                    profit_col = col
+                    break
+            
+            if profit_col:
+                profit_trades = df[df[profit_col] > 0]
+                loss_trades = df[df[profit_col] < 0]
+                
+                if not profit_trades.empty:
+                    max_profit = profit_trades[profit_col].max()
+                    analysis_data['数值'][10] = f"{max_profit:,.2f}"
+                
+                if not loss_trades.empty:
+                    max_loss = abs(loss_trades[profit_col].min())
+                    analysis_data['数值'][11] = f"{max_loss:,.2f}"
+        except:
+            pass
+        
+        return pd.DataFrame(analysis_data)
 
     @staticmethod
     def _build_equity_series(results: Dict[str, Any]) -> pd.DataFrame:
@@ -146,7 +415,7 @@ class ReportUtils:
     @staticmethod
     def create_performance_summary(results: Dict[str, Any]) -> pd.DataFrame:
         """
-        创建性能汇总表
+        创建性能汇总表（保持向后兼容）
         
         Args:
             results: 回测结果
@@ -154,42 +423,11 @@ class ReportUtils:
         Returns:
             性能汇总表
         """
-        metrics = results.get('metrics', {})
-
-        # 安全获取指标值，处理None值
-        def safe_get(key, default=0):
-            value = metrics.get(key, default)
-            return value if value is not None else default
-
-        # 确保所有值都是字符串格式
-        summary_data = {
-            '指标': [
-                '初始资金', '最终资金', '总收益率', '绝对收益',
-                '夏普比率', '最大回撤', '交易次数', '胜率',
-                '年化收益率', '年化波动率'
-            ],
-            '数值': [
-                f"{safe_get('初始资金', 0):,.2f}",
-                f"{safe_get('最终资金', 0):,.2f}",
-                f"{safe_get('总收益率', 0):.2f}%",
-                f"{safe_get('绝对收益', 0):,.2f}",
-                f"{safe_get('夏普比率', 0):.4f}",
-                f"{safe_get('最大回撤', 0):.2f}%",
-                f"{safe_get('交易次数', 0)}",
-                f"{safe_get('胜率', 0):.2f}%",
-                f"{safe_get('年化收益率', 0):.2f}%",
-                f"{safe_get('年化波动率', 0):.2f}%"
-            ]
-        }
-
-        # 确保数据长度一致
-        if len(summary_data['指标']) != len(summary_data['数值']):
-            # 如果长度不一致，截取较短的长度
-            min_length = min(len(summary_data['指标']), len(summary_data['数值']))
-            summary_data['指标'] = summary_data['指标'][:min_length]
-            summary_data['数值'] = summary_data['数值'][:min_length]
-
-        return pd.DataFrame(summary_data)
+        # 获取交易记录
+        trades = results.get('trades', [])
+        
+        # 使用增强版方法
+        return ReportUtils.create_enhanced_performance_summary(results, trades)
 
     @staticmethod
     def create_trade_summary(trades: List[Dict]) -> pd.DataFrame:
@@ -476,6 +714,11 @@ class ReportUtils:
                     trade_analysis_df = ReportUtils.create_trade_analysis(trades)
                     if not trade_analysis_df.empty:
                         trade_analysis_df.to_excel(writer, sheet_name='交易分析', index=False)
+                    
+                    # 盈亏比分析表 - 新增
+                    profit_factor_analysis_df = ReportUtils.create_profit_factor_analysis(trades)
+                    if not profit_factor_analysis_df.empty:
+                        profit_factor_analysis_df.to_excel(writer, sheet_name='盈亏比分析', index=False)
 
                 # 每日收益表（使用日收益和交易记录构建）
                 daily_table = ReportUtils.create_daily_returns_table(results)
