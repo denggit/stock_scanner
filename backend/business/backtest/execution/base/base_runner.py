@@ -103,9 +103,13 @@ class BaseBacktestRunner:
                 self.logger.info("缓存系统已禁用")
                 return None
             
+            # 从环境变量获取批量大小，默认为500
+            cache_batch_size = int(os.getenv('BACKTEST_CACHE_BATCH_SIZE', '500'))
+            
             cache_adapter = ChannelCacheAdapter(
                 enable_batch_processing=True,
-                enable_auto_cache=True
+                enable_auto_cache=True,
+                cache_batch_size=cache_batch_size
             )
             
             self.logger.info("上升通道缓存适配器初始化成功")

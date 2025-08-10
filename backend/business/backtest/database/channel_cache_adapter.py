@@ -33,7 +33,8 @@ class ChannelCacheAdapter:
     def __init__(self, 
                  cache_config: CacheConfig = None,
                  enable_batch_processing: bool = True,
-                 enable_auto_cache: bool = True):
+                 enable_auto_cache: bool = True,
+                 cache_batch_size: int = 500):
         """
         初始化缓存适配器
         
@@ -41,11 +42,13 @@ class ChannelCacheAdapter:
             cache_config: 缓存配置
             enable_batch_processing: 是否启用批量处理
             enable_auto_cache: 是否启用自动缓存
+            cache_batch_size: 批量更新缓存的大小，默认500只股票更新一次
         """
         self.cache = ChannelDataCache(cache_config)
         self.logger = setup_logger(__name__)
         self.enable_batch_processing = enable_batch_processing
         self.enable_auto_cache = enable_auto_cache
+        self.cache_batch_size = cache_batch_size
         
         # 分析器实例缓存
         self._analyzer_cache: Dict[str, AscendingChannelRegression] = {}
@@ -110,7 +113,8 @@ class ChannelCacheAdapter:
             # 计算新的通道数据
             new_channel_data = self._compute_channel_data_for_stocks(
                 stocks_to_compute, stock_data_dict, params, 
-                start_date, end_date, min_window_size, cache_analysis
+                start_date, end_date, min_window_size, cache_analysis,
+                self.cache_batch_size
             )
             
             # 合并计算结果到最终结果
@@ -242,8 +246,21 @@ class ChannelCacheAdapter:
                                         params: Dict[str, Any],
                                         start_date: str, end_date: str,
                                         min_window_size: int,
-                                        cache_analysis: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
-        """为指定股票计算通道数据"""
+                                        cache_analysis: Dict[str, Any],
+                                        batch_size: int = 500) -> Dict[str, pd.DataFrame]:
+        """
+        为指定股票计算通道数据
+        
+        Args:
+            stocks_to_compute: 需要计算的股票代码列表
+            stock_data_dict: 股票数据字典
+            params: 通道参数
+            start_date: 开始日期
+            end_date: 结束日期
+            min_window_size: 最小窗口大小
+            cache_analysis: 缓存分析结果
+            batch_size: 批量更新缓存的大小，默认500只股票更新一次
+        """
         computed_data = {}
         new_cache_data = {}
         analyzer = self._get_analyzer(params)
@@ -291,6 +308,13 @@ class ChannelCacheAdapter:
                     else:
                         self.logger.info(f"股票 {stock_code} 计算的通道数据全部无效，跳过缓存")
                 
+                # 每计算batch_size只股票就更新一次缓存，避免进程中断导致数据丢失
+                if i % batch_size == 0 and new_cache_data and self.enable_auto_cache:
+                    self.logger.info(f"批量更新缓存: 第 {i} 只股票，更新 {len(new_cache_data)} 只股票的计算数据")
+                    self.cache.update_channel_data(params, new_cache_data)
+                    # 清空已更新的缓存数据，避免重复更新
+                    new_cache_data = {}
+                
                 if i % 50 == 0:
                     self.logger.info(f"已计算 {i}/{len(stocks_to_compute)} 只股票")
                     
@@ -298,9 +322,9 @@ class ChannelCacheAdapter:
                 self.logger.error(f"计算股票 {stock_code} 的通道数据失败: {e}")
                 continue
         
-        # 更新缓存
+        # 更新剩余的缓存数据
         if new_cache_data and self.enable_auto_cache:
-            self.logger.info(f"更新缓存: {len(new_cache_data)} 只股票的新计算数据")
+            self.logger.info(f"最终更新缓存: {len(new_cache_data)} 只股票的新计算数据")
             self.cache.update_channel_data(params, new_cache_data)
         
         return computed_data
