@@ -54,22 +54,29 @@ class RisingChannelStrategy(BaseStrategy):
         ('max_distance_from_lower', 15.0),  # 买入时距离通道下沿的最大百分比距离（%）
     )
 
-    def __init__(self, stock_data_dict: Dict[str, pd.DataFrame] = None, **kwargs):
+    def __init__(self, stock_data_dict: Dict[str, pd.DataFrame] = None, cache_adapter=None, **kwargs):
         """
         初始化上升通道策略
         
         Args:
             stock_data_dict: 股票数据字典
+            cache_adapter: 缓存适配器实例
             **kwargs: backtrader 策略参数（通过params定义的参数）
         """
         # 调用父类初始化
         super().__init__(stock_data_dict, **kwargs)
+
+        # 缓存适配器
+        self.cache_adapter = cache_adapter
 
         # 通道分析器管理器
         self.channel_manager = None
 
         # 当前分析结果缓存
         self.current_analysis_results = {}
+        
+        # 预加载的通道历史数据
+        self.preloaded_channel_data = {}
 
     def on_delayed_init(self):
         """
@@ -83,7 +90,32 @@ class RisingChannelStrategy(BaseStrategy):
             **channel_params
         )
 
+        # 预加载缓存通道数据（如果有缓存适配器）
+        if self.cache_adapter is not None:
+            self._preload_channel_data()
+
         self.logger.info("上升通道策略延迟初始化完成")
+
+    def _preload_channel_data(self):
+        """
+        预加载通道历史数据到内存
+        """
+        try:
+            self.logger.info("开始预加载通道历史数据...")
+            
+            channel_params = self._extract_channel_params()
+            
+            # 使用缓存适配器获取历史数据
+            self.preloaded_channel_data = self.cache_adapter.get_channel_history_data(
+                stock_data_dict=self.stock_data_dict,
+                params=channel_params
+            )
+            
+            self.logger.info(f"成功预加载 {len(self.preloaded_channel_data)} 只股票的通道历史数据")
+            
+        except Exception as e:
+            self.logger.error(f"预加载通道历史数据失败: {e}")
+            self.preloaded_channel_data = {}
 
     def prepare_data(self):
         """
@@ -272,6 +304,63 @@ class RisingChannelStrategy(BaseStrategy):
 
     def _update_channel_analysis(self):
         """更新所有股票的通道分析结果"""
+        # 如果有预加载的通道数据，优先使用缓存
+        if self.preloaded_channel_data:
+            self._update_channel_analysis_from_cache()
+        else:
+            self._update_channel_analysis_traditional()
+
+    def _update_channel_analysis_from_cache(self):
+        """从预加载的缓存数据更新通道分析结果"""
+        self.current_analysis_results = {}
+        current_date_str = self.current_date.strftime('%Y-%m-%d')
+        
+        for stock_code in self.data_manager.get_stock_codes_list():
+            try:
+                # 从预加载数据中获取对应日期的通道状态
+                if stock_code in self.preloaded_channel_data:
+                    channel_df = self.preloaded_channel_data[stock_code]
+                    channel_df['trade_date'] = pd.to_datetime(channel_df['trade_date'])
+                    
+                    # 找到当前日期或最近的通道数据
+                    target_data = channel_df[channel_df['trade_date'] <= self.current_date]
+                    if not target_data.empty:
+                        latest_data = target_data.iloc[-1]
+                        
+                        # 构建通道状态对象
+                        if not pd.isna(latest_data.get('beta')):
+                            channel_state = self._build_channel_state_from_cache(latest_data)
+                            
+                            # 计算通道评分（使用缓存时不受min_data_points限制）
+                            stock_data = self.data_manager.get_stock_data_until(
+                                stock_code, self.current_date, min_data_points=1  # 使用缓存时只需要当前数据
+                            )
+                            if stock_data is not None:
+                                score = self.channel_manager.calculate_channel_score(
+                                    stock_code, channel_state, stock_data, self.current_date
+                                )
+                                
+                                self.current_analysis_results[stock_code] = {
+                                    'channel_state': channel_state,
+                                    'score': score,
+                                    'is_cached': True
+                                }
+                            else:
+                                # 即使没有足够的股票数据，也可以使用缓存的通道状态
+                                # 给一个基础评分，避免因数据不足而错失机会
+                                base_score = 60.0  # 基础分数
+                                self.current_analysis_results[stock_code] = {
+                                    'channel_state': channel_state,
+                                    'score': base_score,
+                                    'is_cached': True
+                                }
+                        
+            except Exception as e:
+                self.logger.debug(f"从缓存获取股票 {stock_code} 通道数据失败: {e}")
+                continue
+
+    def _update_channel_analysis_traditional(self):
+        """传统方式更新通道分析结果"""
         # 获取所有股票数据
         stock_data_dict = {}
 
@@ -289,6 +378,39 @@ class RisingChannelStrategy(BaseStrategy):
             stock_data_dict,
             self.current_date
         )
+        
+        # 标记为非缓存数据
+        for stock_code in self.current_analysis_results:
+            self.current_analysis_results[stock_code]['is_cached'] = False
+
+    def _build_channel_state_from_cache(self, cache_data: pd.Series):
+        """从缓存数据构建通道状态对象"""
+        from backend.business.factor.core.engine.library.channel_analysis.channel_state import ChannelState, ChannelStatus
+        
+        # 创建一个简化的通道状态对象，只包含必要的字段
+        class CachedChannelState:
+            def __init__(self, cache_data):
+                self.anchor_date = pd.to_datetime(cache_data.get('anchor_date'))
+                self.anchor_price = cache_data.get('anchor_price')
+                self.beta = cache_data.get('beta')
+                self.sigma = cache_data.get('sigma')
+                self.r2 = cache_data.get('r2')
+                self.mid_today = cache_data.get('mid_today')
+                self.upper_today = cache_data.get('upper_today')
+                self.lower_today = cache_data.get('lower_today')
+                self.mid_tomorrow = cache_data.get('mid_tomorrow')
+                self.upper_tomorrow = cache_data.get('upper_tomorrow')
+                self.lower_tomorrow = cache_data.get('lower_tomorrow')
+                self.cumulative_gain = cache_data.get('cumulative_gain')
+                
+                # 通道状态
+                status_value = cache_data.get('channel_status', 1)  # 默认为NORMAL
+                if isinstance(status_value, str):
+                    self.channel_status = ChannelStatus(int(status_value)) if status_value.isdigit() else ChannelStatus.NORMAL
+                else:
+                    self.channel_status = ChannelStatus(status_value) if status_value is not None else ChannelStatus.NORMAL
+        
+        return CachedChannelState(cache_data)
 
     def _calculate_distance_to_lower(self, current_price: float, channel_state) -> float:
         """
@@ -372,27 +494,44 @@ class RisingChannelStrategy(BaseStrategy):
 
     def _extract_channel_params(self) -> Dict[str, Any]:
         """
-        提取通道分析相关参数
+        提取通道算法参数（用于缓存键生成）
+        
+        只包含影响通道计算结果的算法参数，不包含策略层面的参数
         
         Returns:
-            通道参数字典
+            通道算法参数字典
         """
-        return {
-            'min_channel_score': self.params.min_channel_score,
-            'k': self.params.k,
-            'L_max': self.params.L_max,
-            'delta_cut': self.params.delta_cut,
-            'pivot_m': self.params.pivot_m,
-            'gain_trigger': self.params.gain_trigger,
-            'beta_delta': self.params.beta_delta,
-            'break_days': self.params.break_days,
-            'reanchor_fail_max': self.params.reanchor_fail_max,
-            'R2_min': self.params.R2_min,
-            'R2_max': self.params.R2_max,
-            'R2_range': self.params.R2_range,
-            'width_pct_min': self.params.width_pct_min,
-            'width_pct_max': self.params.width_pct_max
-        }
+        try:
+            # 从通道分析器管理器获取实际使用的算法参数
+            if hasattr(self, 'channel_manager') and self.channel_manager is not None:
+                analyzer = self.channel_manager.get_analyzer()
+                if hasattr(analyzer, '_analyzer') and analyzer._analyzer is not None:
+                    # 从真实的AscendingChannelRegression实例获取参数
+                    return analyzer._analyzer._get_config_dict()
+            
+            # 如果无法从管理器获取，直接创建AscendingChannelRegression实例
+            from backend.business.factor.core.engine.library.channel_analysis.rising_channel import AscendingChannelRegression
+            temp_analyzer = AscendingChannelRegression()
+            return temp_analyzer._get_config_dict()
+            
+        except Exception as e:
+            self.logger.warning(f"无法获取通道算法参数，使用默认值: {e}")
+            
+            # 回退到硬编码的算法参数
+            return {
+                'k': 2.0,
+                'L_max': 120,
+                'delta_cut': 5,
+                'pivot_m': 3,
+                'gain_trigger': 0.30,
+                'beta_delta': 0.15,
+                'break_days': 3,
+                'reanchor_fail_max': 2,
+                'min_data_points': 60,
+                'R2_min': 0.20,
+                'width_pct_min': 0.04,
+                'width_pct_max': 0.12
+            }
 
     def _should_sell_stock(self, channel_state) -> bool:
         """

@@ -241,6 +241,15 @@ class ChannelAnalyzerManager:
 
         self.logger.info(f"通道分析器管理器初始化完成，类型: {analyzer_type}")
 
+    def get_analyzer(self):
+        """
+        获取分析器实例
+        
+        Returns:
+            分析器实例
+        """
+        return self.analyzer
+
     def analyze_channel(self, stock_code: str, data: pd.DataFrame,
                         date: datetime = None, use_cache: bool = True) -> Optional[Any]:
         """

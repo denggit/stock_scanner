@@ -65,20 +65,21 @@ class RisingChannelConfig:
         'R2_min': 0.20,  # 最小R²值（用于通道有效性判定）；若在选股阶段想取消下限，可将选股用的 R2_min 设为 None
         'R2_max': 0.4,  # 最大R²值上限（仅用于选股过滤；None 表示不设上限）
         'width_pct_min': 0.04,  # 最小通道宽度
-        'width_pct_max': 0.20,  # 最大通道宽度 - 调整为更宽松的值
+        'width_pct_max': 0.15,  # 最大通道宽度 - 调整为更宽松的值
         'max_distance_from_lower': 10.0  # 买入时距离通道下沿的最大百分比距离（%）
     }
 
     # ==================== 参数优化范围 ====================
     OPTIMIZATION_RANGES = {
-        'max_positions': [10, 15, 20],  # 持仓数量范围
+        'max_positions': [20],  # 持仓数量范围
         # 'min_channel_score': [60.0],  # 通道评分范围
         # # 'k': [1.5, 2.0, 2.5],  # 通道斜率范围
         # 'gain_trigger': [0.25, 0.30, 0.35],  # 收益触发阈值范围
         # # 'R2_min': [0.15, 0.20, 0.25],  # 最小R²值范围（用于通道有效性判定）
         # 'width_pct_min': [0.03, 0.04, 0.05],  # 最小通道宽度范围
-        'max_distance_from_lower': [10.0],  # 距离下沿最大值范围
-        'R2_range': [[0.2, 0.4], [0.4, 0.6], [0.6, 0.8], [0.8, None]]
+        # 'width_pct_max': [0.12, 0.15, 0.20, 0.3],  # 最小通道宽度范围
+        'max_distance_from_lower': [2.0],  # 距离下沿最大值范围
+        'R2_range': [[0.2, 0.4], [0.4, 0.6]]
     }
 
     # ==================== 策略变体配置 ====================
@@ -136,7 +137,7 @@ class RisingChannelConfig:
 
     # ==================== 优化配置 ====================
     OPTIMIZATION_CONFIG = {
-        'max_stocks_for_optimization': 100,  # 优化时使用的股票数量
+        'max_stocks_for_optimization': 1000,  # 优化时使用的股票数量
         'target_metric': 'total_return',  # 优化目标指标
     }
 

@@ -196,7 +196,7 @@ class RiskManager:
 ```python
 # 旧方式
 from backend.business.backtest.strategies.base import BaseStrategy
-from backend.business.backtest.strategies.rising_channel_strategy import RisingChannelStrategy
+from backend.business.backtest.strategies.implementations.channel.rising_channel import RisingChannelStrategy
 
 # 新方式
 from backend.business.backtest.strategies import BaseStrategy, RisingChannelStrategy

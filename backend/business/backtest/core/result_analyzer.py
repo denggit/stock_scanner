@@ -924,25 +924,37 @@ class ResultAnalyzer:
 
     def _derive_active_start_date(self, strat, daily_returns: Dict) -> Any:
         """根据策略的min_data_points与daily_returns推导开始生效日期。
-        规则：当 len(self.data) < min_data_points 时跳过，所以第一天生效为排序后第(min_data_points-1)个日期。
+        
+        新规则：
+        - 如果策略有缓存适配器且预加载了数据，从第一天开始生效
+        - 否则，当 len(self.data) < min_data_points 时跳过，第一天生效为第(min_data_points-1)个日期
+        
         若无法获取min_data_points或daily_returns为空，则返回None。
         """
         try:
+            if not daily_returns:
+                return None
+
+            sorted_dates = sorted(daily_returns.keys())
+            if not sorted_dates:
+                return None
+
+            # 检查策略是否使用了缓存数据
+            if self._strategy_uses_cache_data(strat):
+                # 使用缓存数据的策略从第一天开始生效
+                return sorted_dates[0]
+
+            # 传统逻辑：获取min_data_points
             min_pts = None
-            # 优先从params获取
             if hasattr(strat, 'params') and hasattr(strat.params, 'min_data_points'):
                 min_pts = getattr(strat.params, 'min_data_points', None)
             elif hasattr(strat, 'min_data_points'):
                 min_pts = getattr(strat, 'min_data_points', None)
 
             if not min_pts or min_pts <= 1:
-                return None
+                # 没有min_data_points限制，从第一天开始
+                return sorted_dates[0]
 
-            if not daily_returns:
-                return None
-
-            # 对daily_returns的日期排序
-            sorted_dates = sorted(daily_returns.keys())
             if len(sorted_dates) < min_pts:
                 return None
 
@@ -950,6 +962,29 @@ class ResultAnalyzer:
             return sorted_dates[min_pts - 1]
         except Exception:
             return None
+
+    def _strategy_uses_cache_data(self, strat) -> bool:
+        """
+        检查策略是否使用了缓存数据
+        
+        Args:
+            strat: 策略实例
+            
+        Returns:
+            bool: True表示使用了缓存数据
+        """
+        try:
+            # 检查是否有缓存适配器
+            if not (hasattr(strat, 'cache_adapter') and strat.cache_adapter is not None):
+                return False
+            
+            # 检查是否有预加载的通道数据
+            if hasattr(strat, 'preloaded_channel_data') and strat.preloaded_channel_data:
+                return True
+            
+            return False
+        except Exception:
+            return False
 
     def generate_report(self, results: Dict[str, Any], strategy_name: str = "策略") -> str:
         """

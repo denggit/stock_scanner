@@ -17,6 +17,8 @@ import pandas as pd
 
 from backend.business.backtest import DataUtils, ReportUtils
 from backend.business.backtest.core import BacktestEngine
+from backend.business.backtest.database import ChannelDataCache
+from backend.business.backtest.database.channel_cache_adapter import ChannelCacheAdapter
 from backend.utils.logger import setup_logger
 
 
@@ -74,11 +76,118 @@ class BaseBacktestRunner:
         # 策略参数
         self.strategy_params = self.config_cls.get_strategy_params(self.config.get('max_positions'))
 
+        # 初始化缓存适配器
+        self.cache_adapter = self._init_cache_adapter()
+
         # 记录关键信息
         self.logger.info(f"环境配置: {self.environment}")
         self.logger.info(f"最大股票数量: {self.config.get('max_stocks')}")
         self.logger.info(f"最大持仓数量: {self.config.get('max_positions')}")
         self.logger.info(f"配置描述: {self.config.get('description')}")
+
+    def _init_cache_adapter(self) -> ChannelCacheAdapter:
+        """
+        初始化缓存适配器
+        
+        Returns:
+            ChannelCacheAdapter: 缓存适配器实例
+        """
+        try:
+            # 检查是否需要启用缓存（可以通过环境变量控制）
+            enable_cache = os.getenv('BACKTEST_ENABLE_CACHE', 'true').lower() == 'true'
+            
+            if not enable_cache:
+                self.logger.info("缓存系统已禁用")
+                return None
+            
+            cache_adapter = ChannelCacheAdapter(
+                enable_batch_processing=True,
+                enable_auto_cache=True
+            )
+            
+            self.logger.info("上升通道缓存适配器初始化成功")
+            return cache_adapter
+            
+        except Exception as e:
+            self.logger.warning(f"缓存适配器初始化失败，将使用原始计算: {e}")
+            return None
+
+    def _preload_cache_for_strategy(self, stock_data_dict: Dict[str, pd.DataFrame], strategy_params: Dict[str, Any]):
+        """
+        为策略预加载缓存数据
+        
+        Args:
+            stock_data_dict: 股票数据字典
+            strategy_params: 策略参数
+        """
+        try:
+            self.logger.info("开始预加载上升通道缓存数据...")
+            
+            # 提取通道分析相关参数
+            channel_params = self._extract_channel_params(strategy_params)
+            
+            # 预加载缓存
+            success = self.cache_adapter.preload_cache_for_backtest(
+                stock_data_dict=stock_data_dict,
+                params_list=[channel_params],
+                start_date=self.config['start_date'],
+                end_date=self.config['end_date']
+            )
+            
+            if success:
+                self.logger.info("缓存数据预加载完成")
+                # 显示缓存统计信息
+                stats = self.cache_adapter.get_cache_statistics()
+                self.logger.info(f"缓存统计: {stats['total_cache_files']} 个文件, "
+                               f"{stats['total_size_mb']:.2f} MB")
+            else:
+                self.logger.warning("缓存数据预加载失败")
+                
+        except Exception as e:
+            self.logger.warning(f"预加载缓存数据失败: {e}")
+
+    def _extract_channel_params(self, strategy_params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        获取AscendingChannelRegression的纯算法参数
+        
+        这些参数决定了通道计算的结果，应该作为缓存的键
+        不包含策略层面的参数（如min_channel_score等）
+        
+        Args:
+            strategy_params: 策略参数（实际不使用，从算法默认配置获取）
+            
+        Returns:
+            Dict: 通道算法参数
+        """
+        try:
+            # 直接从AscendingChannelRegression获取默认配置
+            from backend.business.factor.core.engine.library.channel_analysis.rising_channel import AscendingChannelRegression
+            
+            # 创建一个临时实例来获取默认配置
+            temp_analyzer = AscendingChannelRegression()
+            algorithm_params = temp_analyzer._get_config_dict()
+            
+            self.logger.info(f"从AscendingChannelRegression获取算法参数: {list(algorithm_params.keys())}")
+            return algorithm_params
+            
+        except Exception as e:
+            self.logger.warning(f"无法从AscendingChannelRegression获取参数，使用硬编码默认值: {e}")
+            
+            # 回退到硬编码的算法参数（与AscendingChannelRegression._get_default_config()一致）
+            return {
+                'k': 2.0,
+                'L_max': 120,
+                'delta_cut': 5,
+                'pivot_m': 3,
+                'gain_trigger': 0.30,
+                'beta_delta': 0.15,
+                'break_days': 3,
+                'reanchor_fail_max': 2,
+                'min_data_points': 60,
+                'R2_min': 0.20,
+                'width_pct_min': 0.04,
+                'width_pct_max': 0.12
+            }
 
     # ------------------------ 对外主流程 ------------------------
     def run_basic_backtest(self) -> Optional[Dict[str, Any]]:
@@ -201,7 +310,15 @@ class BaseBacktestRunner:
         self.logger.info(f"选择主数据源: {main_code}")
 
         engine.add_data(main_data, name=main_code)
-        engine.add_strategy(self.strategy_class, stock_data_dict=stock_data_dict, **strategy_params)
+        
+        # 预加载缓存数据（如果启用了缓存）
+        if self.cache_adapter is not None:
+            self._preload_cache_for_strategy(stock_data_dict, strategy_params)
+        
+        engine.add_strategy(self.strategy_class, 
+                          stock_data_dict=stock_data_dict, 
+                          cache_adapter=self.cache_adapter,
+                          **strategy_params)
 
         self.logger.info("开始运行回测...")
         results = engine.run(f"多股票_{self.strategy_class.__name__}")
@@ -245,7 +362,10 @@ class BaseBacktestRunner:
 
     def _run_parameter_optimization(self, stock_data_dict: Dict[str, pd.DataFrame],
                                     parameter_ranges: Dict[str, List[Any]]):
-        """穷举参数组合并以总收益率为目标筛选最佳参数"""
+        """
+        穷举参数组合并以总收益率为目标筛选最佳参数
+        改进版本：每次基础回测完成后立即保存报告，避免程序中断导致数据丢失
+        """
         import itertools
         names = list(parameter_ranges.keys())
         values = list(parameter_ranges.values())
@@ -255,6 +375,19 @@ class BaseBacktestRunner:
         results: List[Dict[str, Any]] = []
         best: Optional[Dict[str, Any]] = None
         best_value = float('-inf')
+        
+        # 创建增量报告文件
+        report_cfg = self.config_cls.get_report_config()
+        report_dir = report_cfg['report_dir']
+        os.makedirs(report_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        incremental_filename = f"{report_dir}/{report_cfg['file_prefix']}_optimization_incremental_{timestamp}.xlsx"
+        
+        # 用于跟踪进度的文件
+        progress_filename = f"{report_dir}/{report_cfg['file_prefix']}_optimization_progress_{timestamp}.json"
+        
+        self.logger.info(f"增量报告文件: {incremental_filename}")
+        self.logger.info(f"进度跟踪文件: {progress_filename}")
 
         for i, combo in enumerate(combos):
             params = dict(zip(names, combo))
@@ -264,19 +397,57 @@ class BaseBacktestRunner:
                 target_value = 0
                 if result and 'metrics' in result:
                     target_value = result['metrics'].get('总收益率', 0) or 0
-                results.append({'parameters': params, 'result': result, 'target_value': target_value})
+                
+                # 创建结果记录
+                result_record = {
+                    'parameters': params, 
+                    'result': result, 
+                    'target_value': target_value,
+                    'combo_index': i,
+                    'timestamp': datetime.now().isoformat()
+                }
+                results.append(result_record)
+                
+                # 更新最优结果
                 if target_value > best_value:
                     best_value = target_value
                     best = {'parameters': params, 'result': result, 'target_value': target_value}
+                    self.logger.info(f"发现新的最优参数: {params}, 收益率: {target_value:.2f}%")
+                
+                # 每次完成后立即保存增量报告
+                self._save_incremental_optimization_report(
+                    results, best, incremental_filename, i + 1, len(combos)
+                )
+                
+                # 保存进度信息
+                self._save_optimization_progress(
+                    progress_filename, i + 1, len(combos), best, results
+                )
+                
             except Exception as e:
                 self.logger.warning(f"参数组合 {params} 测试失败: {e}")
+                # 即使失败也要保存当前进度
+                self._save_optimization_progress(
+                    progress_filename, i + 1, len(combos), best, results
+                )
                 continue
+
+        # 最终保存完整报告
+        final_filename = f"{report_dir}/{report_cfg['file_prefix']}_optimization_final_{timestamp}.xlsx"
+        self._save_final_optimization_report(results, best, final_filename, len(combos))
+        
+        # 清理中间态报告文件
+        self._cleanup_intermediate_reports(incremental_filename, progress_filename)
+        
+        self.logger.info(f"参数优化完成，最终报告已保存: {final_filename}")
+        self.logger.info("中间态报告文件已清理")
 
         return {
             'optimization_results': results,
             'best_params': best['parameters'] if best else {},
             'best_value': best['target_value'] if best else 0,
-            'total_combinations': len(combos)
+            'total_combinations': len(combos),
+            'final_report': final_filename
         }
 
     def _run_comparison_backtest(self, stock_data_dict: Dict[str, pd.DataFrame], strategies: List[Dict[str, Any]]):
@@ -450,3 +621,226 @@ class BaseBacktestRunner:
             self.logger.info(f"对比报告已保存: {filename}")
         except Exception as e:
             self.logger.exception(f"保存对比报告失败: {e}")
+
+    def _save_incremental_optimization_report(self, results: List[Dict[str, Any]], 
+                                             best: Optional[Dict[str, Any]], 
+                                             filename: str, 
+                                             current_count: int, 
+                                             total_count: int):
+        """
+        保存增量优化报告
+        
+        Args:
+            results: 当前所有结果
+            best: 当前最优结果
+            filename: 报告文件名
+            current_count: 当前完成的组合数
+            total_count: 总组合数
+        """
+        try:
+            optimization_data: List[Dict[str, Any]] = []
+            for r in results:
+                def safe_get_metrics(key, default=0):
+                    metrics = r['result'].get('metrics', {}) if r.get('result') else {}
+                    v = metrics.get(key, default)
+                    return v if v is not None else default
+
+                row = {
+                    '序号': r.get('combo_index', 0) + 1,
+                    '参数组合': str(r['parameters']),
+                    '收益率': r.get('target_value', 0),
+                    '夏普比率': safe_get_metrics('夏普比率', 0),
+                    '最大回撤': safe_get_metrics('最大回撤', 0),
+                    '交易次数': safe_get_metrics('交易次数', 0),
+                    '胜率': safe_get_metrics('胜率', 0),
+                    '完成时间': r.get('timestamp', '')
+                }
+                optimization_data.append(row)
+            
+            # 按收益率排序
+            df = pd.DataFrame(optimization_data).sort_values('收益率', ascending=False)
+            
+            # 创建最优结果数据
+            best_data = []
+            if best:
+                def safe_get_metrics(key, default=0):
+                    metrics = best['result'].get('metrics', {}) if best.get('result') else {}
+                    v = metrics.get(key, default)
+                    return v if v is not None else default
+                
+                best_data = [{
+                    '最优参数': str(best.get('parameters', {})),
+                    '最优收益率': best.get('target_value', 0),
+                    '夏普比率': safe_get_metrics('夏普比率', 0),
+                    '最大回撤': safe_get_metrics('最大回撤', 0),
+                    '交易次数': safe_get_metrics('交易次数', 0),
+                    '胜率': safe_get_metrics('胜率', 0),
+                    '完成进度': f"{current_count}/{total_count}",
+                    '更新时间': datetime.now().isoformat()
+                }]
+            
+            report_cfg = self.config_cls.get_report_config()
+            
+            with pd.ExcelWriter(filename, engine=report_cfg.get('excel_engine', 'openpyxl')) as writer:
+                # 优化结果表
+                df.to_excel(writer, sheet_name='优化结果', index=False)
+                
+                # 最优结果表
+                if best_data:
+                    best_df = pd.DataFrame(best_data)
+                    best_df.to_excel(writer, sheet_name='最优结果', index=False)
+                
+                # 进度信息表
+                progress_df = pd.DataFrame([{
+                    '总组合数': total_count,
+                    '已完成数': current_count,
+                    '完成比例': f"{current_count/total_count*100:.1f}%",
+                    '最优收益率': best.get('target_value', 0) if best else 0,
+                    '最后更新': datetime.now().isoformat()
+                }])
+                progress_df.to_excel(writer, sheet_name='进度信息', index=False)
+            
+            self.logger.info(f"增量报告已更新: {filename} (进度: {current_count}/{total_count})")
+            
+        except Exception as e:
+            self.logger.exception(f"保存增量报告失败: {e}")
+
+    def _save_optimization_progress(self, filename: str, current_count: int, total_count: int,
+                                   best: Optional[Dict[str, Any]], results: List[Dict[str, Any]]):
+        """
+        保存优化进度信息到JSON文件
+        
+        Args:
+            filename: 进度文件名
+            current_count: 当前完成的组合数
+            total_count: 总组合数
+            best: 当前最优结果
+            results: 当前所有结果
+        """
+        try:
+            import json
+            
+            progress_data = {
+                'total_combinations': total_count,
+                'completed_count': current_count,
+                'completion_percentage': current_count / total_count * 100,
+                'best_parameters': best.get('parameters', {}) if best else {},
+                'best_value': best.get('target_value', 0) if best else 0,
+                'last_update': datetime.now().isoformat(),
+                'results_summary': [
+                    {
+                        'combo_index': r.get('combo_index', 0),
+                        'parameters': r.get('parameters', {}),
+                        'target_value': r.get('target_value', 0),
+                        'timestamp': r.get('timestamp', '')
+                    }
+                    for r in results
+                ]
+            }
+            
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(progress_data, f, ensure_ascii=False, indent=2)
+                
+        except Exception as e:
+            self.logger.exception(f"保存进度信息失败: {e}")
+
+    def _save_final_optimization_report(self, results: List[Dict[str, Any]], 
+                                       best: Optional[Dict[str, Any]], 
+                                       filename: str, 
+                                       total_count: int):
+        """
+        保存最终优化报告
+        
+        Args:
+            results: 所有结果
+            best: 最优结果
+            filename: 报告文件名
+            total_count: 总组合数
+        """
+        try:
+            optimization_data: List[Dict[str, Any]] = []
+            for r in results:
+                def safe_get_metrics(key, default=0):
+                    metrics = r['result'].get('metrics', {}) if r.get('result') else {}
+                    v = metrics.get(key, default)
+                    return v if v is not None else default
+
+                row = {
+                    '序号': r.get('combo_index', 0) + 1,
+                    '参数组合': str(r['parameters']),
+                    '收益率': r.get('target_value', 0),
+                    '夏普比率': safe_get_metrics('夏普比率', 0),
+                    '最大回撤': safe_get_metrics('最大回撤', 0),
+                    '交易次数': safe_get_metrics('交易次数', 0),
+                    '胜率': safe_get_metrics('胜率', 0),
+                    '完成时间': r.get('timestamp', '')
+                }
+                optimization_data.append(row)
+            
+            # 按收益率排序
+            df = pd.DataFrame(optimization_data).sort_values('收益率', ascending=False)
+            
+            report_cfg = self.config_cls.get_report_config()
+            
+            with pd.ExcelWriter(filename, engine=report_cfg.get('excel_engine', 'openpyxl')) as writer:
+                # 优化结果表
+                df.to_excel(writer, sheet_name='优化结果', index=False)
+                
+                # 最优结果表
+                if best:
+                    def safe_get_metrics(key, default=0):
+                        metrics = best['result'].get('metrics', {}) if best.get('result') else {}
+                        v = metrics.get(key, default)
+                        return v if v is not None else default
+                    
+                    best_df = pd.DataFrame([{
+                        '最优参数': str(best.get('parameters', {})),
+                        '最优收益率': best.get('target_value', 0),
+                        '夏普比率': safe_get_metrics('夏普比率', 0),
+                        '最大回撤': safe_get_metrics('最大回撤', 0),
+                        '交易次数': safe_get_metrics('交易次数', 0),
+                        '胜率': safe_get_metrics('胜率', 0),
+                        '总组合数': total_count,
+                        '完成时间': datetime.now().isoformat()
+                    }])
+                    best_df.to_excel(writer, sheet_name='最优结果', index=False)
+                
+                # 统计信息表
+                stats_df = pd.DataFrame([{
+                    '总参数组合数': total_count,
+                    '成功完成数': len(results),
+                    '成功率': f"{len(results)/total_count*100:.1f}%",
+                    '最优收益率': best.get('target_value', 0) if best else 0,
+                    '平均收益率': df['收益率'].mean() if not df.empty else 0,
+                    '收益率标准差': df['收益率'].std() if not df.empty else 0,
+                    '完成时间': datetime.now().isoformat()
+                }])
+                stats_df.to_excel(writer, sheet_name='统计信息', index=False)
+            
+            self.logger.info(f"最终优化报告已保存: {filename}")
+            
+        except Exception as e:
+            self.logger.exception(f"保存最终报告失败: {e}")
+
+    def _cleanup_intermediate_reports(self, incremental_filename: str, progress_filename: str):
+        """
+        清理中间态报告文件
+        
+        Args:
+            incremental_filename: 增量报告文件名
+            progress_filename: 进度文件文件名
+        """
+        try:
+            # 删除增量报告文件
+            if os.path.exists(incremental_filename):
+                os.remove(incremental_filename)
+                self.logger.info(f"已删除增量报告文件: {incremental_filename}")
+            
+            # 删除进度文件
+            if os.path.exists(progress_filename):
+                os.remove(progress_filename)
+                self.logger.info(f"已删除进度文件: {progress_filename}")
+                
+        except Exception as e:
+            self.logger.warning(f"清理中间态报告文件失败: {e}")
+            # 不抛出异常，避免影响主流程

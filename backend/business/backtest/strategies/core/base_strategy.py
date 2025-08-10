@@ -82,8 +82,9 @@ class BaseStrategy(bt.Strategy):
         # 获取当前日期
         self.current_date = self.data.datetime.date(0)
 
-        # 跳过前min_data_points天的数据
-        if len(self.data) < self.params.min_data_points:
+        # 检查是否需要跳过前min_data_points天的数据
+        should_skip = self._should_skip_early_days()
+        if should_skip:
             if self.params.enable_logging:
                 self.logger.debug(f"跳过第 {len(self.data)} 天，等待足够的历史数据")
             return
@@ -291,6 +292,36 @@ class BaseStrategy(bt.Strategy):
         子类可以覆盖此方法进行自定义初始化
         """
         pass
+
+    def _should_skip_early_days(self) -> bool:
+        """
+        判断是否应该跳过前min_data_points天的数据
+        
+        如果策略有缓存适配器且已预加载数据，则可以从第一天开始回测
+        否则仍需等待足够的历史数据
+        
+        Returns:
+            bool: True表示应该跳过，False表示可以开始回测
+        """
+        # 检查是否有足够的历史数据
+        if len(self.data) < self.params.min_data_points:
+            # 检查是否有缓存适配器和预加载数据
+            if hasattr(self, 'cache_adapter') and self.cache_adapter is not None:
+                # 检查是否已经预加载了通道数据
+                if hasattr(self, 'preloaded_channel_data') and self.preloaded_channel_data:
+                    if self.params.enable_logging:
+                        self.logger.info(f"使用缓存数据，从第 {len(self.data)} 天开始回测")
+                    return False  # 有缓存数据，不跳过
+                
+                # 即使有缓存适配器，但如果没有预加载数据，仍需检查数据是否足够
+                if self.params.enable_logging:
+                    self.logger.debug(f"缓存适配器存在但无预加载数据，检查实时数据可用性")
+                
+            # 没有缓存或缓存无数据，按传统逻辑跳过
+            return True
+        
+        # 有足够的历史数据，不跳过
+        return False
 
     def _is_signal_valid(self, signal: Dict[str, Any]) -> bool:
         """

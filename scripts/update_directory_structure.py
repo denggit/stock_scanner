@@ -147,7 +147,7 @@ class DirectoryStructureUpdater:
             'double_up.py': '翻倍策略',
             'hs_bottom.py': '底部策略',
             'breakout.py': '突破策略',
-            'rising_channel_strategy.py': '上升通道策略',
+            'implementations/channel/rising_channel.py': '上升通道策略',
             'baostock_src.py': '宝硕数据源',
             'akshare_src.py': 'AKShare数据源',
             'strategy_service.py': '策略服务',

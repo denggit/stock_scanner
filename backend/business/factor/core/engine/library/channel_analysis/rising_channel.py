@@ -407,7 +407,7 @@ class AscendingChannelRegression:
                 'min_data_points': 60,
                 'R2_min': 0.20,
                 'width_pct_min': 0.04,
-                'width_pct_max': 0.12
+                'width_pct_max': 0.15
             }
         }
 
