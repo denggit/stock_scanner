@@ -13,10 +13,10 @@ import pandas as pd
 
 from backend.business.backtest.core.trading_rules import is_trade_blocked_by_price_limit
 from backend.utils.logger import setup_logger
-from .data_manager import DataManager
-from .position_manager import PositionManager
-from .trade_logger import TradeLogger
-from .trade_manager import TradeManager
+from .managers.data_manager import DataManager
+from .managers.position_manager import PositionManager
+from .managers.trade_logger import TradeLogger
+from .managers.trade_manager import TradeManager
 
 
 class BaseStrategy(bt.Strategy):

@@ -21,7 +21,7 @@ class RisingChannelConfig:
         "development": {
             "max_stocks": 100,
             "description": "开发环境 - 快速验证策略逻辑",
-            "max_positions": 5,
+            "max_positions": 10,
         },
         "optimization": {
             "max_stocks": 1000,
@@ -70,7 +70,7 @@ class RisingChannelConfig:
 
     # ==================== 参数优化范围 ====================
     OPTIMIZATION_RANGES = {
-        'max_positions': [10, 15, 20],  # 持仓数量范围
+        'max_positions': [10],  # 持仓数量范围
         # 'min_channel_score': [60.0],  # 通道评分范围
         # # 'k': [1.5, 2.0, 2.5],  # 通道斜率范围
         # 'gain_trigger': [0.25, 0.30, 0.35],  # 收益触发阈值范围
@@ -133,7 +133,7 @@ class RisingChannelConfig:
 
     # ==================== 优化配置 ====================
     OPTIMIZATION_CONFIG = {
-        'max_stocks_for_optimization': None,  # 优化时使用的股票数量
+        'max_stocks_for_optimization': 100,  # 优化时使用的股票数量
         'target_metric': 'total_return',  # 优化目标指标
     }
 

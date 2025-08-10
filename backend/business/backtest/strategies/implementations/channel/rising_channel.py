@@ -18,15 +18,8 @@ import pandas as pd
 
 from backend.business.backtest.configs.rising_channel_config import RisingChannelConfig
 from backend.business.factor.core.engine.library.channel_analysis.channel_state import ChannelStatus
-from .base import (
-    BaseStrategy,
-    ChannelAnalyzerManager,
-    SignalUtils,
-    ParameterUtils,
-    DataUtils,
-    ChannelAnalysisUtils,
-    parse_r2_bounds
-)
+from ...core import BaseStrategy, SignalUtils, ParameterUtils, DataUtils
+from ...analyzers.channel import ChannelAnalyzerManager, ChannelAnalysisUtils, parse_r2_bounds
 
 
 class RisingChannelStrategy(BaseStrategy):
