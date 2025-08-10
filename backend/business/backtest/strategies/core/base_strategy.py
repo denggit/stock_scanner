@@ -38,14 +38,16 @@ class BaseStrategy(bt.Strategy):
         ('enable_logging', True),  # 是否启用日志
     )
 
-    def __init__(self, stock_data_dict: Dict[str, pd.DataFrame] = None):
+    def __init__(self, stock_data_dict: Dict[str, pd.DataFrame] = None, **kwargs):
         """
         初始化策略基类
         
         Args:
             stock_data_dict: 股票数据字典 {股票代码: DataFrame}
+            **kwargs: backtrader 策略参数（通过params定义的参数）
         """
-        super().__init__()
+        # 调用父类初始化，传递所有参数给 backtrader
+        super().__init__(**kwargs)
 
         # 设置日志记录器
         self.logger = setup_logger("backtest")
@@ -434,3 +436,79 @@ class BaseStrategy(bt.Strategy):
             self.logger.info(f"卖出 {stock_code}: {shares}股 @ {price:.2f}, "
                              f"收益: {profit_sign}{profit_amount:.2f}元 ({returns_pct:.2f}%), "
                              f"持仓{holding_days}天")
+
+    def get_strategy_info(self) -> Dict[str, Any]:
+        """
+        获取策略信息
+        
+        Returns:
+            策略信息字典，包含策略名称、参数、当前状态等
+        """
+        return {
+            "strategy_name": self.__class__.__name__,
+            "parameters": self._get_parameters(),
+            "current_positions": self.position_manager.get_position_count(),
+            "current_cash": self.broker.getcash() if hasattr(self, 'broker') and self.broker else 0,
+            "portfolio_value": self.broker.getvalue() if hasattr(self, 'broker') and self.broker else 0,
+            "current_date": self.current_date.strftime('%Y-%m-%d') if self.current_date else None,
+            "is_initialized": self._is_initialized
+        }
+
+    def _get_parameters(self) -> Dict[str, Any]:
+        """
+        获取策略参数
+        
+        Returns:
+            参数字典
+        """
+        try:
+            # 获取策略的参数定义
+            if hasattr(self.__class__, 'params'):
+                param_dict = {}
+                # 安全地遍历类的参数定义
+                try:
+                    pairs = self.__class__.params._getpairs()
+                    for pair in pairs:
+                        if isinstance(pair, (list, tuple)) and len(pair) >= 2:
+                            param_name, param_value = pair[0], pair[1]
+                            # 获取实际参数值
+                            actual_value = getattr(self.params, param_name, param_value)
+                            param_dict[param_name] = actual_value
+                        elif isinstance(pair, str):
+                            # 如果只是参数名
+                            param_dict[pair] = getattr(self.params, pair, None)
+                except:
+                    # 如果 _getpairs() 失败，尝试直接访问参数属性
+                    for attr in dir(self.params):
+                        if not attr.startswith('_'):
+                            try:
+                                value = getattr(self.params, attr)
+                                if not callable(value):
+                                    param_dict[attr] = value
+                            except:
+                                continue
+                return param_dict
+            else:
+                return {}
+        except Exception as e:
+            # 如果参数访问失败，返回空字典而不是崩溃
+            return {"error": f"Unable to access parameters: {str(e)}"}
+
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """
+        获取策略性能摘要
+        
+        Returns:
+            性能摘要字典
+        """
+        if hasattr(self, 'trade_logger') and self.trade_logger:
+            trades = self.trade_logger.get_trades()
+        else:
+            trades = []
+            
+        return {
+            "total_trades": len(trades),
+            "trades": trades,
+            "current_positions": self.position_manager.get_position_count(),
+            "portfolio_value": self.broker.getvalue() if hasattr(self, 'broker') and self.broker else 0
+        }

@@ -18,15 +18,8 @@ import pandas as pd
 
 from backend.business.backtest.configs.rising_channel_config import RisingChannelConfig
 from backend.business.factor.core.engine.library.channel_analysis.channel_state import ChannelStatus
-from .base import (
-    BaseStrategy,
-    ChannelAnalyzerManager,
-    SignalUtils,
-    ParameterUtils,
-    DataUtils,
-    ChannelAnalysisUtils,
-    parse_r2_bounds
-)
+from .core import BaseStrategy, SignalUtils, ParameterUtils, DataUtils
+from .analyzers.channel import ChannelAnalyzerManager, ChannelAnalysisUtils, parse_r2_bounds
 
 
 class RisingChannelStrategy(BaseStrategy):
@@ -58,17 +51,19 @@ class RisingChannelStrategy(BaseStrategy):
         ('R2_range', None),  # 参数优化时可传入 [R2_min, R2_max]，两者均可为 None
         ('width_pct_min', 0.04),  # 最小宽度百分比
         ('width_pct_max', 0.20),  # 最大宽度百分比
+        ('max_distance_from_lower', 15.0),  # 买入时距离通道下沿的最大百分比距离（%）
     )
 
-    def __init__(self, stock_data_dict: Dict[str, pd.DataFrame] = None):
+    def __init__(self, stock_data_dict: Dict[str, pd.DataFrame] = None, **kwargs):
         """
         初始化上升通道策略
         
         Args:
             stock_data_dict: 股票数据字典
+            **kwargs: backtrader 策略参数（通过params定义的参数）
         """
         # 调用父类初始化
-        super().__init__(stock_data_dict)
+        super().__init__(stock_data_dict, **kwargs)
 
         # 通道分析器管理器
         self.channel_manager = None
@@ -225,6 +220,13 @@ class RisingChannelStrategy(BaseStrategy):
                 current_price, channel_state
             )
 
+            # 检查距离是否超过最大允许值
+            if distance_to_lower > self.params.max_distance_from_lower:
+                if self.params.enable_logging:
+                    self.logger.debug(f"股票 {stock_code} 距离下沿 {distance_to_lower:.2f}% "
+                                      f"超过最大允许值 {self.params.max_distance_from_lower:.2f}%，跳过")
+                continue
+
             normal_stocks_with_distance.append({
                 'stock_code': stock_code,
                 'current_price': current_price,
@@ -260,7 +262,7 @@ class RisingChannelStrategy(BaseStrategy):
                 signal = self._create_buy_signal(
                     stock_code,
                     stock_info['current_price'],
-                    f"通道NORMAL，价格位于通道内，距离下沿{stock_info['distance_to_lower']:.2f}% ，评分{stock_info['score']:.1f}",
+                    f"通道NORMAL，价格位于通道内，距离下沿{stock_info['distance_to_lower']:.2f}%（≤{self.params.max_distance_from_lower:.1f}%），评分{stock_info['score']:.1f}",
                     stock_info['score'] / 100.0,
                     extra=extras
                 )

@@ -199,14 +199,23 @@ class TradeLogger:
             else:
                 self.logger.info(f"交易记录: 卖出 {stock_code} {size}股 @ {price:.2f}元")
 
-    def get_all_trades(self) -> List[Dict[str, Any]]:
+    def get_trades(self) -> List[Dict[str, Any]]:
         """
-        获取所有交易记录
+        获取所有交易记录（主要接口）
         
         Returns:
             所有交易记录列表
         """
         return self.trades.copy()
+
+    def get_all_trades(self) -> List[Dict[str, Any]]:
+        """
+        获取所有交易记录（别名方法）
+        
+        Returns:
+            所有交易记录列表
+        """
+        return self.get_trades()
 
     def get_trades_by_action(self, action: str) -> List[Dict[str, Any]]:
         """
