@@ -587,7 +587,7 @@ class DatabaseManager:
             if fields != "*":
                 fields = ",".join(fields) if isinstance(fields, (list, tuple)) else fields
             cursor = self.conn.cursor()
-            cursor.execute(f"SELECT {fields} FROM stock_list")
+            cursor.execute(f"SELECT {fields} FROM stock_list WHERE type=1")
             result = cursor.fetchall()
             cursor.close()
             if result:  # 检查data是否为空

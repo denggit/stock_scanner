@@ -84,6 +84,28 @@ class RisingChannelBacktestRunner(BaseBacktestRunner):
         self.logger.info(f"上升通道回测运行器初始化完成")
         self.logger.info(f"策略类: {RisingChannelBacktestStrategy.__name__}")
         self.logger.info(f"配置类: {RisingChannelConfig.__name__}")
+        
+        # 记录详细的策略参数
+        self.logger.info("=" * 60)
+        self.logger.info("📊 策略参数配置:")
+        self.logger.info(f"  最大持仓数量: {self.strategy_params.get('max_positions')}")
+        self.logger.info(f"  最小通道评分: {self.strategy_params.get('min_channel_score')}")
+        self.logger.info(f"  最小数据点数: {self.strategy_params.get('min_data_points')}")
+        self.logger.info(f"  通道斜率参数(k): {self.strategy_params.get('k')}")
+        self.logger.info(f"  最大回看天数(L_max): {self.strategy_params.get('L_max')}")
+        self.logger.info(f"  切割参数(delta_cut): {self.strategy_params.get('delta_cut')}")
+        self.logger.info(f"  枢轴参数(pivot_m): {self.strategy_params.get('pivot_m')}")
+        self.logger.info(f"  收益触发阈值(gain_trigger): {self.strategy_params.get('gain_trigger')}")
+        self.logger.info(f"  Beta变化阈值(beta_delta): {self.strategy_params.get('beta_delta')}")
+        self.logger.info(f"  突破天数(break_days): {self.strategy_params.get('break_days')}")
+        self.logger.info(f"  重锚定失败最大次数: {self.strategy_params.get('reanchor_fail_max')}")
+        self.logger.info(f"  最小R²值: {self.strategy_params.get('R2_min')}")
+        self.logger.info(f"  最大R²值: {self.strategy_params.get('R2_max')}")
+        self.logger.info(f"  最小通道宽度: {self.strategy_params.get('width_pct_min')}")
+        self.logger.info(f"  最大通道宽度: {self.strategy_params.get('width_pct_max')}")
+        self.logger.info(f"  距离下沿最大百分比: {self.strategy_params.get('max_distance_from_lower')}%")
+        self.logger.info(f"  启用日志: {self.strategy_params.get('enable_logging')}")
+        self.logger.info("=" * 60)
 
     def get_runner_info(self) -> Dict[str, Any]:
         """
