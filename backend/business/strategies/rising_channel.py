@@ -46,10 +46,7 @@ class RisingChannelStrategy(BaseStrategy):
             "L_max": 120,  # 最大窗口长度
             "delta_cut": 5,  # 滑动窗口删除天数
             "pivot_m": 3,  # 锚点检测参数
-            "gain_trigger": 0.30,  # 重锚涨幅触发阈值
-            "beta_delta": 0.15,  # 斜率变化阈值
-            "break_days": 3,  # 连续突破天数
-            "reanchor_fail_max": 2,  # 重锚失败最大次数
+            # （已移除 gain_trigger/beta_delta/break_days/reanchor_fail_max）
             "min_data_points": 60,  # 最小数据点数
             "R2_min": 0.20,  # 最小回归拟合优度
             "width_pct_min": 0.04,  # 通道宽度下限
@@ -153,10 +150,7 @@ class RisingChannelStrategy(BaseStrategy):
                 'L_max': self._params['L_max'],
                 'delta_cut': self._params['delta_cut'],
                 'pivot_m': self._params['pivot_m'],
-                'gain_trigger': self._params['gain_trigger'],
-                'beta_delta': self._params['beta_delta'],
-                'break_days': self._params['break_days'],
-                'reanchor_fail_max': self._params['reanchor_fail_max'],
+                # 精简后的参数不再包含上述四项
                 'min_data_points': self._params['min_data_points'],
                 'R2_min': self._params['R2_min'],
                 'width_pct_min': self._params['width_pct_min'],

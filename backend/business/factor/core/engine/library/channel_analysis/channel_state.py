@@ -24,10 +24,9 @@ import pandas as pd
 
 class ChannelStatus(Enum):
     """通道状态枚举"""
-    NORMAL = "NORMAL"  # 通道正常
-    ACCEL_BREAKOUT = "ACCEL_BREAKOUT"  # 加速突破
-    BREAKDOWN = "BREAKDOWN"  # 跌破下沿
-    BROKEN = "BROKEN"  # 通道失效
+    NORMAL = "NORMAL"      # 通道正常
+    BREAKOUT = "BREAKOUT"  # 突破上沿（含加速）
+    BREAKDOWN = "BREAKDOWN"  # 跌破下沿/通道失效
 
 
 @dataclass
@@ -245,9 +244,8 @@ class ChannelState:
             bool: 是否为极端状态
         """
         return self.channel_status in [
-            ChannelStatus.ACCEL_BREAKOUT,
+            ChannelStatus.BREAKOUT,
             ChannelStatus.BREAKDOWN,
-            ChannelStatus.BROKEN
         ]
 
     def can_reanchor(self) -> bool:
@@ -268,8 +266,7 @@ class ChannelState:
         """
         status_descriptions = {
             ChannelStatus.NORMAL: "通道正常",
-            ChannelStatus.ACCEL_BREAKOUT: "加速突破",
-            ChannelStatus.BREAKDOWN: "跌破下沿",
-            ChannelStatus.BROKEN: "通道失效"
+            ChannelStatus.BREAKOUT: "突破上沿",
+            ChannelStatus.BREAKDOWN: "跌破下沿/失效",
         }
         return status_descriptions.get(self.channel_status, "未知状态")

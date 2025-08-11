@@ -714,19 +714,8 @@ def main():
                 pivot_m = st.slider("锚点检测参数 (pivot_m)", min_value=2, max_value=10, value=3, step=1,
                                     help="判断pivot low的宽度参数 (m左m右更高)")
 
-                # 触发参数
-                st.subheader("触发参数")
-                gain_trigger = st.slider("重锚涨幅触发 (gain_trigger)", min_value=0.1, max_value=0.5, value=0.30,
-                                         step=0.05,
-                                         help="累计涨幅触发重锚的阈值")
-                beta_delta = st.slider("斜率变化阈值 (beta_delta)", min_value=0.05, max_value=0.3, value=0.15,
-                                       step=0.05,
-                                       help="斜率变化阈值 (±15%)")
-                break_days = st.slider("连续突破天数 (break_days)", min_value=1, max_value=10, value=3, step=1,
-                                       help="连续n日突破上下沿视为失效")
-                reanchor_fail_max = st.slider("重锚失败次数 (reanchor_fail_max)", min_value=1, max_value=5, value=2,
-                                              step=1,
-                                              help="连续n次重锚仍突破/跌破时进入极端状态")
+                # 触发参数（已简化：去除 gain_trigger/beta_delta/break_days/reanchor_fail_max）
+                st.subheader("触发参数（已简化）")
 
                 # 质量参数
                 st.subheader("质量参数")
@@ -848,10 +837,6 @@ def main():
                                 'L_max': L_max,
                                 'delta_cut': delta_cut,
                                 'pivot_m': pivot_m,
-                                'gain_trigger': gain_trigger,
-                                'beta_delta': beta_delta,
-                                'break_days': break_days,
-                                'reanchor_fail_max': reanchor_fail_max,
                                 'min_data_points': min_data_points,
                                 'R2_min': R2_min,
                                 'width_pct_min': width_pct_min,
@@ -1036,7 +1021,7 @@ def main():
             - **上沿线**：红色虚线，表示通道的上边界
             - **下沿线**：绿色虚线，表示通道的下边界
             - **锚点**：橙色菱形标记，表示通道的起始点
-            - 通道状态包括：NORMAL（正常）、ACCEL_BREAKOUT（加速突破）、BREAKDOWN（跌破）、BROKEN（失效）
+            - 通道状态包括：NORMAL（正常）、BREAKOUT（上沿突破）、BREAKDOWN（跌破/失效）
             """)
 
         # 显示基本信息

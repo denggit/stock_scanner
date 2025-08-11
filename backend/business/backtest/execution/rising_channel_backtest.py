@@ -95,10 +95,7 @@ class RisingChannelBacktestRunner(BaseBacktestRunner):
         self.logger.info(f"  最大回看天数(L_max): {self.strategy_params.get('L_max')}")
         self.logger.info(f"  切割参数(delta_cut): {self.strategy_params.get('delta_cut')}")
         self.logger.info(f"  枢轴参数(pivot_m): {self.strategy_params.get('pivot_m')}")
-        self.logger.info(f"  收益触发阈值(gain_trigger): {self.strategy_params.get('gain_trigger')}")
-        self.logger.info(f"  Beta变化阈值(beta_delta): {self.strategy_params.get('beta_delta')}")
-        self.logger.info(f"  突破天数(break_days): {self.strategy_params.get('break_days')}")
-        self.logger.info(f"  重锚定失败最大次数: {self.strategy_params.get('reanchor_fail_max')}")
+        # 已简化：移除 gain_trigger/beta_delta/break_days/reanchor_fail_max 的输出
         self.logger.info(f"  最小R²值: {self.strategy_params.get('R2_min')}")
         self.logger.info(f"  最大R²值: {self.strategy_params.get('R2_max')}")
         self.logger.info(f"  最小通道宽度: {self.strategy_params.get('width_pct_min')}")

@@ -34,7 +34,7 @@ class RisingChannelConfig:
         'initial_cash': 200000.0,  # 初始资金20万
         'commission': 0.0003,  # 手续费率
         'stock_pool': 'no_st',  # 股票池：非ST股票
-        'start_date': '2025-01-01',  # 开始日期
+        'start_date': '2021-01-01',  # 开始日期
         'end_date': datetime.today().strftime("%Y-%m-%d"),  # 结束日期
         'min_data_days': 120  # 最小数据天数
     }
@@ -94,10 +94,6 @@ class RisingChannelConfig:
         'L_max': 120,  # 最大回看天数
         'delta_cut': 5,  # 切割参数
         'pivot_m': 3,  # 枢轴参数
-        'gain_trigger': 0.30,  # 收益触发阈值
-        'beta_delta': 0.15,  # Beta变化阈值
-        'break_days': 3,  # 突破天数
-        'reanchor_fail_max': 2,  # 重锚定失败最大次数
         'R2_min': 0.20,  # 最小R²值（用于通道有效性判定）；若在选股阶段想取消下限，可将选股用的 R2_min 设为 None
         'R2_max': None,  # 最大R²值上限（仅用于选股过滤；None 表示不设上限）
         'R2_range': None,  # 参数优化时可传入 [R2_min, R2_max]，两者均可为 None
@@ -111,7 +107,6 @@ class RisingChannelConfig:
         'max_positions': [20],  # 持仓数量范围
         # 'min_channel_score': [60.0],  # 通道评分范围
         # # 'k': [1.5, 2.0, 2.5],  # 通道斜率范围
-        # 'gain_trigger': [0.25, 0.30, 0.35],  # 收益触发阈值范围
         # # 'R2_min': [0.15, 0.20, 0.25],  # 最小R²值范围（用于通道有效性判定）
         # 'width_pct_min': [0.03, 0.04, 0.05],  # 最小通道宽度范围
         # 'width_pct_max': [0.12, 0.15, 0.20, 0.3],  # 最小通道宽度范围
@@ -127,7 +122,7 @@ class RisingChannelConfig:
                 'max_positions': 30,  # 较少持仓
                 'min_channel_score': 70.0,  # 更高评分要求
                 'k': 1.5,  # 较低斜率
-                'gain_trigger': 0.25,  # 较低收益触发
+                # （已移除 gain_trigger）
                 'R2_min': 0.25,  # 更高R²要求
                 'width_pct_min': 0.05,  # 更宽通道要求
                 'width_pct_max': 0.18,  # 最大通道宽度
@@ -140,7 +135,7 @@ class RisingChannelConfig:
                 'max_positions': 70,  # 更多持仓
                 'min_channel_score': 50.0,  # 较低评分要求
                 'k': 2.5,  # 较高斜率
-                'gain_trigger': 0.35,  # 较高收益触发
+                # （已移除 gain_trigger）
                 'R2_min': 0.15,  # 较低R²要求
                 'width_pct_min': 0.03,  # 较窄通道要求
                 'width_pct_max': 0.25,  # 最大通道宽度
@@ -310,8 +305,6 @@ class RisingChannelConfig:
         channel_params = {
             'delta_cut': strategy_params.get('delta_cut'),
             'pivot_m': strategy_params.get('pivot_m'),
-            'break_days': strategy_params.get('break_days'),
-            'reanchor_fail_max': strategy_params.get('reanchor_fail_max'),
             'min_data_points': strategy_params.get('min_data_points'),
         }
         return channel_params

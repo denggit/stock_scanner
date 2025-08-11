@@ -251,7 +251,7 @@ class CalIndicators:
                 - mid_tomorrow: 明日预测中轴价
                 - upper_tomorrow: 明日预测上沿价
                 - lower_tomorrow: 明日预测下沿价
-                - channel_status: 通道状态 (NORMAL/ACCEL_BREAKOUT/BREAKDOWN/BROKEN)
+                - channel_status: 通道状态 (NORMAL/BREAKOUT/BREAKDOWN)
                 - anchor_date: 锚点日期
                 - anchor_price: 锚点价格
                 - break_cnt_up: 连续突破上沿次数

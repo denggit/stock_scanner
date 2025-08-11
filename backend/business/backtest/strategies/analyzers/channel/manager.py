@@ -84,7 +84,7 @@ class MockChannelState:
         if rand_val < 0.6:
             self.channel_status = ChannelStatus.NORMAL
         elif rand_val < 0.8:
-            self.channel_status = ChannelStatus.ACCEL_BREAKOUT
+            self.channel_status = ChannelStatus.BREAKOUT
         else:
             self.channel_status = ChannelStatus.BREAKDOWN
 
@@ -341,7 +341,7 @@ class ChannelAnalyzerManager:
 
         if status == ChannelStatus.NORMAL:
             base_score = 60.0  # 提高NORMAL状态的基础评分
-        elif status == ChannelStatus.ACCEL_BREAKOUT:
+        elif status == ChannelStatus.BREAKOUT:
             base_score = 50.0
         elif status == ChannelStatus.BREAKDOWN:
             base_score = 20.0

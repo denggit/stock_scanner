@@ -14,18 +14,6 @@ ascending_channel:
   # 判断 pivot low 宽度 (m 左 m 右更高)
   pivot_m: 3
   
-  # 累计涨幅触发重锚
-  gain_trigger: 0.30
-  
-  # 斜率变化阈值 (±15 %)
-  beta_delta: 0.15
-  
-  # 连续 n 日突破上下沿视为失效
-  break_days: 3
-  
-  # 连续 n 次重锚仍突破/跌破时进入极端状态
-  reanchor_fail_max: 2
-  
   # 最小数据要求
   min_data_points: 60
   
@@ -51,9 +39,8 @@ ascending_channel:
 # 通道状态定义
 channel_status:
   NORMAL: "通道正常"
-  ACCEL_BREAKOUT: "加速突破"
-  BREAKDOWN: "跌破下沿"
-  BROKEN: "通道失效"
+  BREAKOUT: "突破上沿"
+  BREAKDOWN: "跌破下沿/失效"
 
 # 异常处理配置
 error_handling:

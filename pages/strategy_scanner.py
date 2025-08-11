@@ -702,38 +702,7 @@ def main():
                 )
 
             with col2:
-                params['gain_trigger'] = st.number_input(
-                    "重锚涨幅触发 (gain_trigger)",
-                    min_value=0.1,
-                    max_value=0.5,
-                    value=0.30,
-                    step=0.05,
-                    help="累计涨幅触发重锚的阈值"
-                )
-                params['beta_delta'] = st.number_input(
-                    "斜率变化阈值 (beta_delta)",
-                    min_value=0.05,
-                    max_value=0.3,
-                    value=0.15,
-                    step=0.05,
-                    help="斜率变化阈值 (±15%)"
-                )
-                params['break_days'] = st.number_input(
-                    "连续突破天数 (break_days)",
-                    min_value=1,
-                    max_value=10,
-                    value=3,
-                    step=1,
-                    help="连续n日突破上下沿视为失效"
-                )
-                params['reanchor_fail_max'] = st.number_input(
-                    "重锚失败次数 (reanchor_fail_max)",
-                    min_value=1,
-                    max_value=5,
-                    value=2,
-                    step=1,
-                    help="连续n次重锚仍突破/跌破时进入极端状态"
-                )
+                st.caption("已简化：移除 gain_trigger/beta_delta/break_days/reanchor_fail_max 参数")
 
             # 质量参数
             st.subheader("质量参数设置")

@@ -119,7 +119,15 @@ class StandardChannelStrategy(ChannelCalculationStrategy):
         )
         state.update_channel_boundaries(beta, sigma, config['k'])
 
-        # 7. 通道宽度检查
+        # 基于当日价格的三态判定
+        if current_close > state.upper_today:
+            state.channel_status = ChannelStatus.BREAKOUT
+        elif current_close < state.lower_today:
+            state.channel_status = ChannelStatus.BREAKDOWN
+        else:
+            state.channel_status = ChannelStatus.NORMAL
+
+        # 7. 通道宽度检查（保持：宽度无效则记为无效，但带回已计算状态与边界）
         width_pct = (state.upper_today - state.lower_today) / state.mid_today if state.mid_today else None
         if width_pct is None or width_pct < config['width_pct_min'] or width_pct > config['width_pct_max']:
             return ChannelCalculationResult(
@@ -128,9 +136,8 @@ class StandardChannelStrategy(ChannelCalculationStrategy):
                 break_reason="invalid_width"
             )
 
-        # 8. 设置正常状态
+        # 8. 设置其他字段
         state.cumulative_gain = (current_close - anchor_price) / anchor_price
-        state.channel_status = ChannelStatus.NORMAL
         state.r2 = r2
 
         return ChannelCalculationResult(
@@ -282,7 +289,7 @@ class HistoryCalculationTemplate:
                     # 计算波动率
                     if result.sigma and result.state.mid_today and result.state.mid_today > 0:
                         base_record['volatility'] = result.sigma / result.state.mid_today
-            base_record['channel_status'] = ChannelStatus.BROKEN.value
+            base_record['channel_status'] = ChannelStatus.BREAKDOWN.value
         else:
             # 有效通道
             state = result.state
@@ -352,10 +359,6 @@ class AscendingChannelRegression:
         self.L_max = params.get('L_max', config_section['L_max'])
         self.delta_cut = params.get('delta_cut', config_section['delta_cut'])
         self.pivot_m = params.get('pivot_m', config_section['pivot_m'])
-        self.gain_trigger = params.get('gain_trigger', config_section['gain_trigger'])
-        self.beta_delta = params.get('beta_delta', config_section['beta_delta'])
-        self.break_days = params.get('break_days', config_section['break_days'])
-        self.reanchor_fail_max = params.get('reanchor_fail_max', config_section['reanchor_fail_max'])
         self.min_data_points = params.get('min_data_points', config_section['min_data_points'])
         self.R2_min = params.get('R2_min', config_section.get('R2_min', 0.20))
         self.width_pct_min = params.get('width_pct_min', config_section.get('width_pct_min', 0.04))
@@ -368,10 +371,6 @@ class AscendingChannelRegression:
             'L_max': self.L_max,
             'delta_cut': self.delta_cut,
             'pivot_m': self.pivot_m,
-            'gain_trigger': self.gain_trigger,
-            'beta_delta': self.beta_delta,
-            'break_days': self.break_days,
-            'reanchor_fail_max': self.reanchor_fail_max,
             'min_data_points': self.min_data_points,
             'R2_min': self.R2_min,
             'width_pct_min': self.width_pct_min,
@@ -400,10 +399,6 @@ class AscendingChannelRegression:
                 'L_max': 120,
                 'delta_cut': 5,
                 'pivot_m': 3,
-                'gain_trigger': 0.30,
-                'beta_delta': 0.15,
-                'break_days': 3,
-                'reanchor_fail_max': 2,
                 'min_data_points': 60,
                 'R2_min': 0.20,
                 'width_pct_min': 0.04,
@@ -423,21 +418,22 @@ class AscendingChannelRegression:
         result = self.strategy.calculate_for_date(df, current_date, current_close, self._get_config_dict())
 
         if not result.is_valid:
-            # 返回BROKEN状态
+            # 若返回了state（如invalid_width），直接沿用已判定的三态
+            if result.state is not None:
+                return result.state
+            # 否则构造一个最小可用状态并标记为 BREAKDOWN
             cumulative_gain = None
             if result.anchor_price is not None and result.anchor_price > 0:
                 cumulative_gain = (current_close - result.anchor_price) / result.anchor_price
             state = ChannelState(
                 anchor_date=result.anchor_date, anchor_price=result.anchor_price,
-                window_df=result.window_df, beta=result.beta, sigma=result.sigma,
-                r2=result.r2,  # 添加r2字段
-                mid_today=result.state.mid_today if result.state else None,
-                upper_today=result.state.upper_today if result.state else None,
-                lower_today=result.state.lower_today if result.state else None,
-                mid_tomorrow=result.state.mid_tomorrow if result.state else None,
-                upper_tomorrow=result.state.upper_tomorrow if result.state else None,
-                lower_tomorrow=result.state.lower_tomorrow if result.state else None,
-                channel_status=ChannelStatus.BROKEN,
+                window_df=result.window_df if result.window_df is not None else pd.DataFrame(),
+                beta=result.beta if result.beta is not None else 0.0,
+                sigma=result.sigma if result.sigma is not None else 0.0,
+                mid_today=0.0, upper_today=0.0, lower_today=0.0,
+                mid_tomorrow=0.0, upper_tomorrow=0.0, lower_tomorrow=0.0,
+                r2=result.r2,
+                channel_status=ChannelStatus.BREAKDOWN,
                 cumulative_gain=cumulative_gain
             )
             return state
@@ -471,11 +467,17 @@ class AscendingChannelRegression:
         self.state.update_channel_boundaries(beta, sigma, self.k)
         self.state.r2 = r2  # 更新r2字段
         self.state.cumulative_gain = (bar['close'] - self.state.anchor_price) / self.state.anchor_price
-        self.state.update_break_counters(bar['close'], self.state.upper_today, self.state.lower_today)
+
+        # 基于当日价格的三态判定（即时）
+        if bar['close'] > self.state.upper_today:
+            self.state.channel_status = ChannelStatus.BREAKOUT
+        elif bar['close'] < self.state.lower_today:
+            self.state.channel_status = ChannelStatus.BREAKDOWN
+        else:
+            self.state.channel_status = ChannelStatus.NORMAL
 
         if self._should_reanchor():
             self._reanchor()
-        self._check_extreme_states()
 
         return self.state.to_dict()
 
@@ -492,14 +494,8 @@ class AscendingChannelRegression:
         """检查是否应该重锚"""
         if not self.state.can_reanchor():
             return False
-        conditions = [
-            len(self.state.window_df) > self.L_max,
-            self.state.cumulative_gain >= self.gain_trigger,
-            self.state.break_cnt_up >= self.break_days or self.state.break_cnt_down >= self.break_days,
-            self.state.channel_status == ChannelStatus.BROKEN,
-            self._check_beta_change()
-        ]
-        return any(conditions)
+        # 仅基于窗口长度判断是否重锚
+        return len(self.state.window_df) > self.L_max
 
     def _check_beta_change(self) -> bool:
         """检查斜率变化"""
@@ -535,9 +531,9 @@ class AscendingChannelRegression:
         self.state.reanchor_fail_up = 0
         self.state.reanchor_fail_down = 0
 
-        if self.state.channel_status == ChannelStatus.BROKEN:
+        if self.state.channel_status == ChannelStatus.BREAKDOWN:
             self.state.channel_status = ChannelStatus.NORMAL
-            logger.info("通道状态重置为正常")
+            logger.info("通道状态从 BREAKDOWN 重置为 NORMAL")
 
         logger.info(
             f"重锚成功: 新锚点 {new_anchor_date} @ {new_anchor_price:.2f}, 窗口大小: {len(self.state.window_df)}")
@@ -545,15 +541,14 @@ class AscendingChannelRegression:
     def _check_extreme_states(self) -> None:
         """检查并更新极端状态"""
         if self.state.reanchor_fail_up >= self.reanchor_fail_max:
-            self.state.channel_status = ChannelStatus.ACCEL_BREAKOUT
+            self.state.channel_status = ChannelStatus.BREAKOUT
             logger.debug(f"进入加速突破状态: 连续重锚失败 {self.state.reanchor_fail_up} 次")
         elif self.state.reanchor_fail_down >= self.reanchor_fail_max:
             self.state.channel_status = ChannelStatus.BREAKDOWN
             logger.debug(f"进入跌破状态: 连续重锚失败 {self.state.reanchor_fail_down} 次")
-        elif (self.state.break_cnt_down >= self.break_days and
-              self.state.channel_status != ChannelStatus.BROKEN):
-            self.state.channel_status = ChannelStatus.BROKEN
-            logger.debug("通道失效: 连续跌破下沿")
+        elif (self.state.break_cnt_down >= self.break_days):
+            self.state.channel_status = ChannelStatus.BREAKDOWN
+            logger.debug("通道失效: 连续跌破下沿 → 标记为 BREAKDOWN")
 
     # 向后兼容方法
     def force_reanchor(self, state: ChannelState) -> ChannelState:

@@ -469,7 +469,7 @@ class RisingChannelStrategy(BaseStrategy):
         """从缓存数据构建通道状态对象"""
         from backend.business.factor.core.engine.library.channel_analysis.channel_state import ChannelStatus
 
-        # 创建一个简化的通道状态对象，只包含必要的字段
+            # 创建一个简化的通道状态对象，只包含必要的字段
         class CachedChannelState:
             def __init__(self, cache_data):
                 self.anchor_date = pd.to_datetime(cache_data.get('anchor_date'))
@@ -485,19 +485,20 @@ class RisingChannelStrategy(BaseStrategy):
                 self.lower_tomorrow = cache_data.get('lower_tomorrow')
                 self.cumulative_gain = cache_data.get('cumulative_gain')
 
-                # 通道状态
-                status_value = cache_data.get('channel_status', ChannelStatus.NORMAL.value)
-                # 支持字符串（"NORMAL"/"BROKEN" 等）或枚举/数字
+                # 通道状态：严格基于当日价格与上下沿即时判定（不做任何旧值兼容映射）
                 try:
-                    if isinstance(status_value, ChannelStatus):
-                        self.channel_status = status_value
-                    elif isinstance(status_value, str):
-                        # 允许传入名称字符串
-                        self.channel_status = ChannelStatus[
-                            status_value] if status_value in ChannelStatus.__members__ else ChannelStatus.NORMAL
+                    close_val = cache_data.get('close', None)
+                    upper_val = self.upper_today
+                    lower_val = self.lower_today
+                    if close_val is not None and upper_val is not None and lower_val is not None:
+                        if float(close_val) > float(upper_val):
+                            self.channel_status = ChannelStatus.BREAKOUT
+                        elif float(close_val) < float(lower_val):
+                            self.channel_status = ChannelStatus.BREAKDOWN
+                        else:
+                            self.channel_status = ChannelStatus.NORMAL
                     else:
-                        # 兜底：尝试以值构造
-                        self.channel_status = ChannelStatus(status_value)
+                        self.channel_status = ChannelStatus.NORMAL
                 except Exception:
                     self.channel_status = ChannelStatus.NORMAL
 
@@ -609,16 +610,12 @@ class RisingChannelStrategy(BaseStrategy):
         except Exception as e:
             self.logger.warning(f"无法获取通道算法参数，使用默认值: {e}")
 
-            # 回退到硬编码的算法参数
+            # 回退到硬编码的算法参数（仅保留必要项）
             return {
                 'k': 2.0,
                 'L_max': 120,
                 'delta_cut': 5,
                 'pivot_m': 3,
-                'gain_trigger': 0.30,
-                'beta_delta': 0.15,
-                'break_days': 3,
-                'reanchor_fail_max': 2,
                 'min_data_points': 60,
                 'R2_min': 0.20,
                 'width_pct_min': 0.04,
@@ -712,10 +709,6 @@ class RisingChannelStrategy(BaseStrategy):
             "L_max": self.params.L_max,
             "delta_cut": self.params.delta_cut,
             "pivot_m": self.params.pivot_m,
-            "gain_trigger": self.params.gain_trigger,
-            "beta_delta": self.params.beta_delta,
-            "break_days": self.params.break_days,
-            "reanchor_fail_max": self.params.reanchor_fail_max,
             "min_data_points": self.params.min_data_points,
             "width_pct_min": self.params.width_pct_min,
             "width_pct_max": self.params.width_pct_max
