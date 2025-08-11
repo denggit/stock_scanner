@@ -13,8 +13,9 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
+import time
 
-from backend.business.backtest.database.channel_db.channel_db_manager import ChannelDBManager
+from backend.business.backtest.database.channel_db.channel_db_manager import ChannelDBManager, ParameterHasher
 from backend.business.factor.core.engine.library.channel_analysis.rising_channel import (
     AscendingChannelRegression,
 )
@@ -27,136 +28,108 @@ class ChannelDBAdapter:
     对外方法保持与原 ChannelCacheAdapter 一致，便于无缝替换。
     """
 
-    def __init__(self, min_window_size: int = 60):
+    def __init__(self, min_window_size: int = 60, db_manager: ChannelDBManager | None = None):
         self.logger = setup_logger(__name__)
-        self.db = ChannelDBManager()
+        # 允许注入自定义DB管理器，便于测试或替换存储实现
+        self.db = db_manager if db_manager is not None else ChannelDBManager()
         self.min_window_size = min_window_size
         # 分析器实例缓存：按参数键缓存
         self._analyzer_cache: Dict[str, AscendingChannelRegression] = {}
 
-    # ---------- 对外接口 ----------
-    def get_channel_history_data(
+    # ---------- 对外接口（逐日按需） ----------
+    def get_channels_for_date(
         self,
         stock_data_dict: Dict[str, pd.DataFrame],
         params: Dict[str, Any],
-        start_date: str | None = None,
-        end_date: str | None = None,
+        target_date: str,
         min_window_size: int | None = None,
     ) -> Dict[str, pd.DataFrame]:
         """
-        批量获取通道历史数据：优先从数据库读取；缺失则计算并写回。
-        返回结构: {stock_code: DataFrame}
-        """
-        window = min_window_size or self.min_window_size
-        stock_codes = list(stock_data_dict.keys())
+        逐日按需获取通道数据：
+        - 仅查询 target_date 当天的记录
+        - 缺失则使用 fit_channel 计算当日状态，并仅写入该日一条记录
 
-        # 1) 读取数据库已有数据
-        existing: Dict[str, List[Dict[str, Any]]] = self.db.fetch_records(
-            params, stock_codes=stock_codes, start_date=start_date, end_date=end_date
+        Returns: {stock_code: 单行DataFrame}
+        """
+        t0 = time.perf_counter()
+        window = int(min_window_size or self.min_window_size)
+        stock_codes = list(stock_data_dict.keys())
+        params_hash = ParameterHasher.generate_hash(params)
+        try:
+            table_name = self.db.meta_manager.get_or_create_table_meta(params).table_name
+        except Exception:
+            table_name = f"channel_rcn_{params_hash}"
+
+        self.logger.info(
+            f"[CHD-Daily] 获取当日通道 | date={target_date} | stocks={len(stock_codes)} | window={window} | table={table_name}"
         )
 
-        # 2) 识别每只股票缺失的日期范围
-        missing_by_stock: Dict[str, List[Tuple[pd.Timestamp, pd.Timestamp]]] = {}
-        req_start = pd.to_datetime(start_date) if start_date else None
-        req_end = pd.to_datetime(end_date) if end_date else None
+        # 1) 查询当日已有记录
+        existing: Dict[str, List[Dict[str, Any]]] = self.db.fetch_records(
+            params, stock_codes=stock_codes, start_date=target_date, end_date=target_date
+        )
 
-        for code in stock_codes:
-            stock_df = stock_data_dict.get(code)
-            if stock_df is None or stock_df.empty:
-                continue
-            stock_df = stock_df.copy()
-            stock_df['trade_date'] = pd.to_datetime(stock_df['trade_date'])
+        have_codes = {code for code, recs in (existing or {}).items() if recs}
+        missing_codes = [c for c in stock_codes if c not in have_codes]
 
-            # 请求范围
-            s_date = req_start or stock_df['trade_date'].min()
-            e_date = req_end or stock_df['trade_date'].max()
-
-            # 已有日期集合
-            have = set()
-            if code in existing:
-                for r in existing[code]:
-                    try:
-                        have.add(pd.to_datetime(r.get('trade_date')))
-                    except Exception:
-                        pass
-
-            # 找到请求区间内缺失的连续段
-            date_series = stock_df[(stock_df['trade_date'] >= s_date) & (stock_df['trade_date'] <= e_date)]['trade_date']
-            sorted_dates = list(pd.to_datetime(date_series).sort_values())
-            segments: List[Tuple[pd.Timestamp, pd.Timestamp]] = []
-            seg_start: Optional[pd.Timestamp] = None
-            prev_date: Optional[pd.Timestamp] = None
-            for d in sorted_dates:
-                if d not in have:
-                    if seg_start is None:
-                        seg_start = d
-                    # 如果和前一天不连续，结束上一段
-                    if prev_date is not None and (d - prev_date).days > 1:
-                        segments.append((seg_start, prev_date))
-                        seg_start = d
-                else:
-                    if seg_start is not None:
-                        segments.append((seg_start, prev_date or seg_start))
-                        seg_start = None
-                prev_date = d
-            if seg_start is not None:
-                segments.append((seg_start, prev_date or seg_start))
-
-            if segments:
-                missing_by_stock[code] = segments
-
-        # 3) 计算缺失并写回DB
-        if missing_by_stock:
+        # 2) 对缺失股票进行当日计算并写回
+        if missing_codes:
             analyzer = self._get_analyzer(params)
             to_write: Dict[str, List[Dict[str, Any]]] = {}
-            for code, ranges in missing_by_stock.items():
+            t_calc = time.perf_counter()
+            td = pd.to_datetime(target_date)
+            for code in missing_codes:
                 try:
-                    sdf = stock_data_dict[code].copy()
+                    sdf = stock_data_dict.get(code)
+                    if sdf is None or sdf.empty:
+                        continue
+                    sdf = sdf.copy()
                     sdf['trade_date'] = pd.to_datetime(sdf['trade_date'])
-
-                    # 核心修正：不再截取 sub_df，直接将全部可用历史数据传递给计算函数
-                    # fit_channel_history_optimized 内部会处理窗口问题
-                    ch_df = analyzer.fit_channel_history_optimized(sdf, window)
-
-                    if ch_df.empty:
+                    # 过滤至目标日（含）
+                    sdf = sdf[sdf['trade_date'] <= td]
+                    if len(sdf) < window:
+                        continue
+                    # 若最后一条并非目标日，跳过（该股当日无数据）
+                    if sdf.iloc[-1]['trade_date'].date() != td.date():
                         continue
 
-                    ch_df['trade_date'] = pd.to_datetime(ch_df['trade_date'])
-                    
-                    # 在计算完成后，再裁剪到我们需要的日期范围
-                    computed_records: List[Dict[str, Any]] = []
-                    for (seg_start, seg_end) in ranges:
-                        mask = (ch_df['trade_date'] >= seg_start) & (ch_df['trade_date'] <= seg_end)
-                        seg_df = ch_df.loc[mask]
-                        
-                        # 确保beta值非空
-                        seg_df = seg_df.dropna(subset=['beta'])
-                        if not seg_df.empty:
-                            computed_records.extend(seg_df.to_dict('records'))
-
-                    if computed_records:
-                        # 直接调用 ChannelDBManager 的静态方法来清洗数据
-                        to_write[code] = [ChannelDBManager._normalize_record(r) for r in computed_records]
+                    state = analyzer.fit_channel(sdf)
+                    if state is None:
+                        continue
+                    # 构造成记录并写回
+                    close_price = float(sdf.iloc[-1]['close'])
+                    rec = self._state_to_record(state, td, close_price)
+                    to_write[code] = [ChannelDBManager._normalize_record(rec)]
                 except Exception as e:
-                    self.logger.debug(f"跳过股票 {code} 的通道计算，原因: {e}")
+                    self.logger.debug(f"跳过股票 {code} 的当日通道计算，原因: {e}")
                     continue
-            
+
             if to_write:
-                self.db.upsert_records(params, to_write)
-                # 合并写回结果到 existing
+                ok = self.db.upsert_records(params, to_write)
+                self.logger.info(
+                    f"[CHD-Daily] 写回数据库 {'成功' if ok else '失败'} | 表={table_name} | 写回记录数={sum(len(v) for v in to_write.values())} | 计算耗时={(time.perf_counter()-t_calc)*1000:.0f}ms"
+                )
+                # 合并写回结果
                 for code, recs in to_write.items():
                     existing.setdefault(code, []).extend(recs)
 
-        # 4) 构造成 DataFrame 返回
+        # 3) 返回 {code: 单行DataFrame}
         result: Dict[str, pd.DataFrame] = {}
-        for code, recs in existing.items():
+        for code, recs in (existing or {}).items():
             if not recs:
                 continue
             df = pd.DataFrame(recs)
             if not df.empty and 'trade_date' in df.columns:
                 df['trade_date'] = pd.to_datetime(df['trade_date'])
+                # 仅保留目标日
+                df = df[df['trade_date'] == pd.to_datetime(target_date)]
                 df = df.sort_values('trade_date').reset_index(drop=True)
-            result[code] = df
+            if not df.empty:
+                result[code] = df
+
+        self.logger.info(
+            f"[CHD-Daily] 完成 | 返回股票={len(result)} | 总耗时={(time.perf_counter()-t0)*1000:.0f}ms"
+        )
         return result
 
     def get_single_channel_data(
@@ -166,44 +139,39 @@ class ChannelDBAdapter:
         params: Dict[str, Any],
         target_date: str | None = None,
     ) -> Optional[pd.DataFrame]:
-        """单只股票查询，缺失则计算并写回数据库。"""
+        """单只股票当日查询：先读库；缺失则当日计算并仅写入该日记录。"""
         # 先读库
-        existing = self.db.fetch_records(params, stock_codes=[stock_code], start_date=target_date, end_date=target_date)
-        if existing and stock_code in existing and existing[stock_code]:
-            df = pd.DataFrame(existing[stock_code])
-            df['trade_date'] = pd.to_datetime(df['trade_date'])
-            return df
+        if target_date:
+            existing = self.db.fetch_records(
+                params, stock_codes=[stock_code], start_date=target_date, end_date=target_date
+            )
+            if existing and stock_code in existing and existing[stock_code]:
+                df = pd.DataFrame(existing[stock_code])
+                df['trade_date'] = pd.to_datetime(df['trade_date'])
+                return df
 
-        # 计算
-        stock_df = stock_df.copy()
-        stock_df['trade_date'] = pd.to_datetime(stock_df['trade_date'])
-        analyzer = self._get_analyzer(params)
-        ch_df = analyzer.fit_channel_history_optimized(stock_df, self.min_window_size)
-        if ch_df.empty:
+        # 计算（仅当日）
+        td = pd.to_datetime(target_date) if target_date else pd.to_datetime(stock_df['trade_date'].max())
+        sdf = stock_df.copy()
+        sdf['trade_date'] = pd.to_datetime(sdf['trade_date'])
+        sdf = sdf[sdf['trade_date'] <= td]
+        if len(sdf) < self.min_window_size or sdf.empty or sdf.iloc[-1]['trade_date'].date() != td.date():
             return None
-        ch_df['trade_date'] = pd.to_datetime(ch_df['trade_date'])
-        # 写回
-        recs = ch_df.to_dict('records')
-        # 直接调用 ChannelDBManager 的静态方法来清洗数据
-        self.db.upsert_records(params, {stock_code: [ChannelDBManager._normalize_record(r) for r in recs]})
-        return ch_df
 
-    def preload_cache_for_backtest(
-        self,
-        stock_data_dict: Dict[str, pd.DataFrame],
-        params_list: List[Dict[str, Any]],
-        start_date: str,
-        end_date: str,
-    ) -> bool:
-        """为回测预加载（确保DB中有数据）。"""
-        try:
-            for i, p in enumerate(params_list, 1):
-                self.logger.info(f"预加载参数组合 {i}/{len(params_list)}")
-                _ = self.get_channel_history_data(stock_data_dict, p, start_date, end_date, self.min_window_size)
-            return True
-        except Exception as e:
-            self.logger.error(f"预加载失败: {e}")
-            return False
+        analyzer = self._get_analyzer(params)
+        state = analyzer.fit_channel(sdf)
+        if state is None:
+            return None
+
+        rec = self._state_to_record(state, td, float(sdf.iloc[-1]['close']))
+        ok = self.db.upsert_records(params, {stock_code: [ChannelDBManager._normalize_record(rec)]})
+        if not ok:
+            return None
+        df = pd.DataFrame([rec])
+        df['trade_date'] = pd.to_datetime(df['trade_date'])
+        return df
+
+    # 已移除预加载与整段历史计算接口，遵循逐日按需策略
 
     # 兼容接口：返回元信息
     def get_cache_statistics(self) -> Dict[str, Any]:
@@ -219,5 +187,54 @@ class ChannelDBAdapter:
             inst = AscendingChannelRegression(**params)
             self._analyzer_cache[key] = inst
         return inst
+
+    def _state_to_record(self, state: "AscendingChannelRegression".state.__class__ | Any, 
+                         current_date: pd.Timestamp, current_close: float) -> Dict[str, Any]:
+        """
+        将通道状态转换为数据库记录格式（单日）。
+
+        Args:
+            state: ChannelState 对象
+            current_date: 当日日期
+            current_close: 当日收盘价
+
+        Returns:
+            记录字典，包含窄表所需字段。
+        """
+        # state.to_dict() 已包含大部分字段
+        base = {}
+        try:
+            base = state.to_dict() if hasattr(state, 'to_dict') else {}
+        except Exception:
+            base = {}
+
+        record: Dict[str, Any] = {
+            'trade_date': pd.to_datetime(current_date).strftime('%Y-%m-%d'),
+            'close': current_close,
+            'beta': base.get('beta'),
+            'sigma': base.get('sigma'),
+            'r2': base.get('r2'),
+            'mid_today': base.get('mid_today'),
+            'upper_today': base.get('upper_today'),
+            'lower_today': base.get('lower_today'),
+            'mid_tomorrow': base.get('mid_tomorrow'),
+            'upper_tomorrow': base.get('upper_tomorrow'),
+            'lower_tomorrow': base.get('lower_tomorrow'),
+            'channel_status': base.get('channel_status'),
+            'anchor_date': base.get('anchor_date'),
+            'anchor_price': base.get('anchor_price'),
+            'break_cnt_up': base.get('break_cnt_up'),
+            'break_cnt_down': base.get('break_cnt_down'),
+            'reanchor_fail_up': base.get('reanchor_fail_up'),
+            'reanchor_fail_down': base.get('reanchor_fail_down'),
+            'cumulative_gain': base.get('cumulative_gain'),
+            'window_size': base.get('window_size'),
+            'days_since_anchor': base.get('days_since_anchor'),
+            'break_reason': base.get('break_reason'),
+            'width_pct': base.get('width_pct'),
+            'slope_deg': base.get('slope_deg'),
+            'volatility': base.get('volatility'),
+        }
+        return record
 
 

@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+from math import ceil
 from typing import Any, Dict, List, Optional, Type
 
 import pandas as pd
@@ -112,38 +113,7 @@ class BaseBacktestRunner:
             self.logger.warning(f"通道数据库适配器初始化失败，将使用原始计算: {e}")
             return None
 
-    def _preload_cache_for_strategy(self, stock_data_dict: Dict[str, pd.DataFrame], strategy_params: Dict[str, Any]):
-        """
-        为策略预加载缓存数据
-        
-        Args:
-            stock_data_dict: 股票数据字典
-            strategy_params: 策略参数
-        """
-        try:
-            self.logger.info("开始预加载上升通道缓存数据...")
-            
-            # 提取通道分析相关参数
-            channel_params = self._extract_channel_params(strategy_params)
-            
-            # 预加载缓存
-            success = self.cache_adapter.preload_cache_for_backtest(
-                stock_data_dict=stock_data_dict,
-                params_list=[channel_params],
-                start_date=self.config['start_date'],
-                end_date=self.config['end_date']
-            )
-            
-            if success:
-                self.logger.info("通道数据预加载完成")
-                # 显示数据库统计信息（适配DB版本）
-                stats = self.cache_adapter.get_cache_statistics()
-                self.logger.info(f"通道数据库统计: {stats}")
-            else:
-                self.logger.warning("缓存数据预加载失败")
-                
-        except Exception as e:
-            self.logger.warning(f"预加载缓存数据失败: {e}")
+    # 预加载功能已移除，改为逐日按需读写
 
     def _extract_channel_params(self, strategy_params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -198,9 +168,10 @@ class BaseBacktestRunner:
         """
         self.logger.info("开始运行多股票回测...")
         try:
+            extended_start = self._compute_extended_start_date(self.config['start_date'])
             stock_data_dict = DataUtils.get_stock_data_for_backtest(
                 stock_pool=self.config['stock_pool'],
-                start_date=self.config['start_date'],
+                start_date=extended_start,
                 end_date=self.config['end_date'],
                 max_stocks=self.config['max_stocks'],
                 min_data_days=self.config['min_data_days']
@@ -228,9 +199,10 @@ class BaseBacktestRunner:
         self.logger.info("开始运行参数优化...")
         try:
             opt_cfg = self.config_cls.get_optimization_config()
+            extended_start = self._compute_extended_start_date(self.config['start_date'])
             stock_data_dict = DataUtils.get_stock_data_for_backtest(
                 stock_pool=self.config['stock_pool'],
-                start_date=self.config['start_date'],
+                start_date=extended_start,
                 end_date=self.config['end_date'],
                 max_stocks=opt_cfg['max_stocks_for_optimization'],
                 min_data_days=self.config['min_data_days']
@@ -254,9 +226,10 @@ class BaseBacktestRunner:
         """
         self.logger.info("开始运行对比回测...")
         try:
+            extended_start = self._compute_extended_start_date(self.config['start_date'])
             stock_data_dict = DataUtils.get_stock_data_for_backtest(
                 stock_pool=self.config['stock_pool'],
-                start_date=self.config['start_date'],
+                start_date=extended_start,
                 end_date=self.config['end_date'],
                 max_stocks=self.config.get('max_stocks', 50) or 50,
                 min_data_days=self.config['min_data_days']
@@ -309,15 +282,14 @@ class BaseBacktestRunner:
         self.logger.info(f"选择主数据源: {main_code}")
 
         engine.add_data(main_data, name=main_code)
-        
-        # 预加载缓存数据（如果启用了缓存）
-        if self.cache_adapter is not None:
-            self._preload_cache_for_strategy(stock_data_dict, strategy_params)
-        
-        engine.add_strategy(self.strategy_class, 
-                          stock_data_dict=stock_data_dict, 
-                          cache_adapter=self.cache_adapter,
-                          **strategy_params)
+
+        engine.add_strategy(
+            self.strategy_class,
+            stock_data_dict=stock_data_dict,
+            cache_adapter=self.cache_adapter,
+            effective_start_date=self.config['start_date'],
+            **strategy_params
+        )
 
         self.logger.info("开始运行回测...")
         results = engine.run(f"多股票_{self.strategy_class.__name__}")
@@ -349,6 +321,26 @@ class BaseBacktestRunner:
                 max_length = len(df)
                 best_stock = code
         return best_stock
+
+    def _compute_extended_start_date(self, original_start_date: str) -> str:
+        """
+        根据策略的 min_data_points 计算向前扩展的开始日期，避免策略内跳过。
+        规则：ceil((min_data_points + 20) * 1.5) 天；且不早于 2020-01-01（数据最早可用日）。
+        """
+        try:
+            min_pts = int(self.strategy_params.get('min_data_points', 60))
+        except Exception:
+            min_pts = 60
+        extend_days = ceil((min_pts + 20) * 1.5)
+        try:
+            base = datetime.strptime(original_start_date, '%Y-%m-%d')
+        except Exception:
+            base = datetime.now()
+        extended = base - timedelta(days=extend_days)
+        earliest = datetime(2020, 1, 1)
+        if extended < earliest:
+            extended = earliest
+        return extended.strftime('%Y-%m-%d')
 
     def _get_strategy_instance(self, engine: BacktestEngine):
         """从引擎取回刚刚运行的策略实例（若可得）"""

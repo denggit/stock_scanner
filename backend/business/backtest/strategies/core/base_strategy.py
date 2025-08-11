@@ -38,7 +38,7 @@ class BaseStrategy(bt.Strategy):
         ('enable_logging', True),  # 是否启用日志
     )
 
-    def __init__(self, stock_data_dict: Dict[str, pd.DataFrame] = None, **kwargs):
+    def __init__(self, stock_data_dict: Dict[str, pd.DataFrame] = None, effective_start_date: str | None = None, **kwargs):
         """
         初始化策略基类
         
@@ -62,6 +62,9 @@ class BaseStrategy(bt.Strategy):
         # 当前日期
         self.current_date = None
 
+        # 若Runner已扩展起始日期，记录真实生效日，避免策略再跳过
+        self._effective_start_date = effective_start_date
+
         # 策略状态
         self._is_initialized = False
 
@@ -82,7 +85,7 @@ class BaseStrategy(bt.Strategy):
         # 获取当前日期
         self.current_date = self.data.datetime.date(0)
 
-        # 检查是否需要跳过前min_data_points天的数据
+        # 检查是否需要跳过早期日期：若Runner已扩展起始日期到足够历史，则不再跳过
         should_skip = self._should_skip_early_days()
         if should_skip:
             if self.params.enable_logging:
@@ -303,6 +306,15 @@ class BaseStrategy(bt.Strategy):
         Returns:
             bool: True表示应该跳过，False表示可以开始回测
         """
+        # 如果提供了有效生效日，且当前bar日期已达到或超过生效日，则不跳过
+        try:
+            if getattr(self, '_effective_start_date', None):
+                eff_dt = pd.to_datetime(self._effective_start_date).date()
+                if self.current_date and self.current_date >= eff_dt:
+                    return False
+        except Exception:
+            pass
+
         # 检查是否有足够的历史数据
         if len(self.data) < self.params.min_data_points:
             # 检查是否有缓存适配器和预加载数据

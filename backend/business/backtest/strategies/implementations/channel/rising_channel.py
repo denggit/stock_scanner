@@ -12,7 +12,7 @@
 5. 当未满N只股票时，重新选股并买入至N只
 """
 
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 
 import pandas as pd
 
@@ -130,7 +130,7 @@ class RisingChannelStrategy(BaseStrategy):
         # 当前分析结果缓存
         self.current_analysis_results = {}
         
-        # 预加载的通道历史数据
+        # 不再使用预加载数据，按需逐日读取
         self.preloaded_channel_data = {}
 
     def on_delayed_init(self):
@@ -145,33 +145,11 @@ class RisingChannelStrategy(BaseStrategy):
             **channel_params
         )
 
-        # 预加载缓存通道数据（如果有缓存适配器）
-        if self.cache_adapter is not None:
-            self._preload_channel_data()
+        # 不再进行预加载
 
         self.logger.info("上升通道策略延迟初始化完成")
 
-    def _preload_channel_data(self):
-        """
-        预加载通道历史数据到内存
-        """
-        try:
-            self.logger.info("开始预加载通道历史数据...")
-            
-            channel_params = self._extract_channel_params()
-            
-            # 使用数据库适配器获取历史数据
-            stock_dict = self.data_manager.get_all_stock_data()
-            self.preloaded_channel_data = self.cache_adapter.get_channel_history_data(
-                stock_data_dict=stock_dict,
-                params=channel_params
-            )
-            
-            self.logger.info(f"成功预加载 {len(self.preloaded_channel_data)} 只股票的通道历史数据")
-            
-        except Exception as e:
-            self.logger.error(f"预加载通道历史数据失败: {e}")
-            self.preloaded_channel_data = {}
+    # 预加载入口已移除
 
     def prepare_data(self):
         """
@@ -210,10 +188,14 @@ class RisingChannelStrategy(BaseStrategy):
         sell_signals = self._generate_sell_signals()
         signals.extend(sell_signals)
 
-        # 2. 如果持仓不足，生成买入信号
+        # 2. 需要买入时再生成买入信号
         current_positions = self.position_manager.get_position_count()
-        if current_positions < self.params.max_positions:
-            buy_signals = self._generate_buy_signals()
+        # 计算执行卖出后的预期持仓数量（去重统计待卖股票）
+        sell_codes = {s.get('stock_code') for s in sell_signals if s.get('stock_code')}
+        projected_positions = max(0, current_positions - len(sell_codes))
+        if projected_positions < self.params.max_positions:
+            available_slots = self.params.max_positions - projected_positions
+            buy_signals = self._generate_buy_signals(available_slots=available_slots)
             signals.extend(buy_signals)
 
         return signals
@@ -262,7 +244,7 @@ class RisingChannelStrategy(BaseStrategy):
 
         return sell_signals
 
-    def _generate_buy_signals(self) -> List[Dict[str, Any]]:
+    def _generate_buy_signals(self, available_slots: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         生成买入信号
         选择符合条件的NORMAL通道股票，且要求股价位于通道内（>下沿 且 ≤上沿）
@@ -326,12 +308,15 @@ class RisingChannelStrategy(BaseStrategy):
         # 按距离下沿排序（从小到大）
         normal_stocks_with_distance.sort(key=lambda x: x['distance_to_lower'])
 
-        # 计算需要买入的数量
-        current_positions = self.position_manager.get_position_count()
-        need_to_buy = min(
-            self.params.max_positions - current_positions,
-            len(normal_stocks_with_distance)
-        )
+        # 计算需要买入的数量（若传入 available_slots，则以其为准）
+        if available_slots is None:
+            current_positions = self.position_manager.get_position_count()
+            need_to_buy = min(
+                self.params.max_positions - current_positions,
+                len(normal_stocks_with_distance)
+            )
+        else:
+            need_to_buy = min(available_slots, len(normal_stocks_with_distance))
 
         # 生成买入信号
         for i in range(need_to_buy):
@@ -360,60 +345,75 @@ class RisingChannelStrategy(BaseStrategy):
 
     def _update_channel_analysis(self):
         """更新所有股票的通道分析结果"""
-        # 如果有预加载的通道数据，优先使用缓存
-        if self.preloaded_channel_data:
-            self._update_channel_analysis_from_cache()
+        # 仅在需要买入时才触发通道获取/计算，以减少无谓的数据库访问
+        # 判断：卖出后的空位数 > 0，才进行当日通道获取
+        current_positions = self.position_manager.get_position_count()
+        sell_signals = self._generate_sell_signals()
+        sell_codes = {s.get('stock_code') for s in sell_signals if s.get('stock_code')}
+        projected_positions = max(0, current_positions - len(sell_codes))
+        if projected_positions < self.params.max_positions:
+            self._update_channel_analysis_from_db_or_compute()
         else:
-            self._update_channel_analysis_traditional()
+            # 无需买入时，仅保留卖出判定用的 channel_state（可空）
+            self.current_analysis_results = {}
 
-    def _update_channel_analysis_from_cache(self):
-        """从预加载的缓存数据更新通道分析结果"""
+    def _update_channel_analysis_from_db_or_compute(self):
+        """按需从数据库获取当日通道，缺失则计算并写回，随后构建分析结果。"""
         self.current_analysis_results = {}
-        current_date_str = self.current_date.strftime('%Y-%m-%d')
-        
-        for stock_code in self.data_manager.get_stock_codes_list():
-            try:
-                # 从预加载数据中获取对应日期的通道状态
-                if stock_code in self.preloaded_channel_data:
-                    channel_df = self.preloaded_channel_data[stock_code]
-                    channel_df['trade_date'] = pd.to_datetime(channel_df['trade_date'])
-                    
-                    # 找到当前日期或最近的通道数据
-                    target_data = channel_df[channel_df['trade_date'] <= self.current_date]
-                    if not target_data.empty:
-                        latest_data = target_data.iloc[-1]
-                        
-                        # 构建通道状态对象
-                        if not pd.isna(latest_data.get('beta')):
-                            channel_state = self._build_channel_state_from_cache(latest_data)
-                            
-                            # 计算通道评分（使用缓存时不受min_data_points限制）
-                            stock_data = self.data_manager.get_stock_data_until(
-                                stock_code, self.current_date, min_data_points=1  # 使用缓存时只需要当前数据
-                            )
-                            if stock_data is not None:
-                                score = self.channel_manager.calculate_channel_score(
-                                    stock_code, channel_state, stock_data, self.current_date
-                                )
-                                
-                                self.current_analysis_results[stock_code] = {
-                                    'channel_state': channel_state,
-                                    'score': score,
-                                    'is_cached': True
-                                }
-                            else:
-                                # 即使没有足够的股票数据，也可以使用缓存的通道状态
-                                # 给一个基础评分，避免因数据不足而错失机会
-                                base_score = 60.0  # 基础分数
-                                self.current_analysis_results[stock_code] = {
-                                    'channel_state': channel_state,
-                                    'score': base_score,
-                                    'is_cached': True
-                                }
-                        
-            except Exception as e:
-                self.logger.debug(f"从缓存获取股票 {stock_code} 通道数据失败: {e}")
-                continue
+        if self.cache_adapter is None:
+            # 无DB适配器则退回传统纯计算
+            return self._update_channel_analysis_traditional()
+
+        try:
+            channel_params = self._extract_channel_params()
+            stock_dict = {}
+            codes = self.data_manager.get_stock_codes_list()
+            for code in codes:
+                df = self.data_manager.get_stock_data_until(code, self.current_date, self.params.min_data_points)
+                if df is not None:
+                    stock_dict[code] = df
+
+            if not stock_dict:
+                return
+
+            # 从DB获取当日数据，缺失将自动计算并写回
+            daily_map = self.cache_adapter.get_channels_for_date(
+                stock_data_dict=stock_dict,
+                params=channel_params,
+                target_date=self.current_date.strftime('%Y-%m-%d'),
+                min_window_size=self.params.min_data_points,
+            )
+
+            for stock_code, ch_df in (daily_map or {}).items():
+                try:
+                    if ch_df is None or ch_df.empty:
+                        continue
+                    last = ch_df.iloc[-1]
+                    if pd.isna(last.get('beta')):
+                        continue
+
+                    channel_state = self._build_channel_state_from_cache(last)
+
+                    stock_data = stock_dict.get(stock_code)
+                    if stock_data is not None:
+                        score = self.channel_manager.calculate_channel_score(
+                            stock_code, channel_state, stock_data, self.current_date
+                        )
+                    else:
+                        score = 60.0
+
+                    self.current_analysis_results[stock_code] = {
+                        'channel_state': channel_state,
+                        'score': score,
+                        'is_cached': True,
+                    }
+                except Exception as e:
+                    self.logger.debug(f"构建股票 {stock_code} 通道状态失败: {e}")
+                    continue
+
+        except Exception as e:
+            self.logger.warning(f"按需获取当日通道失败，退回纯计算: {e}")
+            return self._update_channel_analysis_traditional()
 
     def _update_channel_analysis_traditional(self):
         """传统方式更新通道分析结果"""
@@ -460,11 +460,19 @@ class RisingChannelStrategy(BaseStrategy):
                 self.cumulative_gain = cache_data.get('cumulative_gain')
                 
                 # 通道状态
-                status_value = cache_data.get('channel_status', 1)  # 默认为NORMAL
-                if isinstance(status_value, str):
-                    self.channel_status = ChannelStatus(int(status_value)) if status_value.isdigit() else ChannelStatus.NORMAL
-                else:
-                    self.channel_status = ChannelStatus(status_value) if status_value is not None else ChannelStatus.NORMAL
+                status_value = cache_data.get('channel_status', ChannelStatus.NORMAL.value)
+                # 支持字符串（"NORMAL"/"BROKEN" 等）或枚举/数字
+                try:
+                    if isinstance(status_value, ChannelStatus):
+                        self.channel_status = status_value
+                    elif isinstance(status_value, str):
+                        # 允许传入名称字符串
+                        self.channel_status = ChannelStatus[status_value] if status_value in ChannelStatus.__members__ else ChannelStatus.NORMAL
+                    else:
+                        # 兜底：尝试以值构造
+                        self.channel_status = ChannelStatus(status_value)
+                except Exception:
+                    self.channel_status = ChannelStatus.NORMAL
         
         return CachedChannelState(cache_data)
 

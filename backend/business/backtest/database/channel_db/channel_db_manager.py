@@ -5,20 +5,21 @@
 
 职责分离：
 - 参数→表名映射的meta管理（JSON文件）
-- 按参数组合创建并维护MySQL表（宽表：每个股票代码一列JSON）
+- 按参数组合创建并维护MySQL表（窄表：一行=一个(code, trade_date)）
 - 读取/写入指定参数、股票、日期范围的通道数据
 
-设计说明：
-- 表结构：channel_rc_{hash}
-  - trade_date DATE PRIMARY KEY
-  - <sanitized_code> JSON
-- 列命名：将股票代码中的非法字符转换为下划线（如 sz.000001 → sz_000001）
+设计说明（新：窄表 v1）：
+- 表结构：channel_rcn_{hash}
+  - code VARCHAR NOT NULL
+  - trade_date DATE NOT NULL
+  - 其余为通道字段列（DOUBLE/INT/VARCHAR），允许为 NULL
+  - PRIMARY KEY (code, trade_date)
 - 元数据：backend/business/backtest/database/channel_db/channel_meta.json
+- 为兼容旧meta（宽表：channel_rc_{hash}），首次访问时将自动迁移映射到新表名(channel_rcn_{hash})并标注 schema_version='narrow_v1'
 
 注意：
-- 使用 MySQL JSON 类型存储单元格内的通道记录(dict)
-- 对于不存在的股票列，会自动ALTER TABLE新增JSON列
-- 写入采用 UPSERT：INSERT ... ON DUPLICATE KEY UPDATE
+- 不再使用按股票列的宽表/JSON列，彻底解决“Too many columns”问题
+- 写入采用 UPSERT：INSERT ... ON DUPLICATE KEY UPDATE 全量字段
 """
 
 from __future__ import annotations
@@ -107,15 +108,26 @@ class ChannelDBMetaManager:
         params_map: Dict[str, Any] = self._meta.setdefault("params_map", {})
         if ph in params_map:
             m = params_map[ph]
+            # 若为旧映射（无 schema_version 或旧表前缀），迁移到窄表命名
+            table_name = m.get("table", "")
+            schema_version = m.get("schema_version")
+            if not schema_version or not str(table_name).startswith("channel_rcn_"):
+                table_name = f"channel_rcn_{ph}"
+                m.update({
+                    "table": table_name,
+                    "schema_version": "narrow_v1",
+                })
+                self._save()
             return ChannelTableMeta(
                 params_hash=ph,
-                table_name=m["table"],
+                table_name=table_name,
                 params=m.get("params", {}),
                 readable_key=m.get("readable_key", ""),
                 created_at=m.get("created_at", datetime.now().isoformat()),
             )
 
-        table_name = f"channel_rc_{ph}"
+        # 新建窄表映射
+        table_name = f"channel_rcn_{ph}"
         meta = ChannelTableMeta(
             params_hash=ph,
             table_name=table_name,
@@ -128,6 +140,7 @@ class ChannelDBMetaManager:
             "params": params,
             "readable_key": meta.readable_key,
             "created_at": meta.created_at,
+            "schema_version": "narrow_v1",
         }
         self._save()
         return meta
@@ -156,20 +169,51 @@ class ChannelDBManager:
             self.conn.close()
             self.conn = self._create_channel_connection(select_db=True)
 
+        # 定义窄表字段与SQL类型
+        self._narrow_columns: List[Tuple[str, str]] = [
+            ("code", "VARCHAR(32) NOT NULL"),
+            ("trade_date", "DATE NOT NULL"),
+            ("close", "DOUBLE NULL"),
+            ("beta", "DOUBLE NULL"),
+            ("sigma", "DOUBLE NULL"),
+            ("r2", "DOUBLE NULL"),
+            ("mid_today", "DOUBLE NULL"),
+            ("upper_today", "DOUBLE NULL"),
+            ("lower_today", "DOUBLE NULL"),
+            ("mid_tomorrow", "DOUBLE NULL"),
+            ("upper_tomorrow", "DOUBLE NULL"),
+            ("lower_tomorrow", "DOUBLE NULL"),
+            ("channel_status", "VARCHAR(32) NULL"),
+            ("anchor_date", "DATE NULL"),
+            ("anchor_price", "DOUBLE NULL"),
+            ("break_cnt_up", "INT NULL"),
+            ("break_cnt_down", "INT NULL"),
+            ("reanchor_fail_up", "INT NULL"),
+            ("reanchor_fail_down", "INT NULL"),
+            ("cumulative_gain", "DOUBLE NULL"),
+            ("window_size", "INT NULL"),
+            ("days_since_anchor", "INT NULL"),
+            ("break_reason", "VARCHAR(32) NULL"),
+            ("width_pct", "DOUBLE NULL"),
+            ("slope_deg", "DOUBLE NULL"),
+            ("volatility", "DOUBLE NULL"),
+        ]
+
     # ---------- 表与列管理 ----------
     def _sanitize_code_to_column(self, code: str) -> str:
-        col = code.replace(".", "_").replace("-", "_")
-        # 防止列名以数字开头
-        if col and col[0].isdigit():
-            col = f"c_{col}"
-        return col
+        # 兼容旧接口，无实际用途（窄表不再需要按股票动态列）
+        return code
 
     def _ensure_table(self, table_name: str) -> None:
-        # 创建仅含trade_date的空表
+        # 创建窄表：包含(code, trade_date)主键及所有字段
+        columns_sql = ",\n            ".join([f"`{name}` {sql_type}" for name, sql_type in self._narrow_columns])
         sql = f"""
-        CREATE TABLE IF NOT EXISTS {table_name}(
-            trade_date DATE PRIMARY KEY
-        )
+        CREATE TABLE IF NOT EXISTS {table_name} (
+            {columns_sql},
+            PRIMARY KEY (`code`, `trade_date`),
+            INDEX `idx_trade_date` (`trade_date`),
+            INDEX `idx_code` (`code`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """
         with self.conn.cursor() as cursor:
             cursor.execute(sql)
@@ -185,24 +229,20 @@ class ChannelDBManager:
             rows = cursor.fetchall()
         return [r[0] for r in rows] if rows else []
 
-    def _ensure_columns(self, table_name: str, codes: List[str]) -> List[str]:
-        if not codes:
-            return []
+    def _ensure_columns(self, table_name: str) -> None:
+        """确保窄表的所有字段齐全（新增字段时可自动补齐）"""
         existing = set(self._get_existing_columns(table_name))
-        new_columns: List[str] = []
         alters: List[str] = []
-        for code in codes:
-            col = self._sanitize_code_to_column(code)
-            if col not in existing:
-                alters.append(f"ADD COLUMN `{col}` JSON NULL")
-                new_columns.append(col)
+        for name, sql_type in self._narrow_columns:
+            if name not in existing:
+                alters.append(f"ADD COLUMN `{name}` {sql_type}")
+        # 主键/索引若缺失，此处不强制追加，避免复杂迁移；新建表会具备
         if alters:
             sql = f"ALTER TABLE {table_name} " + ", ".join(alters)
             with self.conn.cursor() as cursor:
                 cursor.execute(sql)
             self.conn.commit()
-            self.logger.info(f"为表 {table_name} 新增列: {new_columns}")
-        return [self._sanitize_code_to_column(c) for c in codes]
+            self.logger.info(f"为表 {table_name} 新增字段: {[a.split(' ')[2].strip('`') for a in alters]}")
 
     # ---------- 写入 ----------
     def upsert_records(self, params: Dict[str, Any], code_to_records: Dict[str, List[Dict[str, Any]]]) -> bool:
@@ -210,47 +250,62 @@ class ChannelDBManager:
             return True
         meta = self.meta_manager.get_or_create_table_meta(params)
         self._ensure_table(meta.table_name)
+        self._ensure_columns(meta.table_name)
 
-        # 确保列
-        codes = list(code_to_records.keys())
-        _ = self._ensure_columns(meta.table_name, codes)
-
-        # 组装 per-date UPSERT 数据
-        # 我们一次处理一个日期，合并多只股票的JSON到同一行
-        # 收集所有涉及到的日期
-        all_dates: Dict[str, Dict[str, Any]] = {}
-        for code, records in code_to_records.items():
-            col = self._sanitize_code_to_column(code)
-            for rec in records or []:
-                td = rec.get("trade_date")
-                if td is None:
-                    continue
-                # 标准化日期
-                td_norm = self._normalize_date_str(td)
-                all_dates.setdefault(td_norm, {})[col] = json.dumps(self._normalize_record(rec), ensure_ascii=False, default=str)
-
-        if not all_dates:
-            return True
-
-        # 构建批量 UPSERT
-        # INSERT INTO table (trade_date, colA, colB) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE colA=VALUES(colA), colB=VALUES(colB)
-        sample_date, sample_payload = next(iter(all_dates.items()))
-        cols = ["trade_date"] + list(sample_payload.keys())
-        col_list = ",".join(f"`{c}`" for c in cols)
-        placeholders = ",".join(["%s"] * len(cols))
-        update_part = ",".join([f"`{c}`=VALUES(`{c}`)" for c in cols if c != "trade_date"])
+        # 准备列与SQL
+        all_columns = [name for name, _ in self._narrow_columns]
+        non_pk_columns = [c for c in all_columns if c not in ("code", "trade_date")]
+        col_list = ",".join(f"`{c}`" for c in all_columns)
+        placeholders = ",".join(["%s"] * len(all_columns))
+        update_part = ",".join([f"`{c}`=VALUES(`{c}`)" for c in non_pk_columns])
         sql = f"INSERT INTO {meta.table_name} ({col_list}) VALUES ({placeholders}) ON DUPLICATE KEY UPDATE {update_part}"
 
+        # 组装批量值
         values: List[Tuple[Any, ...]] = []
-        for td, payload in all_dates.items():
-            row = [td] + [payload.get(c) for c in cols if c != "trade_date"]
-            values.append(tuple(row))
+        for code, records in code_to_records.items():
+            for rec in records or []:
+                nr = self._normalize_record(rec)
+                row = [
+                    code,
+                    self._normalize_date_str(nr.get("trade_date")),
+                    nr.get("close"),
+                    nr.get("beta"),
+                    nr.get("sigma"),
+                    nr.get("r2"),
+                    nr.get("mid_today"),
+                    nr.get("upper_today"),
+                    nr.get("lower_today"),
+                    nr.get("mid_tomorrow"),
+                    nr.get("upper_tomorrow"),
+                    nr.get("lower_tomorrow"),
+                    nr.get("channel_status"),
+                    self._normalize_date_str(nr.get("anchor_date")) if nr.get("anchor_date") else None,
+                    nr.get("anchor_price"),
+                    nr.get("break_cnt_up"),
+                    nr.get("break_cnt_down"),
+                    nr.get("reanchor_fail_up"),
+                    nr.get("reanchor_fail_down"),
+                    nr.get("cumulative_gain"),
+                    nr.get("window_size"),
+                    nr.get("days_since_anchor"),
+                    nr.get("break_reason"),
+                    nr.get("width_pct"),
+                    nr.get("slope_deg"),
+                    nr.get("volatility"),
+                ]
+                # 跳过无日期
+                if row[1] in (None, ""):
+                    continue
+                values.append(tuple(row))
+
+        if not values:
+            return True
 
         try:
             with self.conn.cursor() as cursor:
                 cursor.executemany(sql, values)
             self.conn.commit()
-            self.logger.info(f"写入 {meta.table_name}: {len(values)} 天的数据")
+            self.logger.info(f"写入 {meta.table_name}: {len(values)} 条记录")
             return True
         except Exception as e:
             self.logger.error(f"写入 {meta.table_name} 失败: {e}")
@@ -265,22 +320,16 @@ class ChannelDBManager:
         meta = self.meta_manager.get_or_create_table_meta(params)
         self._ensure_table(meta.table_name)
 
-        # 若未指定codes，则列出表中的所有股票列
-        existing_cols = self._get_existing_columns(meta.table_name)
-        if stock_codes:
-            cols_to_read = [self._sanitize_code_to_column(c) for c in stock_codes if self._sanitize_code_to_column(c) in existing_cols]
-        else:
-            # 排除 trade_date
-            cols_to_read = [c for c in existing_cols if c != "trade_date"]
-
-        if not cols_to_read:
-            return {}
-
-        # 构建查询
-        col_list = ",".join(f"`{c}`" for c in ["trade_date"] + cols_to_read)
+        # 构建查询（窄表）
+        all_columns = [name for name, _ in self._narrow_columns]
+        col_list = ",".join(f"`{c}`" for c in all_columns)
         sql = f"SELECT {col_list} FROM {meta.table_name}"
         params_list: List[Any] = []
         where_parts: List[str] = []
+        if stock_codes:
+            placeholders = ",".join(["%s"] * len(stock_codes))
+            where_parts.append(f"code IN ({placeholders})")
+            params_list.extend(stock_codes)
         if start_date:
             where_parts.append("trade_date >= %s")
             params_list.append(start_date)
@@ -289,49 +338,27 @@ class ChannelDBManager:
             params_list.append(end_date)
         if where_parts:
             sql += " WHERE " + " AND ".join(where_parts)
-        sql += " ORDER BY trade_date ASC"
+        sql += " ORDER BY code ASC, trade_date ASC"
 
         with self.conn.cursor() as cursor:
             cursor.execute(sql, tuple(params_list))
             rows = cursor.fetchall()
             col_names = [desc[0] for desc in cursor.description]
 
-        # 解析为 {code: [record_dict, ...]}
-        result: Dict[str, List[Dict[str, Any]]] = {}
-        # 建立反向映射：sanitized_col -> raw_code(尽量恢复)
-        reverse_code_map: Dict[str, str] = {}
-        if stock_codes:
-            for raw in stock_codes:
-                reverse_code_map[self._sanitize_code_to_column(raw)] = raw
-        else:
-            # 无原始codes，保持sanitized作为code
-            for c in cols_to_read:
-                reverse_code_map[c] = c
-
         if not rows:
             return {}
 
-        td_idx = col_names.index("trade_date")
+        result: Dict[str, List[Dict[str, Any]]] = {}
         for row in rows:
-            trade_date = self._normalize_date_str(row[td_idx])
-            for idx, c in enumerate(col_names):
-                if c == "trade_date":
-                    continue
-                cell = row[idx]
-                if cell is None:
-                    continue
-                try:
-                    # MySQL JSON → Python
-                    rec = cell if isinstance(cell, dict) else json.loads(cell)
-                except Exception:
-                    # 有些驱动会直接返回str
-                    try:
-                        rec = json.loads(str(cell))
-                    except Exception:
-                        continue
-                rec["trade_date"] = trade_date
-                code = reverse_code_map.get(c, c)
-                result.setdefault(code, []).append(rec)
+            rec = {col_names[i]: row[i] for i in range(len(col_names))}
+            # 规范化日期字段
+            rec["trade_date"] = self._normalize_date_str(rec.get("trade_date"))
+            if rec.get("anchor_date"):
+                rec["anchor_date"] = self._normalize_date_str(rec.get("anchor_date"))
+            code = rec.get("code")
+            if code is None:
+                continue
+            result.setdefault(code, []).append(rec)
 
         # 按日期排序
         for code in result.keys():
@@ -369,21 +396,25 @@ class ChannelDBManager:
             raise
 
     @staticmethod
-    def _normalize_date_str(d: Any) -> str:
-        if d is None:
-            return ""
+    def _normalize_date_str(d: Any):
+        """
+        规范化日期到 YYYY-MM-DD；无法解析或为 NaT/NaN/空值则返回 None。
+        """
         try:
-            return pd.to_datetime(d).strftime("%Y-%m-%d")
+            if d is None:
+                return None
+            # pandas 友好解析，失败返回 NaT
+            ts = pd.to_datetime(d, errors='coerce')
+            if pd.isna(ts):
+                return None
+            return pd.Timestamp(ts).strftime("%Y-%m-%d")
         except Exception:
-            s = str(d)
-            if len(s) == 8 and s.isdigit():
-                return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
-            return s
+            return None
 
     @staticmethod
     def _normalize_record(rec: Dict[str, Any]) -> Dict[str, Any]:
         """
-        标准化记录数据，确保可以安全地序列化为JSON
+        标准化记录数据，确保可以安全地写入DB
         
         Args:
             rec: 原始记录字典
@@ -408,7 +439,10 @@ class ChannelDBManager:
         for k, v in list(new_r.items()):
             # 处理pandas.Timestamp对象
             if hasattr(v, "isoformat"):
-                new_r[k] = v.isoformat() if k not in ("trade_date", "anchor_date") else ChannelDBManager._normalize_date_str(v)
+                if k in ("trade_date", "anchor_date"):
+                    new_r[k] = ChannelDBManager._normalize_date_str(v)
+                else:
+                    new_r[k] = v.isoformat()
             # 处理数值类型
             elif isinstance(v, (int, float)):
                 # 检查是否为NaN或Infinity
@@ -420,6 +454,9 @@ class ChannelDBManager:
             # 处理pandas.Series或DataFrame中的NaN
             elif pd.isna(v):
                 new_r[k] = None
+            # 处理字符串形式的日期字段
+            if k in ("trade_date", "anchor_date"):
+                new_r[k] = ChannelDBManager._normalize_date_str(new_r.get(k))
                 
         return new_r
 
