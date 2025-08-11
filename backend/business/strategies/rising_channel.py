@@ -46,7 +46,6 @@ class RisingChannelStrategy(BaseStrategy):
             "L_max": 120,  # 最大窗口长度
             "delta_cut": 5,  # 滑动窗口删除天数
             "pivot_m": 3,  # 锚点检测参数
-            # （已移除 gain_trigger/beta_delta/break_days/reanchor_fail_max）
             "min_data_points": 60,  # 最小数据点数
             "R2_min": 0.20,  # 最小回归拟合优度
             "width_pct_min": 0.04,  # 通道宽度下限

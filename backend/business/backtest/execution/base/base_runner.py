@@ -325,13 +325,13 @@ class BaseBacktestRunner:
     def _compute_extended_start_date(self, original_start_date: str) -> str:
         """
         根据策略的 min_data_points 计算向前扩展的开始日期，避免策略内跳过。
-        规则：ceil((min_data_points + 20) * 1.5) 天；且不早于 2020-01-01（数据最早可用日）。
+        规则：ceil((min_data_points + 20) * 1.4) 天；且不早于 2020-01-01（数据最早可用日）。
         """
         try:
             min_pts = int(self.strategy_params.get('min_data_points', 60))
         except Exception:
             min_pts = 60
-        extend_days = ceil((min_pts + 20) * 1.5)
+        extend_days = ceil((min_pts + 20) * 1.4)
         try:
             base = datetime.strptime(original_start_date, '%Y-%m-%d')
         except Exception:
