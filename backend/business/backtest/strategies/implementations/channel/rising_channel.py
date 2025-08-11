@@ -160,9 +160,10 @@ class RisingChannelStrategy(BaseStrategy):
             
             channel_params = self._extract_channel_params()
             
-            # 使用缓存适配器获取历史数据
+            # 使用数据库适配器获取历史数据
+            stock_dict = self.data_manager.get_all_stock_data()
             self.preloaded_channel_data = self.cache_adapter.get_channel_history_data(
-                stock_data_dict=self.stock_data_dict,
+                stock_data_dict=stock_dict,
                 params=channel_params
             )
             

@@ -17,8 +17,7 @@ import pandas as pd
 
 from backend.business.backtest import DataUtils, ReportUtils
 from backend.business.backtest.core import BacktestEngine
-from backend.business.backtest.database import ChannelDataCache
-from backend.business.backtest.database.channel_cache_adapter import ChannelCacheAdapter
+from backend.business.backtest.database import ChannelDBAdapter
 from backend.utils.logger import setup_logger
 
 
@@ -88,35 +87,29 @@ class BaseBacktestRunner:
         if environment_overrides:
             self.logger.info(f"环境策略覆盖: {environment_overrides}")
 
-    def _init_cache_adapter(self) -> ChannelCacheAdapter:
+    def _init_cache_adapter(self):
         """
-        初始化缓存适配器
+        初始化通道数据库适配器（兼容旧变量名cache_adapter）
         
         Returns:
-            ChannelCacheAdapter: 缓存适配器实例
+            ChannelDBAdapter: 通道数据库适配器实例
         """
         try:
             # 检查是否需要启用缓存（可以通过环境变量控制）
             enable_cache = os.getenv('BACKTEST_ENABLE_CACHE', 'true').lower() == 'true'
             
             if not enable_cache:
-                self.logger.info("缓存系统已禁用")
+                self.logger.info("通道数据库适配器已禁用")
                 return None
             
-            # 从环境变量获取批量大小，默认为500
-            cache_batch_size = int(os.getenv('BACKTEST_CACHE_BATCH_SIZE', '500'))
+            # 初始化数据库适配器
+            cache_adapter = ChannelDBAdapter()
             
-            cache_adapter = ChannelCacheAdapter(
-                enable_batch_processing=True,
-                enable_auto_cache=True,
-                cache_batch_size=cache_batch_size
-            )
-            
-            self.logger.info("上升通道缓存适配器初始化成功")
+            self.logger.info("上升通道数据库适配器初始化成功")
             return cache_adapter
             
         except Exception as e:
-            self.logger.warning(f"缓存适配器初始化失败，将使用原始计算: {e}")
+            self.logger.warning(f"通道数据库适配器初始化失败，将使用原始计算: {e}")
             return None
 
     def _preload_cache_for_strategy(self, stock_data_dict: Dict[str, pd.DataFrame], strategy_params: Dict[str, Any]):
@@ -142,11 +135,10 @@ class BaseBacktestRunner:
             )
             
             if success:
-                self.logger.info("缓存数据预加载完成")
-                # 显示缓存统计信息
+                self.logger.info("通道数据预加载完成")
+                # 显示数据库统计信息（适配DB版本）
                 stats = self.cache_adapter.get_cache_statistics()
-                self.logger.info(f"缓存统计: {stats['total_cache_files']} 个文件, "
-                               f"{stats['total_size_mb']:.2f} MB")
+                self.logger.info(f"通道数据库统计: {stats}")
             else:
                 self.logger.warning("缓存数据预加载失败")
                 
@@ -174,7 +166,7 @@ class BaseBacktestRunner:
             temp_analyzer = AscendingChannelRegression()
             algorithm_params = temp_analyzer._get_config_dict()
             
-            self.logger.info(f"从AscendingChannelRegression获取算法参数: {list(algorithm_params.keys())}")
+            self.logger.info(f"从AscendingChannelRegression获取算法参数: {algorithm_params}")
             return algorithm_params
             
         except Exception as e:

@@ -457,3 +457,7 @@ class DataManager:
             是否有数据
         """
         return stock_code in self.stock_data and not self.stock_data[stock_code].empty
+
+    def get_all_stock_data(self) -> Dict[str, pd.DataFrame]:
+        """获取所有股票数据字典的拷贝"""
+        return {k: v.copy() for k, v in self.stock_data.items()}

@@ -1,29 +1,17 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-回测数据缓存系统
+上升通道数据库接口导出
 
-该模块提供高效的上升通道数据缓存机制，避免重复计算，提升回测性能。
-
-主要功能：
-- 基于参数组合的数据缓存
-- 增量数据更新
-- 批量数据加载
-- 自动缓存管理
-
-使用示例：
-    from backend.business.backtest.database import ChannelDataCache
-    
-    cache = ChannelDataCache()
-    data = cache.get_channel_data(params, stock_codes, date_range)
+- ChannelDBAdapter: 通道数据库适配器（对外统一入口）
 """
 
-from .cache_manager import ChannelDataCache, CacheConfig
-from .storage_engine import JsonStorageEngine, PickleStorageEngine
+from backend.business.backtest.database.channel_db.channel_db_adapter import ChannelDBAdapter
+from backend.business.backtest.database.channel_db.channel_db_manager import ChannelDBManager, ChannelDBMetaManager
 
 __all__ = [
-    'ChannelDataCache',
-    'CacheConfig', 
-    'JsonStorageEngine',
-    'PickleStorageEngine'
+    'ChannelDBAdapter',
+    'ChannelDBAdapter',
+    'ChannelDBManager',
+    'ChannelDBMetaManager',
 ]
