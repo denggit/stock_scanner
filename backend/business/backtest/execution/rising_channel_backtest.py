@@ -84,7 +84,7 @@ class RisingChannelBacktestRunner(BaseBacktestRunner):
         self.logger.info(f"上升通道回测运行器初始化完成")
         self.logger.info(f"策略类: {RisingChannelBacktestStrategy.__name__}")
         self.logger.info(f"配置类: {RisingChannelConfig.__name__}")
-        
+
         # 记录详细的策略参数
         self.logger.info("=" * 60)
         self.logger.info("📊 策略参数配置:")

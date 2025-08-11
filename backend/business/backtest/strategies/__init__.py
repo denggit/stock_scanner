@@ -26,22 +26,22 @@ __all__ = [
     # 核心基础
     'BaseStrategy',
     'DataManager',
-    'PositionManager', 
+    'PositionManager',
     'TradeManager',
     'TradeLogger',
-    
+
     # 通用工具
     'SignalUtils',
     'ParameterUtils',
-    'PriceUtils', 
+    'PriceUtils',
     'DataUtils',
-    
+
     # 策略工厂 (暂时注释掉)
     # 'StrategyFactory',
     # 'create_strategy',
     # 'list_strategies',
     # 'register_strategy',
-    
+
     # 策略实现
     'RisingChannelStrategy'
 ]

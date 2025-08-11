@@ -7,8 +7,8 @@
 
 from .data_manager import DataManager
 from .position_manager import PositionManager
-from .trade_manager import TradeManager
 from .trade_logger import TradeLogger
+from .trade_manager import TradeManager
 
 __all__ = [
     'DataManager',

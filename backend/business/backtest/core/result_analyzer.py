@@ -977,11 +977,11 @@ class ResultAnalyzer:
             # 检查是否有缓存适配器
             if not (hasattr(strat, 'cache_adapter') and strat.cache_adapter is not None):
                 return False
-            
+
             # 检查是否有预加载的通道数据
             if hasattr(strat, 'preloaded_channel_data') and strat.preloaded_channel_data:
                 return True
-            
+
             return False
         except Exception:
             return False

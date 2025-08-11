@@ -6,9 +6,6 @@
 """
 
 from typing import Dict, Any, List, Optional, Union
-import logging
-
-from backend.utils.logger import setup_logger
 
 
 class SignalUtils:
@@ -16,14 +13,14 @@ class SignalUtils:
     信号处理工具类
     提供创建买入/卖出信号的标准化方法，适用于所有策略
     """
-    
+
     @staticmethod
     def create_buy_signal(
-        stock_code: str, 
-        price: float,
-        reason: str, 
-        confidence: float = 1.0,
-        extra: Optional[Dict[str, Any]] = None
+            stock_code: str,
+            price: float,
+            reason: str,
+            confidence: float = 1.0,
+            extra: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         创建标准化的买入信号
@@ -45,19 +42,19 @@ class SignalUtils:
             'reason': reason,
             'confidence': confidence
         }
-        
+
         if extra:
             signal.update(extra)
-            
+
         return signal
-    
+
     @staticmethod
     def create_sell_signal(
-        stock_code: str, 
-        price: float,
-        reason: str, 
-        confidence: float = 1.0,
-        extra: Optional[Dict[str, Any]] = None
+            stock_code: str,
+            price: float,
+            reason: str,
+            confidence: float = 1.0,
+            extra: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         创建标准化的卖出信号
@@ -79,12 +76,12 @@ class SignalUtils:
             'reason': reason,
             'confidence': confidence
         }
-        
+
         if extra:
             signal.update(extra)
-            
+
         return signal
-    
+
     @staticmethod
     def validate_signal(signal: Dict[str, Any]) -> bool:
         """
@@ -97,16 +94,16 @@ class SignalUtils:
             是否有效
         """
         required_fields = ['action', 'stock_code', 'price', 'reason']
-        
+
         # 检查必需字段
         for field in required_fields:
             if field not in signal:
                 return False
-        
+
         # 检查action有效性
         if signal['action'] not in ['BUY', 'SELL']:
             return False
-            
+
         # 检查价格有效性
         try:
             price = float(signal['price'])
@@ -114,7 +111,7 @@ class SignalUtils:
                 return False
         except (ValueError, TypeError):
             return False
-            
+
         # 检查信心度有效性
         if 'confidence' in signal:
             try:
@@ -123,9 +120,9 @@ class SignalUtils:
                     return False
             except (ValueError, TypeError):
                 return False
-                
+
         return True
-    
+
     @staticmethod
     def format_signal_for_log(signal: Dict[str, Any]) -> str:
         """
@@ -142,16 +139,16 @@ class SignalUtils:
         price = signal.get('price', 0)
         reason = signal.get('reason', '')
         confidence = signal.get('confidence', 0)
-        
+
         base_info = f"{action} {stock_code} @ {price:.2f} (信心度: {confidence:.2f})"
-        
+
         if reason:
             base_info += f" - {reason}"
-            
+
         # 添加额外信息（排除基本字段）
         excluded_fields = {'action', 'stock_code', 'price', 'reason', 'confidence'}
         extra_info = []
-        
+
         for key, value in signal.items():
             if key not in excluded_fields and value is not None:
                 if isinstance(value, (int, float)):
@@ -161,10 +158,10 @@ class SignalUtils:
                         extra_info.append(f"{key}: {value}")
                 else:
                     extra_info.append(f"{key}: {value}")
-        
+
         if extra_info:
             base_info += f" [{', '.join(extra_info)}]"
-            
+
         return base_info
 
 
@@ -173,13 +170,13 @@ class ParameterUtils:
     参数处理工具类
     提供策略参数处理的通用方法
     """
-    
+
     @staticmethod
     def parse_bounds(
-        min_val: Optional[float], 
-        max_val: Optional[float], 
-        bounds_range: Optional[Union[List, tuple]],
-        param_name: str = "参数"
+            min_val: Optional[float],
+            max_val: Optional[float],
+            bounds_range: Optional[Union[List, tuple]],
+            param_name: str = "参数"
     ) -> tuple[Optional[float], Optional[float]]:
         """
         解析参数区间的通用函数
@@ -199,11 +196,11 @@ class ParameterUtils:
         except Exception:
             pass
         return min_val, max_val
-    
+
     @staticmethod
     def merge_strategy_params(
-        base_params: Dict[str, Any], 
-        strategy_specific_params: Dict[str, Any]
+            base_params: Dict[str, Any],
+            strategy_specific_params: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         合并基础参数和策略特定参数
@@ -218,11 +215,11 @@ class ParameterUtils:
         merged = base_params.copy()
         merged.update(strategy_specific_params)
         return merged
-    
+
     @staticmethod
     def validate_param_ranges(
-        params: Dict[str, Any], 
-        param_ranges: Dict[str, Dict[str, float]]
+            params: Dict[str, Any],
+            param_ranges: Dict[str, Dict[str, float]]
     ) -> bool:
         """
         验证参数是否在指定范围内
@@ -239,12 +236,12 @@ class ParameterUtils:
                 value = params[param_name]
                 min_val = ranges.get('min')
                 max_val = ranges.get('max')
-                
+
                 if min_val is not None and value < min_val:
                     return False
                 if max_val is not None and value > max_val:
                     return False
-                    
+
         return True
 
 
@@ -253,11 +250,11 @@ class PriceUtils:
     价格处理工具类
     提供价格相关的通用计算方法
     """
-    
+
     @staticmethod
     def calculate_percentage_distance(
-        current_price: float, 
-        reference_price: float
+            current_price: float,
+            reference_price: float
     ) -> float:
         """
         计算价格间的百分比距离
@@ -271,9 +268,9 @@ class PriceUtils:
         """
         if reference_price <= 0:
             return 0.0
-            
+
         return (current_price - reference_price) / reference_price * 100
-    
+
     @staticmethod
     def is_price_valid(price: Any) -> bool:
         """
@@ -290,11 +287,11 @@ class PriceUtils:
             return price_float > 0
         except (ValueError, TypeError):
             return False
-    
+
     @staticmethod
     def safe_float_conversion(
-        value: Any, 
-        default: float = 0.0
+            value: Any,
+            default: float = 0.0
     ) -> float:
         """
         安全的浮点数转换
@@ -317,12 +314,12 @@ class DataUtils:
     数据处理工具类
     提供通用的数据处理方法
     """
-    
+
     @staticmethod
     def format_analysis_extras(
-        analysis_result: Any,
-        field_mapping: Dict[str, str],
-        numeric_precision: int = 4
+            analysis_result: Any,
+            field_mapping: Dict[str, str],
+            numeric_precision: int = 4
     ) -> Dict[str, Any]:
         """
         格式化分析结果的额外字段（通用版本）
@@ -336,10 +333,10 @@ class DataUtils:
             格式化后的额外字段字典
         """
         extras = {}
-        
+
         if analysis_result is None:
             return extras
-            
+
         for target_field, source_field in field_mapping.items():
             try:
                 value = getattr(analysis_result, source_field, None)
@@ -357,14 +354,14 @@ class DataUtils:
             except Exception:
                 # 忽略字段提取错误，继续处理其他字段
                 continue
-                
+
         return extras
-    
+
     @staticmethod
     def safe_calculate_distance(
-        current_value: Any,
-        reference_value: Any,
-        fallback_value: float = 0.0
+            current_value: Any,
+            reference_value: Any,
+            fallback_value: float = 0.0
     ) -> float:
         """
         安全的距离计算（通用版本）
@@ -380,27 +377,27 @@ class DataUtils:
         try:
             current = PriceUtils.safe_float_conversion(current_value)
             reference = PriceUtils.safe_float_conversion(reference_value)
-            
+
             if reference <= 0:
                 return fallback_value
-            
+
             if current <= 0:
                 return fallback_value
-            
+
             return PriceUtils.calculate_percentage_distance(current, reference)
-            
+
         except Exception:
             return fallback_value
 
 
 # 保持向后兼容的工厂函数
-def create_buy_signal(stock_code: str, price: float, reason: str, 
-                     confidence: float = 1.0, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def create_buy_signal(stock_code: str, price: float, reason: str,
+                      confidence: float = 1.0, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """创建买入信号的工厂函数"""
     return SignalUtils.create_buy_signal(stock_code, price, reason, confidence, extra)
 
 
-def create_sell_signal(stock_code: str, price: float, reason: str, 
-                      confidence: float = 1.0, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def create_sell_signal(stock_code: str, price: float, reason: str,
+                       confidence: float = 1.0, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """创建卖出信号的工厂函数"""
     return SignalUtils.create_sell_signal(stock_code, price, reason, confidence, extra)

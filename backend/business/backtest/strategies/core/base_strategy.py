@@ -38,7 +38,8 @@ class BaseStrategy(bt.Strategy):
         ('enable_logging', True),  # 是否启用日志
     )
 
-    def __init__(self, stock_data_dict: Dict[str, pd.DataFrame] = None, effective_start_date: str | None = None, **kwargs):
+    def __init__(self, stock_data_dict: Dict[str, pd.DataFrame] = None, effective_start_date: str | None = None,
+                 **kwargs):
         """
         初始化策略基类
         
@@ -235,12 +236,13 @@ class BaseStrategy(bt.Strategy):
                     # 执行买入前再次检查现金
                     current_cash = float(self.broker.getcash())
                     if current_cash < est_cost:
-                        self.logger.warning(f"现金不足，跳过买入 {stock_code}。需要: {est_cost:.2f}, 可用: {current_cash:.2f}")
+                        self.logger.warning(
+                            f"现金不足，跳过买入 {stock_code}。需要: {est_cost:.2f}, 可用: {current_cash:.2f}")
                         continue
 
                     # 执行买入
                     self.buy(size=shares)
-                    
+
                     # 扣减预算（使用估算成本，因为backtrader订单执行是延迟的）
                     remaining_budget -= est_cost
 
@@ -259,7 +261,8 @@ class BaseStrategy(bt.Strategy):
                         **extra_fields
                     )
                     if self.params.enable_logging:
-                        self.logger.info(f"买入 {stock_code}: {shares}股 @ {price:.2f}，预算剩余: {remaining_budget:.2f}")
+                        self.logger.info(
+                            f"买入 {stock_code}: {shares}股 @ {price:.2f}，预算剩余: {remaining_budget:.2f}")
 
                 except Exception as e:
                     self.logger.error(f"执行买入信号失败: {signal}, 错误: {e}")
@@ -324,14 +327,14 @@ class BaseStrategy(bt.Strategy):
                     if self.params.enable_logging:
                         self.logger.info(f"使用缓存数据，从第 {len(self.data)} 天开始回测")
                     return False  # 有缓存数据，不跳过
-                
+
                 # 即使有缓存适配器，但如果没有预加载数据，仍需检查数据是否足够
                 if self.params.enable_logging:
                     self.logger.debug(f"缓存适配器存在但无预加载数据，检查实时数据可用性")
-                
+
             # 没有缓存或缓存无数据，按传统逻辑跳过
             return True
-        
+
         # 有足够的历史数据，不跳过
         return False
 
@@ -548,7 +551,7 @@ class BaseStrategy(bt.Strategy):
             trades = self.trade_logger.get_trades()
         else:
             trades = []
-            
+
         return {
             "total_trades": len(trades),
             "trades": trades,

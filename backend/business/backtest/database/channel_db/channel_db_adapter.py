@@ -10,10 +10,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+import time
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
-import time
 
 from backend.business.backtest.database.channel_db.channel_db_manager import ChannelDBManager, ParameterHasher
 from backend.business.factor.core.engine.library.channel_analysis.rising_channel import (
@@ -29,7 +29,7 @@ class ChannelDBAdapter:
     """
 
     def __init__(self, min_window_size: int = 60, db_manager: ChannelDBManager | None = None):
-        self.logger = setup_logger(__name__)
+        self.logger = setup_logger("backtest")
         # 允许注入自定义DB管理器，便于测试或替换存储实现
         self.db = db_manager if db_manager is not None else ChannelDBManager()
         self.min_window_size = min_window_size
@@ -38,11 +38,11 @@ class ChannelDBAdapter:
 
     # ---------- 对外接口（逐日按需） ----------
     def get_channels_for_date(
-        self,
-        stock_data_dict: Dict[str, pd.DataFrame],
-        params: Dict[str, Any],
-        target_date: str,
-        min_window_size: int | None = None,
+            self,
+            stock_data_dict: Dict[str, pd.DataFrame],
+            params: Dict[str, Any],
+            target_date: str,
+            min_window_size: int | None = None,
     ) -> Dict[str, pd.DataFrame]:
         """
         逐日按需获取通道数据：
@@ -107,7 +107,7 @@ class ChannelDBAdapter:
             if to_write:
                 ok = self.db.upsert_records(params, to_write)
                 self.logger.info(
-                    f"[CHD-Daily] 写回数据库 {'成功' if ok else '失败'} | 表={table_name} | 写回记录数={sum(len(v) for v in to_write.values())} | 计算耗时={(time.perf_counter()-t_calc)*1000:.0f}ms"
+                    f"[CHD-Daily] 写回数据库 {'成功' if ok else '失败'} | 表={table_name} | 写回记录数={sum(len(v) for v in to_write.values())} | 计算耗时={(time.perf_counter() - t_calc) * 1000:.0f}ms"
                 )
                 # 合并写回结果
                 for code, recs in to_write.items():
@@ -128,16 +128,16 @@ class ChannelDBAdapter:
                 result[code] = df
 
         self.logger.info(
-            f"[CHD-Daily] 完成 | 返回股票={len(result)} | 总耗时={(time.perf_counter()-t0)*1000:.0f}ms"
+            f"[CHD-Daily] 完成 | 返回股票={len(result)} | 总耗时={(time.perf_counter() - t0) * 1000:.0f}ms"
         )
         return result
 
     def get_single_channel_data(
-        self,
-        stock_code: str,
-        stock_df: pd.DataFrame,
-        params: Dict[str, Any],
-        target_date: str | None = None,
+            self,
+            stock_code: str,
+            stock_df: pd.DataFrame,
+            params: Dict[str, Any],
+            target_date: str | None = None,
     ) -> Optional[pd.DataFrame]:
         """单只股票当日查询：先读库；缺失则当日计算并仅写入该日记录。"""
         # 先读库
@@ -188,7 +188,7 @@ class ChannelDBAdapter:
             self._analyzer_cache[key] = inst
         return inst
 
-    def _state_to_record(self, state: "AscendingChannelRegression".state.__class__ | Any, 
+    def _state_to_record(self, state: "AscendingChannelRegression".state.__class__ | Any,
                          current_date: pd.Timestamp, current_close: float) -> Dict[str, Any]:
         """
         将通道状态转换为数据库记录格式（单日）。
@@ -236,5 +236,3 @@ class ChannelDBAdapter:
             'volatility': base.get('volatility'),
         }
         return record
-
-

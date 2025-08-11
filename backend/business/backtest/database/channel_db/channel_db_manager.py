@@ -78,7 +78,7 @@ class ChannelDBMetaManager:
     """参数到表名的映射管理，持久化到JSON meta文件"""
 
     def __init__(self, meta_file: Optional[str] = None):
-        self.logger = setup_logger(__name__)
+        self.logger = setup_logger("backtest")
         default_path = Path(__file__).parent / "channel_meta.json"
         self.meta_path = Path(meta_file) if meta_file else default_path
         self.meta_path.parent.mkdir(parents=True, exist_ok=True)
@@ -158,7 +158,7 @@ class ChannelDBManager:
     """
 
     def __init__(self, meta_file: Optional[str] = None, schema_name: Optional[str] = None):
-        self.logger = setup_logger(__name__)
+        self.logger = setup_logger("backtest")
         self.meta_manager = ChannelDBMetaManager(meta_file)
         self.schema_name = schema_name or os.getenv('MYSQL_CHANNEL_DB', 'stock_channel')
         self.conn = self._create_channel_connection()
@@ -423,9 +423,9 @@ class ChannelDBManager:
             标准化后的记录字典
         """
         import math
-        
+
         new_r = dict(rec)
-        
+
         # 处理日期字段
         if "trade_date" in new_r:
             new_r["trade_date"] = ChannelDBManager._normalize_date_str(new_r["trade_date"])
@@ -434,7 +434,7 @@ class ChannelDBManager:
                 new_r["anchor_date"] = ChannelDBManager._normalize_date_str(new_r["anchor_date"])
             except Exception:
                 new_r["anchor_date"] = None
-        
+
         # 处理所有数值字段，将NaN、Infinity等转换为None
         for k, v in list(new_r.items()):
             # 处理pandas.Timestamp对象
@@ -457,7 +457,5 @@ class ChannelDBManager:
             # 处理字符串形式的日期字段
             if k in ("trade_date", "anchor_date"):
                 new_r[k] = ChannelDBManager._normalize_date_str(new_r.get(k))
-                
+
         return new_r
-
-

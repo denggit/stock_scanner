@@ -42,7 +42,7 @@ class RisingChannelConfig:
     # ==================== 环境配置 ====================
     ENVIRONMENTS = {
         "development": {
-            "max_stocks": 100,
+            "max_stocks": None,
             "description": "开发环境 - 快速验证策略逻辑",
             # 环境级别的策略参数覆盖
             "strategy_overrides": {
@@ -88,7 +88,7 @@ class RisingChannelConfig:
         'min_data_points': 60,  # 最小数据点数
         'min_channel_score': 60.0,  # 最小通道评分（默认值，可被环境配置覆盖）
         'enable_logging': True,  # 是否启用日志
-        
+
         # 通道分析参数
         'k': 2.0,  # 通道斜率参数
         'L_max': 120,  # 最大回看天数

@@ -224,7 +224,8 @@ class TradeManager:
 
         return shares
 
-    def calculate_buy_size(self, price: float, max_positions: int, available_cash_override: Optional[float] = None) -> int:
+    def calculate_buy_size(self, price: float, max_positions: int,
+                           available_cash_override: Optional[float] = None) -> int:
         """
         计算买入数量
         
@@ -240,7 +241,8 @@ class TradeManager:
             return 0
 
         # 获取可用资金
-        available_cash = self.broker.getcash() if available_cash_override is None else max(0.0, float(available_cash_override))
+        available_cash = self.broker.getcash() if available_cash_override is None else max(0.0, float(
+            available_cash_override))
         current_positions = self.position_manager.get_position_count()
 
         # 使用当前的资金分配策略

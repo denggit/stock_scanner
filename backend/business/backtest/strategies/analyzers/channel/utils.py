@@ -6,7 +6,6 @@
 """
 
 from typing import Dict, Any, Tuple, List, Optional, Union
-import logging
 
 from ...core.utils import PriceUtils, DataUtils
 
@@ -16,12 +15,12 @@ class ChannelAnalysisUtils:
     通道分析工具类
     专门为通道分析类策略（如上升通道、下降通道等）提供工具函数
     """
-    
+
     @staticmethod
     def parse_r2_bounds(
-        r2_min: Optional[float], 
-        r2_max: Optional[float], 
-        r2_range: Optional[Union[List, Tuple]]
+            r2_min: Optional[float],
+            r2_max: Optional[float],
+            r2_range: Optional[Union[List, Tuple]]
     ) -> Tuple[Optional[float], Optional[float]]:
         """
         解析R²区间参数的工具函数（专用于回归分析类策略）
@@ -40,13 +39,13 @@ class ChannelAnalysisUtils:
         except Exception:
             pass
         return r2_min, r2_max
-    
+
     @staticmethod
     def calculate_distance_with_channel_fallback(
-        current_value: Any,
-        reference_value: Any,
-        distance_config: Dict[str, float],
-        config_key_prefix: str = 'fallback_distance'
+            current_value: Any,
+            reference_value: Any,
+            distance_config: Dict[str, float],
+            config_key_prefix: str = 'fallback_distance'
     ) -> float:
         """
         带通道特定后备方案的距离计算
@@ -63,30 +62,30 @@ class ChannelAnalysisUtils:
         # 转换为浮点数
         current = PriceUtils.safe_float_conversion(current_value)
         reference = PriceUtils.safe_float_conversion(reference_value)
-        
+
         # 参考值无效的情况
         if reference <= 0:
             return distance_config.get(f'{config_key_prefix}_invalid', 10.0)
-        
+
         # 当前值无效的情况  
         if current <= 0:
             return distance_config.get('min_distance_below_reference', 0.1)
-        
+
         # 计算实际距离
         distance = PriceUtils.calculate_percentage_distance(current, reference)
-        
+
         # 如果距离为负数，使用最小距离
         if distance < 0:
             distance = distance_config.get('min_distance_below_reference', 0.1)
-            
+
         return distance
-    
+
     @staticmethod
     def format_channel_analysis_extras(
-        analysis_result: Any,
-        field_mapping: Dict[str, str],
-        include_channel_width: bool = True,
-        price_precision: int = 2
+            analysis_result: Any,
+            field_mapping: Dict[str, str],
+            include_channel_width: bool = True,
+            price_precision: int = 2
     ) -> Dict[str, Any]:
         """
         格式化通道分析结果的额外字段
@@ -101,7 +100,7 @@ class ChannelAnalysisUtils:
             格式化后的额外字段字典
         """
         extras = DataUtils.format_analysis_extras(analysis_result, field_mapping)
-        
+
         # 通道特定的额外处理
         if include_channel_width and analysis_result:
             try:
@@ -111,9 +110,9 @@ class ChannelAnalysisUtils:
                     extras['通道宽度'] = round(float(upper - lower), price_precision)
             except Exception:
                 pass
-                
+
         return extras
-    
+
     @staticmethod
     def validate_channel_state(channel_state, required_fields: List[str] = None) -> bool:
         """
@@ -128,21 +127,21 @@ class ChannelAnalysisUtils:
         """
         if channel_state is None:
             return False
-            
+
         if required_fields is None:
             required_fields = ['channel_status', 'upper_today', 'lower_today']
-            
+
         for field in required_fields:
             if not hasattr(channel_state, field):
                 return False
-                
+
         return True
-    
+
     @staticmethod
     def is_price_in_channel(
-        current_price: float, 
-        channel_state,
-        strict_bounds: bool = True
+            current_price: float,
+            channel_state,
+            strict_bounds: bool = True
     ) -> bool:
         """
         检查价格是否在通道内（通用版本）
@@ -157,26 +156,26 @@ class ChannelAnalysisUtils:
         """
         if not ChannelAnalysisUtils.validate_channel_state(channel_state):
             return False
-            
+
         try:
             lower = getattr(channel_state, 'lower_today', None)
             upper = getattr(channel_state, 'upper_today', None)
-            
+
             if lower is None or upper is None:
                 return False
-                
+
             lower_val = float(lower)
             upper_val = float(upper)
-            
+
             if strict_bounds:
                 lower_ok = current_price > lower_val
             else:
                 lower_ok = current_price >= lower_val
-                
+
             upper_ok = current_price <= upper_val
-            
+
             return lower_ok and upper_ok
-            
+
         except (ValueError, TypeError, AttributeError):
             return False
 
@@ -186,12 +185,12 @@ class RegressionUtils:
     回归分析工具类
     专门为基于回归分析的策略提供工具函数
     """
-    
+
     @staticmethod
     def validate_regression_quality(
-        r2: float,
-        min_r2: Optional[float] = None,
-        max_r2: Optional[float] = None
+            r2: float,
+            min_r2: Optional[float] = None,
+            max_r2: Optional[float] = None
     ) -> bool:
         """
         验证回归质量
@@ -206,22 +205,22 @@ class RegressionUtils:
         """
         try:
             r2_val = float(r2)
-            
+
             if min_r2 is not None and r2_val < min_r2:
                 return False
-                
+
             if max_r2 is not None and r2_val > max_r2:
                 return False
-                
+
             return True
-            
+
         except (ValueError, TypeError):
             return False
-    
+
     @staticmethod
     def format_regression_info(
-        analysis_result: Any,
-        include_statistics: bool = True
+            analysis_result: Any,
+            include_statistics: bool = True
     ) -> Dict[str, Any]:
         """
         格式化回归分析信息
@@ -234,10 +233,10 @@ class RegressionUtils:
             格式化的回归信息
         """
         info = {}
-        
+
         if analysis_result is None:
             return info
-            
+
         # 基础回归信息
         regression_fields = {
             'R²': 'r2',
@@ -245,7 +244,7 @@ class RegressionUtils:
             '截距α': 'alpha',
             '标准误差': 'std_error'
         }
-        
+
         for display_name, field_name in regression_fields.items():
             try:
                 value = getattr(analysis_result, field_name, None)
@@ -256,7 +255,7 @@ class RegressionUtils:
                         info[display_name] = value
             except Exception:
                 continue
-                
+
         # 统计信息
         if include_statistics:
             stats_fields = {
@@ -264,7 +263,7 @@ class RegressionUtils:
                 'F统计量': 'f_statistic',
                 '样本数': 'sample_size'
             }
-            
+
             for display_name, field_name in stats_fields.items():
                 try:
                     value = getattr(analysis_result, field_name, None)
@@ -272,12 +271,12 @@ class RegressionUtils:
                         info[display_name] = value
                 except Exception:
                     continue
-                    
+
         return info
 
 
 # 保持向后兼容的工厂函数
-def parse_r2_bounds(r2_min: Optional[float], r2_max: Optional[float], 
-                   r2_range: Optional[Union[List, Tuple]]) -> Tuple[Optional[float], Optional[float]]:
+def parse_r2_bounds(r2_min: Optional[float], r2_max: Optional[float],
+                    r2_range: Optional[Union[List, Tuple]]) -> Tuple[Optional[float], Optional[float]]:
     """解析R²区间的工厂函数（向后兼容）"""
     return ChannelAnalysisUtils.parse_r2_bounds(r2_min, r2_max, r2_range)

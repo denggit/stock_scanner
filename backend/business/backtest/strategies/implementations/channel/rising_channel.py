@@ -12,14 +12,14 @@
 5. 当未满N只股票时，重新选股并买入至N只
 """
 
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Optional
 
 import pandas as pd
 
 from backend.business.backtest.configs.rising_channel_config import RisingChannelConfig
 from backend.business.factor.core.engine.library.channel_analysis.channel_state import ChannelStatus
-from ...core import BaseStrategy, SignalUtils, ParameterUtils, DataUtils
 from ...analyzers.channel import ChannelAnalyzerManager, ChannelAnalysisUtils, parse_r2_bounds
+from ...core import BaseStrategy, SignalUtils, ParameterUtils
 
 
 class RisingChannelStrategy(BaseStrategy):
@@ -104,7 +104,7 @@ class RisingChannelStrategy(BaseStrategy):
         config_params = RisingChannelConfig.get_strategy_params()
         # 转换为backtrader需要的元组格式
         return tuple((key, value) for key, value in config_params.items())
-    
+
     # 在类定义时获取默认参数
     _default_config_params = RisingChannelConfig.get_strategy_params()
     params = tuple((key, value) for key, value in _default_config_params.items())
@@ -129,7 +129,7 @@ class RisingChannelStrategy(BaseStrategy):
 
         # 当前分析结果缓存
         self.current_analysis_results = {}
-        
+
         # 不再使用预加载数据，按需逐日读取
         self.preloaded_channel_data = {}
 
@@ -327,7 +327,7 @@ class RisingChannelStrategy(BaseStrategy):
             if not self.position_manager.has_position(stock_code):
                 chs = stock_info['channel_state']
                 extras = self._format_channel_extras(
-                    chs, 
+                    chs,
                     stock_info['current_price'],
                     score=stock_info.get('score'),
                     distance_to_lower=stock_info.get('distance_to_lower')
@@ -434,15 +434,15 @@ class RisingChannelStrategy(BaseStrategy):
             stock_data_dict,
             self.current_date
         )
-        
+
         # 标记为非缓存数据
         for stock_code in self.current_analysis_results:
             self.current_analysis_results[stock_code]['is_cached'] = False
 
     def _build_channel_state_from_cache(self, cache_data: pd.Series):
         """从缓存数据构建通道状态对象"""
-        from backend.business.factor.core.engine.library.channel_analysis.channel_state import ChannelState, ChannelStatus
-        
+        from backend.business.factor.core.engine.library.channel_analysis.channel_state import ChannelStatus
+
         # 创建一个简化的通道状态对象，只包含必要的字段
         class CachedChannelState:
             def __init__(self, cache_data):
@@ -458,7 +458,7 @@ class RisingChannelStrategy(BaseStrategy):
                 self.upper_tomorrow = cache_data.get('upper_tomorrow')
                 self.lower_tomorrow = cache_data.get('lower_tomorrow')
                 self.cumulative_gain = cache_data.get('cumulative_gain')
-                
+
                 # 通道状态
                 status_value = cache_data.get('channel_status', ChannelStatus.NORMAL.value)
                 # 支持字符串（"NORMAL"/"BROKEN" 等）或枚举/数字
@@ -467,13 +467,14 @@ class RisingChannelStrategy(BaseStrategy):
                         self.channel_status = status_value
                     elif isinstance(status_value, str):
                         # 允许传入名称字符串
-                        self.channel_status = ChannelStatus[status_value] if status_value in ChannelStatus.__members__ else ChannelStatus.NORMAL
+                        self.channel_status = ChannelStatus[
+                            status_value] if status_value in ChannelStatus.__members__ else ChannelStatus.NORMAL
                     else:
                         # 兜底：尝试以值构造
                         self.channel_status = ChannelStatus(status_value)
                 except Exception:
                     self.channel_status = ChannelStatus.NORMAL
-        
+
         return CachedChannelState(cache_data)
 
     def _calculate_distance_to_lower(self, current_price: float, channel_state) -> float:
@@ -495,21 +496,21 @@ class RisingChannelStrategy(BaseStrategy):
 
         # 获取下沿价格
         lower_price = getattr(channel_state, 'lower_today', None)
-        
+
         # 使用通道专用工具计算距离
         return ChannelAnalysisUtils.calculate_distance_with_channel_fallback(
-            current_price, 
-            lower_price, 
+            current_price,
+            lower_price,
             distance_config,
             'fallback_distance'
         )
 
     def _format_channel_extras(
-        self, 
-        channel_state, 
-        current_price: float,
-        score: float = None,
-        distance_to_lower: float = None
+            self,
+            channel_state,
+            current_price: float,
+            score: float = None,
+            distance_to_lower: float = None
     ) -> Dict[str, Any]:
         """
         格式化通道分析的额外信息
@@ -532,28 +533,28 @@ class RisingChannelStrategy(BaseStrategy):
             '今日上沿': 'upper_today',
             '今日下沿': 'lower_today'
         }
-        
+
         extras = ChannelAnalysisUtils.format_channel_analysis_extras(
             channel_state, field_mapping, include_channel_width=False
         )
-        
+
         # 添加评分信息
         if score is not None:
             extras['通道评分'] = round(float(score), 2)
-        
+
         # 添加距离信息
         if distance_to_lower is not None:
             extras['距下沿(%)'] = round(float(distance_to_lower), 2)
         elif current_price and channel_state:
             calculated_distance = self._calculate_distance_to_lower(current_price, channel_state)
             extras['距下沿(%)'] = round(calculated_distance, 2)
-        
+
         # 计算通道宽度
         upper = getattr(channel_state, 'upper_today', None) if channel_state else None
         lower = getattr(channel_state, 'lower_today', None) if channel_state else None
         if upper is not None and lower is not None:
             extras['通道宽度'] = upper - lower
-            
+
         return extras
 
     def _extract_channel_params(self) -> Dict[str, Any]:
@@ -572,15 +573,16 @@ class RisingChannelStrategy(BaseStrategy):
                 if hasattr(analyzer, '_analyzer') and analyzer._analyzer is not None:
                     # 从真实的AscendingChannelRegression实例获取参数
                     return analyzer._analyzer._get_config_dict()
-            
+
             # 如果无法从管理器获取，直接创建AscendingChannelRegression实例
-            from backend.business.factor.core.engine.library.channel_analysis.rising_channel import AscendingChannelRegression
+            from backend.business.factor.core.engine.library.channel_analysis.rising_channel import \
+                AscendingChannelRegression
             temp_analyzer = AscendingChannelRegression()
             return temp_analyzer._get_config_dict()
-            
+
         except Exception as e:
             self.logger.warning(f"无法获取通道算法参数，使用默认值: {e}")
-            
+
             # 回退到硬编码的算法参数
             return {
                 'k': 2.0,
@@ -661,7 +663,7 @@ class RisingChannelStrategy(BaseStrategy):
             return None
 
         return SignalUtils.create_sell_signal(
-            stock_code, price, reason, 
+            stock_code, price, reason,
             confidence=1.0,  # 卖出信号通常是高信心度的
             extra=extra
         )
@@ -702,7 +704,7 @@ class RisingChannelStrategy(BaseStrategy):
 
         # 添加上升通道特有参数
         channel_params = self._extract_channel_params()
-        
+
         return ParameterUtils.merge_strategy_params(base_params, channel_params)
 
     def get_strategy_info(self) -> Dict[str, Any]:
