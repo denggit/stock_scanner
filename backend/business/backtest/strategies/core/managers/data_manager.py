@@ -227,15 +227,28 @@ class DataManager:
         else:
             target_date = pd.to_datetime(date).to_pydatetime()
 
-        # 精确匹配
-        current_data = stock_df[stock_df['trade_date'] == target_date.date()]
-        if not current_data.empty:
-            return float(current_data.iloc[0]['close'])
+        # 统一为日期比较对象
+        try:
+            from pandas.api import types as ptypes
+            # 若列为datetime64，转为日期再比较；否则直接比较date
+            if ptypes.is_datetime64_any_dtype(stock_df['trade_date']):
+                trade_dates = pd.to_datetime(stock_df['trade_date']).dt.date
+            else:
+                trade_dates = stock_df['trade_date']
+        except Exception:
+            trade_dates = pd.to_datetime(stock_df['trade_date'], errors='coerce').dt.date
 
-        # 如果精确匹配失败，获取最近的日期
-        if len(stock_df) > 0:
-            return float(stock_df.iloc[-1]['close'])
+        # 仅精确匹配“当日”价格；若当日无该股票记录（如停牌/未上市），则不回退到未来数据，返回0.0
+        mask_exact = trade_dates == target_date.date()
+        if mask_exact.any():
+            # 取当日第一条（正常应唯一）
+            row_idx = stock_df.index[mask_exact][0]
+            try:
+                return float(stock_df.loc[row_idx, 'close'])
+            except Exception:
+                pass
 
+        # 当日无数据：严格返回0，避免使用未来价格导致穿越
         return 0.0
 
     def get_stock_data_until(self, stock_code: str, date: datetime,
