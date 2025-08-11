@@ -11,7 +11,7 @@ from typing import Dict, Any, List
 import backtrader as bt
 import pandas as pd
 
-from backend.business.backtest.core.trading_rules import is_trade_blocked_by_price_limit
+from backend.business.backtest.core.trading_rules import is_trade_blocked_by_price_limit, AShareTradingRules
 from backend.utils.logger import setup_logger
 from .managers.data_manager import DataManager
 from .managers.position_manager import PositionManager
@@ -167,17 +167,120 @@ class BaseStrategy(bt.Strategy):
         Returns:
             过滤后的交易信号
         """
-        filtered_signals = []
+        filtered_signals: List[Dict[str, Any]] = []
 
+        # 计算当日预计持仓：当前持仓 - 当日卖出股票数（去重）
+        try:
+            current_positions = self.position_manager.get_position_count()
+        except Exception:
+            current_positions = 0
+
+        sell_codes = {s.get('stock_code') for s in signals if s.get('action') == 'SELL' and s.get('stock_code')}
+        projected_positions = max(0, current_positions - len(sell_codes))
+        try:
+            max_positions = int(getattr(self.params, 'max_positions', 0) or 0)
+        except Exception:
+            max_positions = 0
+        allowed_buy_slots = max(0, max_positions - projected_positions)
+
+        # 按顺序过滤：卖出信号不受持仓上限限制；买入信号受“当日可用空位”限制
         for signal in signals:
-            # 基本风险检查
-            if self._is_signal_valid(signal):
-                filtered_signals.append(signal)
+            is_valid, reasons = self._validate_signal_with_reasons(signal, projected_positions, allowed_buy_slots)
+
+            if is_valid:
+                if signal.get('action') == 'BUY':
+                    # 占用一个买入空位
+                    if allowed_buy_slots > 0:
+                        filtered_signals.append(signal)
+                        allowed_buy_slots -= 1
+                    else:
+                        # 理论上不应触发（因为 is_valid 已包含空位校验），兜底再记一条原因
+                        reasons.append(f"当日可用买入空位不足；预计持仓={projected_positions}，上限={max_positions}")
+                        if self.params.enable_logging:
+                            self.logger.warning(f"信号被风险控制过滤: {signal} | 过滤原因: {'; '.join(reasons)}")
+                else:
+                    # SELL 信号直接通过
+                    filtered_signals.append(signal)
             else:
                 if self.params.enable_logging:
-                    self.logger.warning(f"信号被风险控制过滤: {signal}")
+                    self.logger.warning(f"信号被风险控制过滤: {signal} | 过滤原因: {'; '.join(reasons)}")
 
         return filtered_signals
+
+    def _validate_signal_with_reasons(
+        self,
+        signal: Dict[str, Any],
+        projected_positions: int,
+        allowed_buy_slots: int
+    ) -> tuple[bool, List[str]]:
+        """
+        校验信号有效性并返回失败原因列表（为空表示通过）。
+        
+        规则说明：
+        - 字段与价格有效性检查
+        - 涨跌停限制：涨停禁买、跌停禁卖（基于前收）
+        - 当日持仓容量：买入需占用“预计持仓”后的可用空位
+        
+        Args:
+            signal: 单个交易信号
+            projected_positions: 预计持仓（当前持仓-当日卖出数）
+            allowed_buy_slots: 当日剩余可用买入空位
+        Returns:
+            (是否有效, 原因列表)
+        """
+        reasons: List[str] = []
+
+        try:
+            action = signal.get('action')
+            stock_code = signal.get('stock_code')
+            price = float(signal.get('price', 0) or 0)
+        except Exception:
+            reasons.append('信号字段解析失败')
+            return False, reasons
+
+        # 1) 必填字段与价格有效性
+        for field in ['action', 'stock_code', 'price']:
+            if field not in signal:
+                reasons.append(f"缺少字段: {field}")
+        if price <= 0:
+            reasons.append('价格无效(<=0)')
+
+        if reasons:
+            return False, reasons
+
+        # 2) 涨跌停限制（基于前一交易日收盘价）
+        try:
+            df = self.data_manager.get_stock_data_until(stock_code, self.current_date, min_data_points=2)
+            if df is not None and len(df) >= 2:
+                prev_close = float(df.iloc[-2]['close'])
+                # 细化原因：计算上/下限
+                limit_info = AShareTradingRules.check_price_limit(price, prev_close, is_st=False)
+                if action == 'BUY' and limit_info.get('is_upper_limit'):
+                    reasons.append(
+                        f"涨停禁买: 当前价={price:.4f} ≥ 涨停价={limit_info.get('upper_limit', 0):.4f}"
+                    )
+                if action == 'SELL' and limit_info.get('is_lower_limit'):
+                    reasons.append(
+                        f"跌停禁卖: 当前价={price:.4f} ≤ 跌停价={limit_info.get('lower_limit', 0):.4f}"
+                    )
+        except Exception:
+            # 数据不足或异常时不强制拦截，不记录为失败
+            pass
+
+        # 3) 当日可用空位（仅 BUY）
+        if action == 'BUY':
+            try:
+                max_positions = int(getattr(self.params, 'max_positions', 0) or 0)
+            except Exception:
+                max_positions = 0
+            if max_positions > 0:
+                # 若已无空位，则添加原因
+                if allowed_buy_slots <= 0:
+                    reasons.append(
+                        f"持仓上限: 预计持仓={projected_positions}，上限={max_positions}，当日可用空位=0"
+                    )
+
+        return (len(reasons) == 0), reasons
 
     def execute_trades(self, signals: List[Dict[str, Any]]):
         """
@@ -358,12 +461,6 @@ class BaseStrategy(bt.Strategy):
         # 检查价格有效性
         if signal['price'] <= 0:
             return False
-
-        # 检查持仓限制
-        if signal['action'] == 'BUY':
-            current_positions = self.position_manager.get_position_count()
-            if current_positions >= self.params.max_positions:
-                return False
 
         # 涨跌停拦截（基于前收）
         try:

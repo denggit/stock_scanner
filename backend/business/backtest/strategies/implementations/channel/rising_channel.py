@@ -348,9 +348,35 @@ class RisingChannelStrategy(BaseStrategy):
         # 仅在需要买入时才触发通道获取/计算，以减少无谓的数据库访问
         # 判断：卖出后的空位数 > 0，才进行当日通道获取
         current_positions = self.position_manager.get_position_count()
-        sell_signals = self._generate_sell_signals()
-        sell_codes = {s.get('stock_code') for s in sell_signals if s.get('stock_code')}
-        projected_positions = max(0, current_positions - len(sell_codes))
+
+        # 避免重复生成卖出信号：仅获取用于数量估计的代码集合
+        held_codes = set(self.position_manager.get_position_codes())
+        sell_candidate_count = 0
+        try:
+            # 轻量级地基于持仓与通道状态检查是否存在潜在卖出，不生成完整信号结构
+            for stock_code in held_codes:
+                stock_data = self.data_manager.get_stock_data_until(
+                    stock_code,
+                    self.current_date,
+                    self.params.min_data_points
+                )
+                if stock_data is None:
+                    sell_candidate_count += 1
+                    continue
+                ch_state = None
+                if self.channel_manager:
+                    try:
+                        ch_state = self.channel_manager.analyze_channel(stock_code, stock_data, self.current_date)
+                    except Exception:
+                        ch_state = None
+                if self._should_sell_stock(ch_state):
+                    sell_candidate_count += 1
+        except Exception:
+            # 回退到原有逻辑
+            sell_signals = self._generate_sell_signals()
+            sell_candidate_count = len({s.get('stock_code') for s in sell_signals if s.get('stock_code')})
+
+        projected_positions = max(0, current_positions - sell_candidate_count)
         if projected_positions < self.params.max_positions:
             self._update_channel_analysis_from_db_or_compute()
         else:

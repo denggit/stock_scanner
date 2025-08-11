@@ -264,8 +264,20 @@ class DataManager:
         else:
             target_datetime = pd.to_datetime(date).to_pydatetime()
 
-        # 过滤到指定日期之前的数据
-        filtered_df = stock_df[stock_df['trade_date'] <= target_datetime.date()]
+        # 过滤到指定日期之前的数据（支持 datetime64 与 date 比较）
+        try:
+            from pandas.api import types as ptypes
+            if ptypes.is_datetime64_any_dtype(stock_df['trade_date']):
+                cutoff = pd.to_datetime(target_datetime)
+                filtered_df = stock_df[stock_df['trade_date'] <= cutoff]
+            else:
+                filtered_df = stock_df[stock_df['trade_date'] <= target_datetime.date()]
+        except Exception:
+            cutoff = pd.to_datetime(target_datetime)
+            try:
+                filtered_df = stock_df[stock_df['trade_date'] <= cutoff]
+            except Exception:
+                filtered_df = stock_df[stock_df['trade_date'] <= cutoff.date()]
 
         if len(filtered_df) < min_data_points:
             self.logger.debug(f"股票 {stock_code} 数据不足: {len(filtered_df)} < {min_data_points}")
@@ -361,6 +373,31 @@ class DataManager:
                     self.logger.warning(f"股票 {stock_code} 存在空值: {null_counts.to_dict()}")
                     # 前向填充空值（使用更兼容的方法）
                     data[required_columns] = data[required_columns].fillna(method='ffill').fillna(method='bfill')
+
+                # 统一 trade_date 类型，避免后续重复转换开销
+                try:
+                    from pandas.api import types as ptypes
+                    if not ptypes.is_datetime64_any_dtype(data['trade_date']):
+                        data['trade_date'] = pd.to_datetime(data['trade_date'], errors='coerce')
+                except Exception:
+                    # 保底转换
+                    data['trade_date'] = pd.to_datetime(data['trade_date'], errors='coerce')
+
+                # 排序，确保按日期升序，便于切片
+                try:
+                    data = data.sort_values('trade_date').reset_index(drop=True)
+                except Exception:
+                    pass
+
+                # 裁剪不必要的列，降低内存占用（仅保留策略与通道分析所需最小集合）
+                try:
+                    keep_cols = ['trade_date', 'open', 'high', 'low', 'close', 'volume']
+                    extra_cols = [c for c in data.columns if c not in keep_cols]
+                    if extra_cols:
+                        data = data[keep_cols]
+                except Exception:
+                    # 若裁剪失败，不中断流程
+                    pass
 
                 # 检查价格数据合理性
                 price_columns = ['open', 'high', 'low', 'close']

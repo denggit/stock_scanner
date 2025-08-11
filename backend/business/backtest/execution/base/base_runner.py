@@ -292,6 +292,9 @@ class BaseBacktestRunner:
             **strategy_params
         )
 
+        # 释放大对象引用，降低峰值内存占用（不影响功能/配置）
+        stock_data_dict = None  # hint GC
+
         self.logger.info("开始运行回测...")
         results = engine.run(f"多股票_{self.strategy_class.__name__}")
 

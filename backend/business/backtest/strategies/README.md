@@ -39,6 +39,11 @@ backend/business/backtest/strategies/
 - **用途**: 定义策略执行流程模板
 - **流程**: prepare_data → generate_signals → risk_control → execute_trades → log_results
 
+> 风控与当日顺序补充：
+
+- 风险控制阶段会为每一条被拦截的信号打印“具体过滤原因”，便于排查（如：缺少字段、价格无效、涨停禁买/跌停禁卖、当日可用买入空位不足等）。
+- 当日交易遵循“先卖后买”。风控在检查买入是否触及“持仓上限”时，使用“预计持仓=当前持仓-当日卖出股票数（去重）”，据此计算“当日可用买入空位”。因此若当日存在卖出，买入不会因为旧持仓数而被误判为超上限。
+
 ### 2. 工厂模式
 
 - **位置**: `factory/strategy_factory.py`

@@ -34,7 +34,7 @@ class RisingChannelConfig:
         'initial_cash': 200000.0,  # 初始资金20万
         'commission': 0.0003,  # 手续费率
         'stock_pool': 'no_st',  # 股票池：非ST股票
-        'start_date': '2020-01-01',  # 开始日期
+        'start_date': '2024-10-01',  # 开始日期
         'end_date': datetime.today().strftime("%Y-%m-%d"),  # 结束日期
         'min_data_days': 120  # 最小数据天数
     }
@@ -271,7 +271,7 @@ class RisingChannelConfig:
     def get_log_config(cls) -> Dict[str, str]:
         """
         获取日志配置
-        
+
         Returns:
             日志配置字典
         """

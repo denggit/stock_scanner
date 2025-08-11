@@ -83,21 +83,37 @@ class ChannelDBAdapter:
                     sdf = stock_data_dict.get(code)
                     if sdf is None or sdf.empty:
                         continue
-                    sdf = sdf.copy()
-                    sdf['trade_date'] = pd.to_datetime(sdf['trade_date'])
-                    # 过滤至目标日（含）
-                    sdf = sdf[sdf['trade_date'] <= td]
-                    if len(sdf) < window:
+
+                    # 避免整体复制，按需视图切片并仅使用必要列，减少内存占用
+                    # 假设上游已确保 trade_date 为 datetime 类型
+                    sdt = sdf
+                    try:
+                        from pandas.api import types as ptypes
+                        if not ptypes.is_datetime64_any_dtype(sdt['trade_date']):
+                            # 仅当确实不是datetime时才转换，避免重复分配
+                            sdt = sdt.assign(trade_date=pd.to_datetime(sdt['trade_date']))
+                    except Exception:
+                        sdt = sdt.assign(trade_date=pd.to_datetime(sdt['trade_date']))
+
+                    mask = sdt['trade_date'] <= td
+                    if not mask.any():
+                        continue
+                    # 仅保留必需列视图
+                    cols = [c for c in ['trade_date', 'open', 'high', 'low', 'close', 'volume'] if c in sdt.columns]
+                    sdt = sdt.loc[mask, cols]
+
+                    if len(sdt) < window:
                         continue
                     # 若最后一条并非目标日，跳过（该股当日无数据）
-                    if sdf.iloc[-1]['trade_date'].date() != td.date():
+                    last_row = sdt.iloc[-1]
+                    if pd.to_datetime(last_row['trade_date']).date() != td.date():
                         continue
 
-                    state = analyzer.fit_channel(sdf)
+                    state = analyzer.fit_channel(sdt)
                     if state is None:
                         continue
                     # 构造成记录并写回
-                    close_price = float(sdf.iloc[-1]['close'])
+                    close_price = float(last_row['close'])
                     rec = self._state_to_record(state, td, close_price)
                     to_write[code] = [ChannelDBManager._normalize_record(rec)]
                 except Exception as e:
