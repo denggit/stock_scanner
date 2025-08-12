@@ -166,18 +166,20 @@ class ReportUtils:
         else:
             pf_display = f"{pf_result['profit_factor']:.2f}"
 
-        # 构建基础指标列表
+        # 构建基础指标列表（与ResultAnalyzer输出字段对齐）
         base_metrics = [
-            '初始资金', '最终资金', '总收益率', '绝对收益',
-            '夏普比率', '最大回撤', '交易次数', '胜率',
-            '年化收益率', '年化波动率'
+            '初始资金', '最终总资产', '总收益率', '净盈亏',
+            '最终现金', '现金盈亏', '夏普比率', '最大回撤',
+            '交易次数', '胜率', '年化收益率', '年化波动率'
         ]
 
         base_values = [
             f"{safe_get('初始资金', 0):,.2f}",
-            f"{safe_get('最终资金', 0):,.2f}",
+            f"{safe_get('最终总资产', 0):,.2f}",
             f"{safe_get('总收益率', 0):.2f}%",
-            f"{safe_get('绝对收益', 0):,.2f}",
+            f"{safe_get('净盈亏', 0):,.2f}",
+            f"{safe_get('最终现金', 0):,.2f}",
+            f"{safe_get('现金盈亏', 0):,.2f}",
             f"{safe_get('夏普比率', 0):.4f}",
             f"{safe_get('最大回撤', 0):.2f}%",
             f"{safe_get('交易次数', 0)}",
@@ -188,7 +190,7 @@ class ReportUtils:
 
         # 添加盈亏比相关指标
         enhanced_metrics = base_metrics + [
-            '盈亏比(PF)', '盈利交易数', '亏损交易数', '平均盈利', '平均亏损', '净盈亏'
+            '盈亏比(PF)', '盈利交易数', '亏损交易数', '平均盈利', '平均亏损', '交易净盈亏(卖出合计)'
         ]
 
         enhanced_values = base_values + [

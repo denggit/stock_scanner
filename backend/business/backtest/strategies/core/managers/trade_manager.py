@@ -157,7 +157,7 @@ class TradeManager:
         # 风险控制参数
         self.risk_params = {
             'max_single_position_percent': 0.1,  # 单只股票最大占比10%
-            'min_cash_reserve': 0.01,  # 最低现金储备1%
+            'min_cash_reserve': 0.05,  # 最低现金储备5%
             'max_daily_trades': 20,  # 每日最大交易次数
             'min_price': 2.0,  # 最低股价
             'max_price': 1000.0  # 最高股价
@@ -259,8 +259,8 @@ class TradeManager:
             intended_slots=intended_slots
         )
 
-        # 风险控制检查
-        shares = self._apply_risk_control(shares, price, available_cash)
+        # 风险控制检查（传入max_positions用于等权上限约束）
+        shares = self._apply_risk_control(shares, price, available_cash, max_positions)
 
         # A股约束：按手、最小金额与费用覆盖
         shares = self._apply_ashare_constraints(shares, price, available_cash)
@@ -300,7 +300,7 @@ class TradeManager:
         net_proceeds = trade_value - total_fees
         return max(0.0, net_proceeds)
 
-    def _apply_risk_control(self, shares: int, price: float, available_cash: float) -> int:
+    def _apply_risk_control(self, shares: int, price: float, available_cash: float, max_positions: int) -> int:
         """
         应用风险控制规则
         
@@ -322,14 +322,21 @@ class TradeManager:
 
         # 统一以“最严格的限制”为准：
         # - 单票最大占比（基于总资产）
+        # - 单票预算不超过 总资产 / max_positions（等权仓位上限，若提供）
         # - 最低现金留存（基于总资产）
         total_value = self.broker.getvalue() if self.broker else available_cash
         min_cash_reserve = total_value * self.risk_params['min_cash_reserve']
         max_trade_value_by_percent = total_value * self.risk_params['max_single_position_percent']
+        # 等权仓位上限：若未设置/无效，则不生效
+        try:
+            mp = int(max_positions) if max_positions is not None else 0
+        except Exception:
+            mp = 0
+        max_trade_value_by_equal_weight = (total_value / mp) if mp and mp > 0 else float('inf')
         max_trade_value_by_reserve = max(0.0, available_cash - min_cash_reserve)
 
         # 允许的最大交易金额取二者较小值
-        max_allowable_trade_value = min(max_trade_value_by_percent, max_trade_value_by_reserve)
+        max_allowable_trade_value = min(max_trade_value_by_percent, max_trade_value_by_equal_weight, max_trade_value_by_reserve)
 
         # 若当前建议超过限制，则下调
         current_trade_value = shares * price
@@ -338,6 +345,8 @@ class TradeManager:
             # 仅在改变时输出一次日志
             if current_trade_value > max_trade_value_by_percent:
                 self.logger.info(f"单只股票占比过高，调整买入数量至 {limited_shares}")
+            if current_trade_value > max_trade_value_by_equal_weight:
+                self.logger.info(f"按等权上限(总资产/最大持仓数)限制，调整买入数量至 {limited_shares}")
             if current_trade_value > max_trade_value_by_reserve:
                 self.logger.info(f"为保持现金储备，调整买入数量至 {limited_shares}")
             shares = limited_shares

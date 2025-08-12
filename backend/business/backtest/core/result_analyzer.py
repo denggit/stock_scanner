@@ -103,29 +103,57 @@ class ResultAnalyzer:
         """计算基础指标"""
         try:
             initial_cash = cerebro.broker.startingcash
-            final_value = cerebro.broker.getvalue()
-            absolute_return = final_value - initial_cash
-            total_return = (final_value / initial_cash - 1) * 100
+            final_cash = cerebro.broker.getcash()  # 现金
+            final_value = cerebro.broker.getvalue()  # 总资产
+            
+            # 统一基于总资产(final_value)计算核心指标
+            net_profit_loss = final_value - initial_cash  # 净盈亏
+            total_return_on_value = (final_value / initial_cash - 1) * 100 if initial_cash > 0 else 0
+            
+            # 保留基于现金的计算作为参考
+            cash_profit_loss = final_cash - initial_cash  # 现金盈亏
+            
+            # 计算未平仓持仓价值
+            position_value = final_value - final_cash
+            
             # 现实策略（无杠杆）下总收益率不会小于 -100%，若资产异常为负，做展示层兜底
-            if total_return < -100:
-                total_return = -100.0
+            if total_return_on_value < -100:
+                total_return_on_value = -100.0
 
             self.logger.info(
-                f"基础指标 - 初始资金: {initial_cash}, 最终资金: {final_value}, 总收益率: {total_return:.2f}%")
+                f"基础指标 - 初始资金: {initial_cash}, 最终现金: {final_cash}, 最终总资产: {final_value}")
+            self.logger.info(
+                f"净盈亏: {net_profit_loss:.2f}, 总收益率: {total_return_on_value:.2f}%")
+            
+            # 添加数据一致性验证
+            asset_return_rate = (final_value / initial_cash - 1) * 100 if initial_cash > 0 else 0
+            self.logger.info(f"数据一致性验证 - 总资产收益率: {asset_return_rate:.2f}%")
+            
+            # 检查异常情况
+            if final_cash == 0 and position_value > 0:
+                self.logger.warning("警告：最终现金为0，但有未平仓持仓，可能存在计算错误")
+            if abs(asset_return_rate - total_return_on_value) > 0.01:
+                self.logger.warning(f"警告：总资产收益率计算不一致，期望: {total_return_on_value:.2f}%, 实际: {asset_return_rate:.2f}%")
 
             return {
                 "初始资金": initial_cash,
-                "最终资金": final_value,
-                "绝对收益": absolute_return,
-                "总收益率": total_return
+                "最终现金": final_cash,
+                "最终总资产": final_value,
+                "未平仓持仓价值": position_value,
+                "净盈亏": net_profit_loss,
+                "总收益率": total_return_on_value,
+                "现金盈亏": cash_profit_loss,
+                "总资产收益率": total_return_on_value # 与总收益率保持一致
             }
         except Exception as e:
             self.logger.error(f"计算基础指标时发生异常: {e}")
             return {
                 "初始资金": 0,
-                "最终资金": 0,
-                "绝对收益": 0,
-                "总收益率": 0
+                "最终总资产": 0,
+                "净盈亏": 0,
+                "总收益率": 0,
+                "最终现金": 0,
+                "现金盈亏": 0
             }
 
     def _calculate_risk_metrics(self, strat, cerebro) -> Dict[str, Any]:
@@ -703,10 +731,11 @@ class ResultAnalyzer:
     def _manual_calculate_performance_metrics(self, strat, cerebro) -> Dict[str, Any]:
         """手动计算性能指标 - 修复版本"""
         try:
-            # 计算总收益率
+            # 计算总收益率 - 统一口径：基于最终总资产(final_value)
             initial_cash = cerebro.broker.startingcash
+            final_cash = cerebro.broker.getcash()
             final_value = cerebro.broker.getvalue()
-            total_return_ratio = final_value / initial_cash - 1
+            total_return_ratio = final_value / initial_cash - 1  # 基于总资产的收益率
 
             # 获取实际回测天数 - 改进计算方法
             backtest_days = 252  # 默认一年
@@ -744,8 +773,7 @@ class ResultAnalyzer:
                         backtest_days = max(delta.days, 1)
                         self.logger.debug(f"从交易记录获取回测期间: {first_date} 到 {last_date}, 共 {backtest_days} 天")
 
-            # 计算年化收益率（避免复数）：
-            # 若最终资产<=0，则认为年化收益率为-100%（展示层合理兜底，根因应由撮合/风控去避免负资产）
+            # 计算年化收益率（避免复数）：统一使用总资产口径
             years = backtest_days / 365.25
             if years <= 0:
                 annual_return = 0.0
@@ -1010,9 +1038,11 @@ class ResultAnalyzer:
 
 【基础指标】
 初始资金: {safe_get('初始资金', 0):,.2f}
-最终资金: {safe_get('最终资金', 0):,.2f}
+最终总资产: {safe_get('最终总资产', 0):,.2f}
+净盈亏: {safe_get('净盈亏', 0):,.2f}
 总收益率: {safe_get('总收益率', 0):.2f}%
-绝对收益: {safe_get('绝对收益', 0):,.2f}
+最终现金: {safe_get('最终现金', 0):,.2f}
+现金盈亏: {safe_get('现金盈亏', 0):,.2f}
 
 【风险指标】
 夏普比率: {safe_get('夏普比率', 0):.4f}

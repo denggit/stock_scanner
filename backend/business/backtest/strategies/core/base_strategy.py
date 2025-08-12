@@ -290,6 +290,9 @@ class BaseStrategy(bt.Strategy):
         Args:
             signals: 经过风险控制的交易信号
         """
+        if self.params.enable_logging:
+            self.logger.info(f"交易执行前 - 现金: {self.broker.getcash():.2f}, 总资产: {self.broker.getvalue():.2f}")
+        
         # 先拆分信号
         sell_signals = [s for s in signals if s.get('action') == 'SELL']
         buy_signals = [s for s in signals if s.get('action') == 'BUY']
@@ -323,11 +326,19 @@ class BaseStrategy(bt.Strategy):
             except Exception as e:
                 self.logger.error(f"执行卖出信号失败: {signal}, 错误: {e}")
 
-        # C) 再执行买入（带预算；预算=当前现金+当日净卖出估算）
+        # C) 再执行买入（带预算；预算= 当前现金 + 估算卖出净入金）
         if buy_signals:
+            # 使用“现金 + 估算可得卖出净入金”作为当日等权分摊的总预算
+            # 说明：卖出在 cheat-on-close 下于收盘撮合，撮合前现金未更新；
+            # 因此这里并入估算可得净入金用于预算分摊，后续仍以费用覆盖/按手/等权上限等约束防超额。
             remaining_budget = float(self.broker.getcash()) + float(estimated_sell_proceeds)
             remaining_budget = max(0.0, remaining_budget)
             remaining_buys = len(buy_signals)
+            
+            if self.params.enable_logging:
+                self.logger.info(
+                    f"预算计算: 现金={self.broker.getcash():.2f}, 估算卖出收益={estimated_sell_proceeds:.2f}, 总预算={remaining_budget:.2f}"
+                )
 
             for signal in buy_signals:
                 try:
