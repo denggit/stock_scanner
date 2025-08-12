@@ -46,7 +46,8 @@ class EqualWeightAllocation(FundAllocationStrategy):
     """
 
     def calculate_allocation(self, available_cash: float, price: float,
-                             max_positions: int, current_positions: int) -> int:
+                             max_positions: int, current_positions: int,
+                             intended_slots: Optional[int] = None) -> int:
         """
         等权重分配计算（按剩余空位）
         
@@ -55,6 +56,8 @@ class EqualWeightAllocation(FundAllocationStrategy):
             price: 股票价格
             max_positions: 最大持仓数
             current_positions: 当前持仓数
+            intended_slots: 当日计划买入的“剩余笔数”（覆盖默认的“剩余空位数”分母）。
+                             若提供且 > 0，则按该值进行等分，从而避免“按全部空位”等分导致单笔过小。
             
         Returns:
             建议买入数量
@@ -66,8 +69,11 @@ class EqualWeightAllocation(FundAllocationStrategy):
         commission_rate = AShareTradingRules.COMMISSION_RATE
         usable_cash = max(0.0, available_cash * (1 - commission_rate))
 
-        # 按剩余空位等分：若已满仓则视为1（避免除零且返回0股）
-        remaining_slots = max(1, max_positions - current_positions)
+        # 优先使用“当日计划买入的剩余笔数”进行等分；若未提供则退回“剩余空位数”等分
+        if intended_slots is not None and int(intended_slots) > 0:
+            remaining_slots = int(intended_slots)
+        else:
+            remaining_slots = max(1, max_positions - current_positions)
         cash_per_stock = usable_cash / remaining_slots
         shares = int(cash_per_stock / price)
 
@@ -225,7 +231,8 @@ class TradeManager:
         return shares
 
     def calculate_buy_size(self, price: float, max_positions: int,
-                           available_cash_override: Optional[float] = None) -> int:
+                           available_cash_override: Optional[float] = None,
+                           intended_slots: Optional[int] = None) -> int:
         """
         计算买入数量
         
@@ -233,6 +240,7 @@ class TradeManager:
             price: 股票价格
             max_positions: 最大持仓数量
             available_cash_override: 可选，外部传入的预算现金，用于同一交易日多笔下单时防止超额
+            intended_slots: 可选，当日剩余计划买入的笔数（用于等权资金分配的分母）
             
         Returns:
             建议买入数量
@@ -247,7 +255,8 @@ class TradeManager:
 
         # 使用当前的资金分配策略
         shares = self.allocation_strategy.calculate_allocation(
-            available_cash, price, max_positions, current_positions
+            available_cash, price, max_positions, current_positions,
+            intended_slots=intended_slots
         )
 
         # 风险控制检查
@@ -273,6 +282,23 @@ class TradeManager:
         trade_value = float(shares) * float(price)
         total_fees = AShareTradingRules.calculate_total_fees(trade_value, is_buy=True)
         return trade_value + total_fees
+
+    def estimate_sell_total_proceeds(self, shares: int, price: float) -> float:
+        """
+        估算卖出净入金（扣除佣金/过户费/印花税）
+        
+        Args:
+            shares: 卖出股数
+            price: 卖出价格
+        Returns:
+            卖出后实际增加的现金（>=0）。无效输入返回0。
+        """
+        if shares <= 0 or price <= 0:
+            return 0.0
+        trade_value = float(shares) * float(price)
+        total_fees = AShareTradingRules.calculate_total_fees(trade_value, is_buy=False)
+        net_proceeds = trade_value - total_fees
+        return max(0.0, net_proceeds)
 
     def _apply_risk_control(self, shares: int, price: float, available_cash: float) -> int:
         """

@@ -107,6 +107,14 @@ class BacktestEngine:
         # 设置初始资金
         self.cerebro.broker.setcash(self.initial_cash)
 
+        # 为了实现“同一交易日先卖后买”的现金可用性，启用 cheat-on-close 模式：
+        # 在 next() 内发出的市价单将以当日收盘价成交，使得卖出释放的现金可立即用于当日买入。
+        try:
+            self.cerebro.broker.set_coc(True)
+            self.logger.info("已启用 cheat-on-close，同日先卖后买顺序将按 next() 调用顺序执行")
+        except Exception as e:
+            self.logger.warning(f"启用 cheat-on-close 失败，将使用预算模拟：{e}")
+
         # 优先使用自定义的A股手续费模型
         try:
             comminfo = AStockCommissionInfo(

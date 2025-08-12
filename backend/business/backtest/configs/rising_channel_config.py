@@ -34,7 +34,7 @@ class RisingChannelConfig:
         'initial_cash': 200000.0,  # 初始资金20万
         'commission': 0.0003,  # 手续费率
         'stock_pool': 'no_st',  # 股票池：非ST股票
-        'start_date': '2021-01-01',  # 开始日期
+        'start_date': '2025-01-01',  # 开始日期
         'end_date': datetime.today().strftime("%Y-%m-%d"),  # 结束日期
         'min_data_days': 120  # 最小数据天数
     }
@@ -42,7 +42,7 @@ class RisingChannelConfig:
     # ==================== 环境配置 ====================
     ENVIRONMENTS = {
         "development": {
-            "max_stocks": None,
+            "max_stocks": 1000,
             "description": "开发环境 - 快速验证策略逻辑",
             # 环境级别的策略参数覆盖
             "strategy_overrides": {

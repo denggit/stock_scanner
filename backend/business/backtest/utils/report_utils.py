@@ -774,7 +774,7 @@ class ReportUtils:
             # 创建DataFrame
             df = pd.DataFrame(trades)
 
-            # 定义需要的字段映射（只保留用户需要的7个字段）
+            # 定义需要的字段映射（在收益率(%)之前增加“收益额”列）
             required_fields = {
                 '交易日期': ['交易日期', 'date'],
                 '交易动作': ['交易动作', 'action'],
@@ -782,6 +782,7 @@ class ReportUtils:
                 '交易数量': ['交易数量', 'quantity', 'size'],
                 '交易价格': ['交易价格', 'price'],
                 '交易金额': ['交易金额', 'value'],
+                '收益额': ['绝对收益', 'profit_amount'],  # 新增：优先使用策略记录的绝对收益
                 '收益率(%)': ['收益率', 'returns', '收益率(%)']
             }
 
@@ -804,6 +805,44 @@ class ReportUtils:
 
             # 创建新的DataFrame，只包含指定的字段
             df_result = pd.DataFrame(result_data)
+
+            # 若“收益额”缺失或存在空值，针对 SELL 交易尝试从原始记录补齐/计算
+            try:
+                if '收益额' in df_result.columns:
+                    # 补齐 SELL 行的收益额：优先绝对收益；否则保持为空
+                    profits = []
+                    for i in range(len(df)):
+                        action = (df.get('action', [''])[i] if 'action' in df.columns else df.get('交易动作', [''])[i])
+                        if str(action).upper() == 'SELL':
+                            val = None
+                            # 直接取绝对收益
+                            for k in ['绝对收益', 'profit_amount']:
+                                if k in df.columns:
+                                    try:
+                                        v = df.iloc[i].get(k)
+                                        if v is not None:
+                                            val = float(v)
+                                            break
+                                    except Exception:
+                                        pass
+                            profits.append(val)
+                        else:
+                            profits.append(None)
+                    # 仅覆盖空值
+                    import numpy as np
+                    cur = df_result['收益额'].to_list()
+                    final_vals = []
+                    for a, b in zip(cur, profits):
+                        if pd.isna(a) or a is None:
+                            final_vals.append(b)
+                        else:
+                            try:
+                                final_vals.append(float(a))
+                            except Exception:
+                                final_vals.append(b)
+                    df_result['收益额'] = final_vals
+            except Exception:
+                pass
 
             # 追加通道字段（放在收益率(%)之后）
             channel_fields_in_order = [
@@ -834,6 +873,8 @@ class ReportUtils:
 
             if '收益率(%)' in df_result.columns:
                 df_result['收益率(%)'] = pd.to_numeric(df_result['收益率(%)'], errors='coerce').round(2)
+            if '收益额' in df_result.columns:
+                df_result['收益额'] = pd.to_numeric(df_result['收益额'], errors='coerce').round(2)
 
             # 对通道数值列进行格式化
             numeric_channel_fields = [
@@ -852,19 +893,31 @@ class ReportUtils:
             if '交易数量' in df_result.columns:
                 df_result['交易数量'] = pd.to_numeric(df_result['交易数量'], errors='coerce').fillna(0).astype(int)
 
-            # 重新排序列：确保通道字段位于“收益率(%)”之后
-            if available_channel_fields:
-                base_cols = list(df_result.columns)
-                if '收益率(%)' in base_cols:
-                    # 先移除已添加的通道列
+            # 调整列顺序：确保“收益额”位于“收益率(%)”之前；通道字段位于“收益率(%)”之后
+            base_cols = list(df_result.columns)
+            if '收益率(%)' in base_cols:
+                # 先把“收益额”移动到“收益率(%)”之前
+                if '收益额' in base_cols:
+                    cols_no_profit = [c for c in base_cols if c != '收益额']
+                    try:
+                        idx_rr = cols_no_profit.index('收益率(%)')
+                        cols_no_profit = cols_no_profit[:idx_rr] + ['收益额'] + cols_no_profit[idx_rr:]
+                        base_cols = cols_no_profit
+                    except Exception:
+                        pass
+                # 再插入通道列到“收益率(%)”之后
+                if available_channel_fields:
                     base_cols_no_channels = [c for c in base_cols if c not in available_channel_fields]
-                    insert_pos = base_cols_no_channels.index('收益率(%)') + 1
-                    new_cols = (
+                    try:
+                        insert_pos = base_cols_no_channels.index('收益率(%)') + 1
+                        base_cols = (
                             base_cols_no_channels[:insert_pos]
                             + available_channel_fields
                             + base_cols_no_channels[insert_pos:]
-                    )
-                    df_result = df_result[new_cols]
+                        )
+                    except Exception:
+                        pass
+                df_result = df_result[base_cols]
 
             return df_result
 
@@ -1089,12 +1142,39 @@ class ReportUtils:
                     except Exception:
                         width_pct = None
 
+                    # 计算收益额：优先使用卖出记录中的绝对收益，否则用价格差×股数
+                    profit_amount = None
+                    try:
+                        for k in ['profit_amount', '绝对收益']:
+                            if k in sell_trade and sell_trade[k] is not None:
+                                profit_amount = float(sell_trade[k])
+                                break
+                    except Exception:
+                        profit_amount = None
+                    if profit_amount is None:
+                        try:
+                            qty = 0
+                            for qk in ['size', 'quantity', '交易数量']:
+                                if qk in sell_trade and sell_trade[qk] is not None:
+                                    qty = int(sell_trade[qk])
+                                    break
+                            if not qty and buy_trade is not None:
+                                for qk in ['size', 'quantity', '交易数量']:
+                                    if qk in buy_trade and buy_trade[qk] is not None:
+                                        qty = int(buy_trade[qk])
+                                        break
+                            if qty and buy_price and sell_price:
+                                profit_amount = (float(sell_price) - float(buy_price)) * float(qty)
+                        except Exception:
+                            profit_amount = None
+
                     record = {
                         '买入日期': buy_date,
                         '卖出日期': sell_date,
                         '股票代码': stock_code,
                         '买入价格': round(buy_price, 2) if buy_price else 0,
                         '卖出价格': round(sell_price, 2) if sell_price else 0,
+                        '收益额': round(profit_amount, 2) if profit_amount is not None else 0,
                         '收益率(%)': round(returns, 2) if returns else 0,
                         '通道评分': buy_trade.get('通道评分', ''),
                         '斜率β': buy_trade.get('斜率β', ''),
@@ -1112,11 +1192,13 @@ class ReportUtils:
             # 创建DataFrame
             df = pd.DataFrame(analysis_records)
 
-            # 格式化日期
+            # 格式化日期与收益额精度
             if not df.empty:
                 for date_col in ['买入日期', '卖出日期']:
                     if date_col in df.columns:
                         df[date_col] = pd.to_datetime(df[date_col]).dt.strftime('%Y-%m-%d')
+                if '收益额' in df.columns:
+                    df['收益额'] = pd.to_numeric(df['收益额'], errors='coerce').round(2)
 
             return df
 

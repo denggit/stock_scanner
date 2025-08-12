@@ -290,64 +290,78 @@ class BaseStrategy(bt.Strategy):
         Args:
             signals: 经过风险控制的交易信号
         """
-        # 为避免同日多笔买入超额，先执行卖出释放现金，再按预算执行买入
+        # 先拆分信号
         sell_signals = [s for s in signals if s.get('action') == 'SELL']
         buy_signals = [s for s in signals if s.get('action') == 'BUY']
 
-        # 1) 先执行卖出
+        # A) 预估当日卖出可得净入金（用于当日预算，避免因结算时点导致买入受限）
+        estimated_sell_proceeds = 0.0
+        if sell_signals:
+            from backend.business.backtest.core.trading_rules import is_trade_blocked_by_price_limit
+            for s in sell_signals:
+                try:
+                    stock_code = s.get('stock_code')
+                    price = float(s.get('price'))
+                    pos = self.position_manager.get_position(stock_code)
+                    if not pos:
+                        continue
+                    # 跌停禁卖则不计入预算
+                    df = self.data_manager.get_stock_data_until(stock_code, self.current_date, min_data_points=2)
+                    if df is not None and len(df) >= 2:
+                        prev_close = float(df.iloc[-2]['close'])
+                        if is_trade_blocked_by_price_limit(price, prev_close, 'SELL', is_st=False):
+                            continue
+                    est_net = self.trade_manager.estimate_sell_total_proceeds(pos['shares'], price)
+                    estimated_sell_proceeds += est_net
+                except Exception:
+                    continue
+
+        # B) 先执行卖出
         for signal in sell_signals:
             try:
                 self._execute_sell_signal(signal)
             except Exception as e:
                 self.logger.error(f"执行卖出信号失败: {signal}, 错误: {e}")
 
-        # 2) 再执行买入（带预算）
+        # C) 再执行买入（带预算；预算=当前现金+当日净卖出估算）
         if buy_signals:
-            # 当前可用现金作为当日买入预算基数（卖出已释放）
-            remaining_budget = float(self.broker.getcash())
-            # 顺序执行买入信号，逐单扣减预算
+            remaining_budget = float(self.broker.getcash()) + float(estimated_sell_proceeds)
+            remaining_budget = max(0.0, remaining_budget)
+            remaining_buys = len(buy_signals)
+
             for signal in buy_signals:
                 try:
                     stock_code = signal['stock_code']
                     price = float(signal['price'])
 
-                    # 预算不足直接跳过
                     if remaining_budget <= 0:
                         break
 
-                    # 计算基于预算的买入股数
+                    # 使用“当日剩余买单数”进行等权分摊，避免同日多笔买入被过度稀释
                     shares = self.trade_manager.calculate_buy_size(
-                        price, self.params.max_positions, available_cash_override=remaining_budget
+                        price, self.params.max_positions,
+                        available_cash_override=remaining_budget,
+                        intended_slots=remaining_buys
                     )
                     if shares <= 0:
+                        remaining_buys = max(0, remaining_buys - 1)
                         continue
 
-                    # 估算总成本，做预算校验
                     est_cost = self.trade_manager.estimate_buy_total_cost(shares, price)
                     if est_cost > remaining_budget:
-                        # 退一步：尝试减少一个最小交易单位
                         from backend.business.backtest.core.trading_rules import AShareTradingRules
-                        reduced_shares = max(0, shares - AShareTradingRules.MIN_TRADE_UNITS)
-                        if reduced_shares > 0:
-                            shares = self.trade_manager.calculate_buy_size(
-                                price, self.params.max_positions, available_cash_override=remaining_budget
-                            )
+                        # 按手递减，直至满足预算或无法下单
+                        while shares > 0 and est_cost > remaining_budget:
+                            shares = max(0, shares - AShareTradingRules.MIN_TRADE_UNITS)
                             est_cost = self.trade_manager.estimate_buy_total_cost(shares, price)
-                        else:
+                        if shares <= 0 or est_cost > remaining_budget:
+                            remaining_buys = max(0, remaining_buys - 1)
                             continue
 
-                    # 执行买入前再次检查现金
-                    current_cash = float(self.broker.getcash())
-                    if current_cash < est_cost:
-                        self.logger.warning(
-                            f"现金不足，跳过买入 {stock_code}。需要: {est_cost:.2f}, 可用: {current_cash:.2f}")
-                        continue
-
-                    # 执行买入
+                    # 以预算为准，不再强依赖 broker 现金时点
                     self.buy(size=shares)
-
-                    # 扣减预算（使用估算成本，因为backtrader订单执行是延迟的）
                     remaining_budget -= est_cost
+                    remaining_buys = max(0, remaining_buys - 1)
 
                     # 更新持仓及记录
                     self.position_manager.add_position(stock_code, shares, price, self.current_date)
