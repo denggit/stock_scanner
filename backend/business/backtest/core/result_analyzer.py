@@ -868,7 +868,7 @@ class ResultAnalyzer:
                 else:
                     self.logger.warning("没有有效的收益率数据用于计算波动率")
 
-            # 方法2：如果方法1失败，使用更保守的估算
+            # 方法2：如果方法1失败，使用更保守的估算（不设置上限）
             if annual_volatility == 0 and years > 0:
                 self.logger.info("尝试基于总收益率估算年化波动率...")
 
@@ -880,20 +880,11 @@ class ResultAnalyzer:
                 estimated_volatility_multiplier = 1.8
                 annual_volatility = total_return_annual * estimated_volatility_multiplier
 
-                # 确保在合理范围内（股票策略一般10%-60%）
-                annual_volatility = max(min(annual_volatility, 60.0), 10.0)
+                # 保证非负，不再设置最大值
+                annual_volatility = max(annual_volatility, 0.0)
+                self.logger.info(f"基于年化收益率估算年化波动率(无上限): {annual_volatility:.2f}%")
 
-                self.logger.info(f"基于年化收益率估算年化波动率: {annual_volatility:.2f}%")
-
-            # 最终合理性检查：确保波动率在合理范围内
-            if annual_volatility > 100:  # 超过100%很可能是计算错误
-                original_volatility = annual_volatility
-                annual_volatility = min(annual_volatility, 60.0)  # 限制为60%
-                self.logger.warning(f"年化波动率过高({original_volatility:.2f}%)，调整为: {annual_volatility:.2f}%")
-            elif annual_volatility > 0 and annual_volatility < 5:  # 低于5%可能是计算错误
-                original_volatility = annual_volatility
-                annual_volatility = 15.0  # 设置为合理的默认值
-                self.logger.warning(f"年化波动率过低({original_volatility:.2f}%)，调整为: {annual_volatility:.2f}%")
+            # 最终合理性检查：按实值输出，不再设置上下限或下限兜底
 
             # 计算其他指标
             info_ratio = 0

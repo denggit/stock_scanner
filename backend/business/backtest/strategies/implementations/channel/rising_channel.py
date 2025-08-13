@@ -48,10 +48,9 @@ class RisingChannelStrategy(BaseStrategy):
     6. R²值在有效范围内（R2_min <= R² <= R2_max）
     7. 通道宽度在合理范围内（width_pct_min <= 宽度 <= width_pct_max）
     
-    卖出条件（满足任一）：
-    1. 股票通道状态不再是NORMAL（通道失效）
-    2. 股票数据不足（无法进行有效分析）
-    3. 通道分析出现异常
+     卖出条件（满足任一）：
+     1. 上升通道状态不为 NORMAL
+     2. 当日最高价 high 大于通道上沿 upper_today
     
     选股排序规则：
     1. 首先筛选出所有满足买入条件的股票
@@ -660,58 +659,51 @@ class RisingChannelStrategy(BaseStrategy):
 
     def _should_sell_stock(self, stock_code: str, channel_state, stock_data: Optional[pd.DataFrame] = None) -> bool:
         """
-        判断是否应该卖出股票（按新规则）
+        判断是否应该卖出股票（新规则）
 
-        规则说明：
-        1) 数据不足：卖出
-        2) 通道状态 BREAKDOWN：卖出
-        3) 通道状态 BREAKOUT：仅当“当日收盘价 < 前一交易日(H+L+C)/3”时卖出，否则继续持有；并标记该标的曾经 BREAKOUT
-        4) 若该标的曾经 BREAKOUT，且当前状态回归 NORMAL：卖出
-        5) 其他（状态缺失/异常）：卖出
+        新卖出规则（满足任一条件即卖出）：
+        1) 上升通道状态不为 NORMAL
+        2) 当日最高价 high 大于通道上沿 upper_today
 
         Args:
             stock_code: 股票代码
-            channel_state: 通道状态对象
-            stock_data: 截止当前交易日的历史数据（用于计算前一日典型价）
+            channel_state: 通道状态对象（需包含 channel_status 与 upper_today 字段）
+            stock_data: 截止当前交易日的历史数据（用于获取当日最高价）
         Returns:
             是否应该卖出
         """
-        # 无状态或无属性：视为无效 → 卖出
-        if (channel_state is None) or (not hasattr(channel_state, 'channel_status')):
-            return True
-
-        status = channel_state.channel_status
-
-        # BREAKDOWN：直接卖出
-        if status == ChannelStatus.BREAKDOWN:
-            return True
-
-        # BREAKOUT：仅当“收盘价 < 前一日(H+L+C)/3”才卖出；并记录曾经 BREAKOUT
-        if status == ChannelStatus.BREAKOUT:
-            try:
-                # 记录曾进入 BREAKOUT
-                self._breakout_flag[stock_code] = True
-
-                # 需要至少两天数据
-                if stock_data is None or len(stock_data) < 2:
-                    # 极端情况下数据不足，保守处理：卖出
-                    return True
-
-                prev = stock_data.iloc[-2]
-                cur = stock_data.iloc[-1]
-                prev_typical = (float(prev['high']) + float(prev['low']) + float(prev['close'])) / 3.0
-                cur_close = float(cur['close'])
-                return cur_close < prev_typical
-            except Exception:
-                # 任意计算异常时，保守处理：卖出
+        try:
+            # 1) 通道状态非 NORMAL：直接卖出
+            if (channel_state is None) or (not hasattr(channel_state, 'channel_status')):
+                return True
+            if channel_state.channel_status != ChannelStatus.NORMAL:
                 return True
 
-        # NORMAL：若曾经 BREAKOUT 且当前回归 NORMAL，则卖出
-        if status == ChannelStatus.NORMAL:
-            return bool(self._breakout_flag.get(stock_code, False))
+            # 2) 当日最高价高于上沿：卖出
+            # 获取当日最高价
+            day_high = None
+            if stock_data is not None and len(stock_data) >= 1:
+                try:
+                    day_high = float(stock_data.iloc[-1]['high'])
+                except Exception:
+                    day_high = None
 
-        # 其他未知状态：卖出
-        return True
+            # 获取通道上沿
+            upper_today = getattr(channel_state, 'upper_today', None)
+            if (day_high is not None) and (upper_today is not None):
+                try:
+                    if float(day_high) > float(upper_today):
+                        return True
+                except Exception:
+                    # 若比较失败，按未触发第二条处理
+                    pass
+
+            # 其余情况不卖出
+            return False
+
+        except Exception:
+            # 任意异常，保守处理：不触发卖出（以避免异常导致过度平仓）
+            return False
 
     def _execute_sell_signal(self, signal: Dict[str, Any]):
         """
