@@ -6,7 +6,7 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -26,6 +26,206 @@ class DataUtils:
     数据工具类
     提供数据处理和生成功能
     """
+
+    @staticmethod
+    def calculate_moving_average(data: pd.DataFrame, period: int, column: str = 'close') -> pd.Series:
+        """
+        计算移动平均线
+        
+        Args:
+            data: 股票数据DataFrame
+            period: 移动平均周期
+            column: 计算列名，默认为'close'
+            
+        Returns:
+            pd.Series: 移动平均线序列
+        """
+        if len(data) < period:
+            return pd.Series([np.nan] * len(data), index=data.index)
+        
+        return data[column].rolling(window=period, min_periods=period).mean()
+
+    @staticmethod
+    def check_price_above_ma(data: pd.DataFrame, ma_period: int = 60, price_column: str = 'close') -> bool:
+        """
+        检查当前价格是否高于移动平均线
+        
+        Args:
+            data: 股票数据DataFrame
+            ma_period: 移动平均周期
+            price_column: 价格列名，默认为'close'
+            
+        Returns:
+            bool: 当前价格是否高于移动平均线
+        """
+        if len(data) < ma_period:
+            return False
+        
+        ma = DataUtils.calculate_moving_average(data, ma_period, price_column)
+        if ma.empty or pd.isna(ma.iloc[-1]):
+            return False
+        
+        current_price = data[price_column].iloc[-1]
+        return bool(current_price > ma.iloc[-1])
+
+    @staticmethod
+    def check_recent_high(data: pd.DataFrame, lookback_days: int = 20, price_column: str = 'close') -> bool:
+        """
+        检查最近是否创下阶段性新高
+        
+        Args:
+            data: 股票数据DataFrame
+            lookback_days: 回看天数
+            price_column: 价格列名，默认为'close'
+            
+        Returns:
+            bool: 是否在最近期间创下新高
+        """
+        if len(data) < lookback_days:
+            return False
+        
+        recent_data = data[price_column].iloc[-lookback_days:]
+        current_price = recent_data.iloc[-1]
+        
+        # 检查当前价格是否在最近期间的最高价附近（允许1%的误差）
+        max_price = recent_data.max()
+        return bool(current_price >= max_price * 0.99)
+
+    @staticmethod
+    def check_uptrend_strength(data: pd.DataFrame, short_period: int = 5, long_period: int = 20) -> bool:
+        """
+        检查上升趋势强度
+        
+        Args:
+            data: 股票数据DataFrame
+            short_period: 短期移动平均周期
+            long_period: 长期移动平均周期
+            
+        Returns:
+            bool: 是否处于强上升趋势
+        """
+        if len(data) < long_period:
+            return False
+        
+        short_ma = DataUtils.calculate_moving_average(data, short_period)
+        long_ma = DataUtils.calculate_moving_average(data, long_period)
+        
+        if short_ma.empty or long_ma.empty:
+            return False
+        
+        # 短期均线在长期均线之上，且短期均线向上倾斜
+        short_ma_current = short_ma.iloc[-1]
+        long_ma_current = long_ma.iloc[-1]
+        
+        if pd.isna(short_ma_current) or pd.isna(long_ma_current):
+            return False
+        
+        # 检查短期均线是否在长期均线之上
+        if short_ma_current <= long_ma_current:
+            return False
+        
+        # 检查短期均线是否向上倾斜（最近3个值递增）
+        if len(short_ma) >= 3:
+            recent_short_ma = short_ma.iloc[-3:].dropna()
+            if len(recent_short_ma) >= 3:
+                return bool(recent_short_ma.iloc[-1] > recent_short_ma.iloc[-2] > recent_short_ma.iloc[-3])
+        
+        return False
+
+    @staticmethod
+    def check_volume_surge(data: pd.DataFrame, lookback_days: int = 20, volume_threshold: float = 1.5) -> bool:
+        """
+        检查成交量是否放大
+        
+        Args:
+            data: 股票数据DataFrame
+            lookback_days: 回看天数
+            volume_threshold: 成交量放大倍数阈值
+            
+        Returns:
+            bool: 成交量是否显著放大
+        """
+        if len(data) < lookback_days:
+            return False
+        
+        if 'volume' not in data.columns:
+            return False
+        
+        recent_volume = data['volume'].iloc[-lookback_days:]
+        current_volume = recent_volume.iloc[-1]
+        avg_volume = recent_volume.mean()
+        
+        if avg_volume <= 0:
+            return False
+        
+        return bool(current_volume >= avg_volume * volume_threshold)
+
+    @staticmethod
+    def prefilter_stocks(
+            stock_data_dict: Dict[str, pd.DataFrame],
+            min_data_points: int = 60,
+            ma_period: int = 60,
+            lookback_days: int = 20,
+            volume_threshold: float = 1.5,
+            min_conditions_met: int = 2,
+            enable_volume_check: bool = False
+    ) -> List[str]:
+        """
+        预筛选股票，过滤出满足基本趋势条件的股票
+        
+        Args:
+            stock_data_dict: 股票数据字典 {stock_code: DataFrame}
+            min_data_points: 最小数据点数
+            ma_period: 移动平均周期
+            lookback_days: 回看天数
+            volume_threshold: 成交量放大倍数阈值
+            min_conditions_met: 至少满足的条件数量
+            enable_volume_check: 是否启用成交量检查（可选条件）
+            
+        Returns:
+            List[str]: 通过预筛选的股票代码列表
+        """
+        filtered_stocks = []
+        
+        for stock_code, data in stock_data_dict.items():
+            try:
+                # 检查数据完整性
+                if len(data) < min_data_points:
+                    continue
+                
+                # 检查是否有必要的列
+                required_columns = ['close', 'high', 'low']
+                if not all(col in data.columns for col in required_columns):
+                    continue
+                
+                # 应用预筛选条件
+                conditions_met = 0
+                
+                # 条件1: 价格高于移动平均线
+                if DataUtils.check_price_above_ma(data, ma_period):
+                    conditions_met += 1
+                
+                # 条件2: 最近创下阶段性新高
+                if DataUtils.check_recent_high(data, lookback_days):
+                    conditions_met += 1
+                
+                # 条件3: 上升趋势强度
+                if DataUtils.check_uptrend_strength(data):
+                    conditions_met += 1
+                
+                # 条件4: 成交量放大（可选条件）
+                if enable_volume_check and DataUtils.check_volume_surge(data, lookback_days, volume_threshold):
+                    conditions_met += 1
+                
+                # 检查是否满足最小条件数量
+                if conditions_met >= min_conditions_met:
+                    filtered_stocks.append(stock_code)
+                    
+            except Exception as e:
+                logging.debug(f"预筛选股票 {stock_code} 时出错: {e}")
+                continue
+        
+        return filtered_stocks
 
     @staticmethod
     def get_stock_data_for_backtest(

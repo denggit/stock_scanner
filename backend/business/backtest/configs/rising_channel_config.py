@@ -168,6 +168,17 @@ class RisingChannelConfig:
         'excel_engine': 'openpyxl'
     }
 
+    # ==================== 预筛选配置 ====================
+    PREFILTER_CONFIG = {
+        'enable_prefilter': True,  # 是否启用预筛选
+        'min_stocks_for_prefilter': 100,  # 触发预筛选的最小股票数量
+        'ma_period': 60,  # 移动平均线周期
+        'lookback_days': 20,  # 回看天数
+        'volume_threshold': 1.5,  # 成交量放大倍数阈值
+        'min_conditions_met': 2,  # 至少满足的条件数量
+        'enable_volume_check': False,  # 是否启用成交量检查（可选条件）
+    }
+
     # ==================== 优化配置 ====================
     OPTIMIZATION_CONFIG = {
         'max_stocks_for_optimization': 1000,  # 优化时使用的股票数量
@@ -292,6 +303,16 @@ class RisingChannelConfig:
             优化配置字典
         """
         return cls.OPTIMIZATION_CONFIG.copy()
+
+    @classmethod
+    def get_prefilter_config(cls) -> Dict[str, Any]:
+        """
+        获取预筛选配置
+        
+        Returns:
+            预筛选配置字典
+        """
+        return cls.PREFILTER_CONFIG.copy()
 
     @classmethod
     def get_channel_analysis_config(cls) -> Dict[str, Any]:

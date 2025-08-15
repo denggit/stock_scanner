@@ -511,7 +511,7 @@ class RisingChannelStrategy(BaseStrategy):
             return self._update_channel_analysis_traditional()
 
     def _update_channel_analysis_traditional(self):
-        """传统方式更新通道分析结果"""
+        """传统方式更新通道分析结果（优化版本）"""
         # 获取所有股票数据
         stock_data_dict = {}
 
@@ -523,6 +523,46 @@ class RisingChannelStrategy(BaseStrategy):
             )
             if stock_data is not None:
                 stock_data_dict[stock_code] = stock_data
+
+        # 性能优化：预筛选股票，减少通道分析的计算量
+        from backend.business.backtest.configs.rising_channel_config import RisingChannelConfig
+        prefilter_config = RisingChannelConfig.get_prefilter_config()
+        
+        if (prefilter_config['enable_prefilter'] and 
+            len(stock_data_dict) > prefilter_config['min_stocks_for_prefilter']):
+            
+            self.logger.info(f"开始预筛选股票，原始数量: {len(stock_data_dict)}")
+            
+            # 导入预筛选工具
+            from backend.business.backtest.utils.data_utils import DataUtils
+            
+            # 预筛选参数
+            prefilter_params = {
+                'min_data_points': self.params.min_data_points,
+                'ma_period': prefilter_config['ma_period'],
+                'lookback_days': prefilter_config['lookback_days'],
+                'volume_threshold': prefilter_config['volume_threshold'],
+                'min_conditions_met': prefilter_config['min_conditions_met'],
+                'enable_volume_check': prefilter_config['enable_volume_check']
+            }
+            
+            # 执行预筛选
+            filtered_stock_codes = DataUtils.prefilter_stocks(
+                stock_data_dict, **prefilter_params
+            )
+            
+            # 构建筛选后的股票数据字典
+            filtered_stock_data_dict = {
+                code: stock_data_dict[code] 
+                for code in filtered_stock_codes 
+                if code in stock_data_dict
+            }
+            
+            self.logger.info(f"预筛选完成，筛选后数量: {len(filtered_stock_data_dict)} "
+                           f"(筛选率: {len(filtered_stock_data_dict)/len(stock_data_dict)*100:.1f}%)")
+            
+            # 使用筛选后的数据进行通道分析
+            stock_data_dict = filtered_stock_data_dict
 
         # 批量分析
         self.current_analysis_results = self.channel_manager.batch_analyze(

@@ -341,6 +341,8 @@ class ResultAnalyzer:
         - returns: 收益率（百分比）
         - holding_days: 持仓天数
         - buy_price: 买入价格
+        
+        注意：此方法只信任策略记录的收益率数据，不进行重新计算
         """
         self.logger.info("使用策略自定义交易记录进行手动计算...")
 
@@ -380,6 +382,8 @@ class ResultAnalyzer:
         - returns: 收益率（百分比）
         - holding_days: 持仓天数
         - buy_price: 买入价格
+        
+        注意：此方法只信任策略记录的收益率数据，不进行重新计算
         """
         total_trades = len(sell_trades)
         won_trades = 0
@@ -471,16 +475,6 @@ class ResultAnalyzer:
             "收益率序列": valid_returns  # 添加收益率序列用于波动率计算
         }
 
-    def _analyze_sell_trades_directly(self, sell_trades: List[Dict]) -> Dict[str, Any]:
-        """
-        直接分析卖出交易的收益率 - 简化版本
-        
-        注意：此方法已被 _analyze_sell_trades_simplified 替代，
-        保留此方法是为了向后兼容，但建议使用简化版本。
-        """
-        self.logger.warning("使用已弃用的 _analyze_sell_trades_directly 方法，建议使用 _analyze_sell_trades_simplified")
-        return self._analyze_sell_trades_simplified(sell_trades)
-
     def _create_trade_pairs(self, buy_trades: List[Dict], sell_trades: List[Dict]) -> List[Dict]:
         """
         创建买卖交易配对 - 简化版本
@@ -488,6 +482,9 @@ class ResultAnalyzer:
         使用标准字段名：
         - stock_code: 股票代码
         - date: 交易日期
+        - returns: 收益率（从卖出交易中获取）
+        
+        注意：此方法不再重新计算收益率，只使用卖出交易中记录的 returns 字段
         """
         trade_pairs = []
 
@@ -527,16 +524,19 @@ class ResultAnalyzer:
                         break
 
                 if matching_buy:
-                    # 计算收益率
-                    returns = self._calculate_trade_returns(matching_buy, sell_trade)
+                    # 使用卖出交易中记录的收益率
+                    returns = sell_trade.get('returns', 0.0)
+                    if returns is not None and hasattr(returns, 'item'):
+                        returns = returns.item()
+                    returns = float(returns) if returns is not None else 0.0
 
                     trade_pair = {
                         'buy_trade': matching_buy,
                         'sell_trade': sell_trade,
                         'returns': returns,
-                        'stock_code': stock_code,
-                        'buy_date': matching_buy.get('date'),
-                        'sell_date': sell_date
+                        'holding_days': sell_trade.get('holding_days', 0),
+                        'buy_price': matching_buy.get('price', 0),
+                        'sell_price': sell_trade.get('price', 0)
                     }
                     trade_pairs.append(trade_pair)
 
@@ -544,33 +544,25 @@ class ResultAnalyzer:
 
     def _calculate_trade_returns(self, buy_trade: Dict, sell_trade: Dict) -> float:
         """
-        计算交易收益率 - 简化版本
+        计算交易收益率 - 已弃用
         
-        使用标准字段名：
-        - returns: 收益率（百分比）
-        - price: 交易价格
+        注意：此方法已被弃用，因为分析器应该只信任策略记录的收益率数据，
+        而不应重新计算。数据的源头（BaseStrategy）应保证其准确性。
+        
+        保留此方法是为了向后兼容，但建议直接使用卖出交易中的 returns 字段。
         """
-        try:
-            # 首先尝试从卖出交易中直接获取收益率
-            returns = sell_trade.get('returns')
-            if returns is not None:
-                if hasattr(returns, 'item'):
-                    returns = returns.item()
-                return float(returns)
+        self.logger.warning("使用已弃用的 _calculate_trade_returns 方法，建议直接使用卖出交易中的 returns 字段")
+        
+        # 首先尝试从卖出交易中直接获取收益率
+        returns = sell_trade.get('returns')
+        if returns is not None:
+            if hasattr(returns, 'item'):
+                returns = returns.item()
+            return float(returns)
 
-            # 如果没有直接的收益率，通过价格计算
-            buy_price = buy_trade.get('price', 0)
-            sell_price = sell_trade.get('price', 0)
-
-            if buy_price > 0 and sell_price > 0:
-                returns = (sell_price / buy_price - 1) * 100
-                return returns
-
-            return 0.0
-
-        except (ValueError, TypeError) as e:
-            self.logger.debug(f"计算收益率失败: {e}")
-            return 0.0
+        # 如果没有直接的收益率，返回0（不应该发生）
+        self.logger.warning("卖出交易中缺少收益率数据，返回0")
+        return 0.0
 
     def _analyze_trade_pairs(self, trade_pairs: List[Dict]) -> Dict[str, Any]:
         """分析交易配对数据"""

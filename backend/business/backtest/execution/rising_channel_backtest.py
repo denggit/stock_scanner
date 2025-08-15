@@ -118,7 +118,7 @@ class RisingChannelBacktestRunner(BaseBacktestRunner):
             'environment': self.environment,
             'description': self.config.get('description', ''),
             'max_stocks': self.config.get('max_stocks'),
-            'max_positions': self.config.get('max_positions'),
+            'max_positions': self.strategy_params.get('max_positions'),  # 从策略参数中获取
             'initial_cash': self.config.get('initial_cash'),
             'commission': self.config.get('commission'),
             'date_range': {

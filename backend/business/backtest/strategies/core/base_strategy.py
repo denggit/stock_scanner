@@ -328,7 +328,7 @@ class BaseStrategy(bt.Strategy):
 
         # C) 再执行买入（带预算；预算= 当前现金 + 估算卖出净入金）
         if buy_signals:
-            # 使用“现金 + 估算可得卖出净入金”作为当日等权分摊的总预算
+            # 使用"现金 + 估算可得卖出净入金"作为当日等权分摊的总预算
             # 说明：卖出在 cheat-on-close 下于收盘撮合，撮合前现金未更新；
             # 因此这里并入估算可得净入金用于预算分摊，后续仍以费用覆盖/按手/等权上限等约束防超额。
             remaining_budget = float(self.broker.getcash()) + float(estimated_sell_proceeds)
@@ -376,36 +376,14 @@ class BaseStrategy(bt.Strategy):
                             remaining_buys = max(0, remaining_buys - 1)
                             continue
 
-                    # 以预算为准，不再强依赖 broker 现金时点
-                    # 修复：指定正确的数据源进行买入
-                    data_source = self._get_data_source_for_stock(stock_code)
-                    if data_source:
-                        self.buy(data=data_source, size=shares)
-                    else:
-                        self.logger.warning(f"未找到股票 {stock_code} 对应的数据源，跳过买入")
-                        remaining_buys = max(0, remaining_buys - 1)
-                        continue
+                    # 更新信号中的size（如果预算调整了数量）
+                    signal['size'] = shares
+                    
+                    # 执行买入操作
+                    self._execute_buy_signal(signal, remaining_budget)
                     
                     remaining_budget -= est_cost
                     remaining_buys = max(0, remaining_buys - 1)
-
-                    # 更新持仓及记录
-                    self.position_manager.add_position(stock_code, shares, price, self.current_date)
-                    extra_fields = {k: v for k, v in signal.items() if
-                                    k not in ['action', 'stock_code', 'price', 'reason', 'confidence']}
-                    self.trade_logger.log_trade(
-                        action='BUY',
-                        stock_code=stock_code,
-                        size=shares,
-                        price=price,
-                        date=self.current_date,
-                        reason=signal.get('reason', ''),
-                        confidence=signal.get('confidence', 0.0),
-                        **extra_fields
-                    )
-                    if self.params.enable_logging:
-                        self.logger.info(
-                            f"买入 {stock_code}: {shares}股 @ {price:.2f}，预算剩余: {remaining_budget:.2f}")
 
                 except Exception as e:
                     self.logger.error(f"执行买入信号失败: {signal}, 错误: {e}")
@@ -544,18 +522,17 @@ class BaseStrategy(bt.Strategy):
 
         return True
 
-    def _execute_buy_signal(self, signal: Dict[str, Any]):
+    def _execute_buy_signal(self, signal: Dict[str, Any], remaining_budget: float = None):
         """
         执行买入信号
         
         Args:
             signal: 买入信号
+            remaining_budget: 剩余预算（用于日志输出）
         """
         stock_code = signal['stock_code']
         price = signal['price']
-
-        # 计算买入数量（内部已按手、最小金额、费用覆盖）
-        shares = self.trade_manager.calculate_buy_size(price, self.params.max_positions)
+        shares = signal.get('size', 0)
 
         if shares > 0:
             # 执行买入 - 修复：指定正确的数据源
@@ -571,7 +548,7 @@ class BaseStrategy(bt.Strategy):
 
             # 记录交易
             extra_fields = {k: v for k, v in signal.items() if
-                            k not in ['action', 'stock_code', 'price', 'reason', 'confidence']}
+                            k not in ['action', 'stock_code', 'price', 'reason', 'confidence', 'size']}
             self.trade_logger.log_trade(
                 action='BUY',
                 stock_code=stock_code,
@@ -584,7 +561,8 @@ class BaseStrategy(bt.Strategy):
             )
 
             if self.params.enable_logging:
-                self.logger.info(f"买入 {stock_code}: {shares}股 @ {price:.2f}")
+                budget_info = f"，预算剩余: {remaining_budget:.2f}" if remaining_budget is not None else ""
+                self.logger.info(f"买入 {stock_code}: {shares}股 @ {price:.2f}{budget_info}")
 
     def _execute_sell_signal(self, signal: Dict[str, Any]):
         """
@@ -655,6 +633,31 @@ class BaseStrategy(bt.Strategy):
             self.logger.info(f"卖出 {stock_code}: {shares}股 @ {price:.2f}, "
                              f"收益: {profit_sign}{profit_amount:.2f}元 ({returns_pct:.2f}%), "
                              f"持仓{holding_days}天")
+
+    def get_per_trade_cash(self, max_positions: int) -> float:
+        """
+        计算单笔交易的可用资金，避免前视偏差
+        
+        使用T-1日收盘后的总资产除以最大持仓数来计算每笔交易的资金分配，
+        确保仓位计算只使用决策时刻已知的信息。
+        
+        Args:
+            max_positions: 最大持仓数量
+            
+        Returns:
+            float: 单笔交易的可用资金
+        """
+        if max_positions <= 0:
+            return 0.0
+            
+        # 使用T-1日收盘后的总资产（self.broker.getvalue()）
+        # 这避免了使用当天收盘价计算持股价值的前视偏差
+        total_value = self.broker.getvalue()
+        
+        # 平均分配到每个持仓
+        per_trade_cash = total_value / max_positions
+        
+        return per_trade_cash
 
     def get_strategy_info(self) -> Dict[str, Any]:
         """

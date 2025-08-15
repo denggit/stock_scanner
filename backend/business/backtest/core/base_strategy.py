@@ -3,10 +3,11 @@
 """
 基础策略类
 使用策略模式设计，提供统一的策略接口
+支持多股票持仓管理
 """
 
 from abc import abstractmethod
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 import backtrader as bt
 
@@ -16,10 +17,11 @@ class BaseStrategy(bt.Strategy):
     基础策略抽象类
     所有交易策略都应该继承此类
     
-    订单管理改进：
-    - 使用字典 self.active_orders 替代单一变量 self.order
-    - 支持多订单并发管理，避免订单状态丢失
+    多持仓管理改进：
+    - 使用字典 self.active_orders 管理多个并发订单
+    - 支持同时持有多个不同股票的仓位
     - 以订单引用ID (order.ref) 作为键进行管理
+    - 移除单持仓限制，支持多股票策略
     """
 
     def __init__(self):
@@ -52,7 +54,7 @@ class BaseStrategy(bt.Strategy):
         self.active_orders = {}
         # 使用字典存储每个持仓的买入价格，键为订单引用ID
         self.position_buy_prices = {}
-        self.position_size = 0
+        # 移除单持仓状态变量，使用backtrader的position对象管理
 
     def _init_trade_logger(self):
         """初始化交易记录器"""
@@ -85,8 +87,8 @@ class BaseStrategy(bt.Strategy):
         Returns:
             bool: 是否成功创建订单
         """
-        # 检查是否有未完成的订单
-        if self.active_orders or self.position:
+        # 检查是否有未完成的订单（只检查订单，不检查持仓）
+        if self.active_orders:
             return False
 
         # 优先使用signal中的size，其次使用传入的size参数
@@ -109,7 +111,6 @@ class BaseStrategy(bt.Strategy):
         # 将订单添加到活跃订单字典中
         if order:
             self.active_orders[order.ref] = order
-            self.position_size = size
 
             # 记录买入交易
             stock_code = signal.get('stock_code') if signal else None
@@ -130,8 +131,12 @@ class BaseStrategy(bt.Strategy):
         Returns:
             bool: 是否成功创建订单
         """
-        # 检查是否有未完成的订单
-        if self.active_orders or not self.position:
+        # 检查是否有未完成的订单（只检查订单，不检查持仓）
+        if self.active_orders:
+            return False
+
+        # 检查是否有持仓可卖
+        if not self.position:
             return False
 
         if size is None:
@@ -139,15 +144,6 @@ class BaseStrategy(bt.Strategy):
 
         if size <= 0:
             return False
-
-        # 计算收益率 - 使用真实的买入价格
-        # 从position_buy_prices中获取对应的买入价格
-        buy_price = None
-        if self.position_buy_prices:
-            # 如果有多个买入价格，使用最新的一个
-            buy_price = list(self.position_buy_prices.values())[-1]
-        
-        returns = (self.dataclose[0] - buy_price) / buy_price * 100 if buy_price else 0
 
         # 执行卖出
         if price:
@@ -159,12 +155,8 @@ class BaseStrategy(bt.Strategy):
         if order:
             self.active_orders[order.ref] = order
 
-            # 记录卖出交易
-            self._log_trade("SELL", size, self.dataclose[0], returns)
-
-            # 重置状态
-            self.position_buy_prices.clear()
-            self.position_size = 0
+            # 记录卖出交易（收益率将在notify_trade中计算并更新）
+            self._log_trade("SELL", size, self.dataclose[0])
             return True
         
         return False
@@ -200,8 +192,9 @@ class BaseStrategy(bt.Strategy):
         }
 
         # 卖出时添加收益相关信息
-        if action == "SELL" and returns is not None:
-            trade["returns"] = returns
+        if action == "SELL":
+            if returns is not None:
+                trade["returns"] = returns
             if buy_price is not None:
                 trade["buy_price"] = buy_price
             if holding_days is not None:
@@ -272,16 +265,26 @@ class BaseStrategy(bt.Strategy):
         """
         交易完成通知
         
-        改进的交易价格记录：
+        改进的交易价格记录和收益率计算：
         - 当交易开仓时，记录真实的成交价到position_buy_prices字典
-        - 当交易平仓时，从字典中删除对应的买入价格记录
+        - 当交易平仓时，从字典中获取对应的买入价格计算收益率
+        - 计算完成后，更新交易记录中的收益率信息
         """
         if trade.isopen:
             # 交易开仓时，记录真实的成交价
             self.position_buy_prices[trade.ref] = trade.price
         elif trade.isclosed:
-            # 交易平仓时，从字典中删除对应的买入价格记录
+            # 交易平仓时，计算收益率并更新交易记录
             if trade.ref in self.position_buy_prices:
+                buy_price = self.position_buy_prices[trade.ref]
+                returns = (trade.price - buy_price) / buy_price * 100
+                
+                # 更新最后一笔交易记录的收益率信息
+                if self.trades and self.trades[-1]["action"] == "SELL":
+                    self.trades[-1]["returns"] = returns
+                    self.trades[-1]["buy_price"] = buy_price
+                
+                # 从字典中删除对应的买入价格记录
                 del self.position_buy_prices[trade.ref]
 
     def has_active_orders(self) -> bool:
@@ -345,3 +348,73 @@ class BaseStrategy(bt.Strategy):
         per_trade_cash = total_value / max_positions
         
         return per_trade_cash
+
+    def get_position_info(self) -> Dict[str, Any]:
+        """
+        获取当前持仓信息
+        
+        Returns:
+            Dict: 持仓信息字典
+        """
+        if not self.position:
+            return {
+                "has_position": False,
+                "size": 0,
+                "value": 0.0,
+                "buy_prices": {}
+            }
+        
+        return {
+            "has_position": True,
+            "size": self.position.size,
+            "value": self.position.size * self.dataclose[0],
+            "buy_prices": self.position_buy_prices.copy()
+        }
+
+    def can_buy_stock(self, stock_code: str = None) -> bool:
+        """
+        检查是否可以买入股票
+        
+        Args:
+            stock_code: 股票代码（可选，用于检查是否已有该股票的订单）
+            
+        Returns:
+            bool: 是否可以买入
+        """
+        # 检查是否有未完成的订单
+        if self.active_orders:
+            return False
+        
+        # 如果有指定股票代码，检查是否已有该股票的订单
+        if stock_code:
+            for order in self.active_orders.values():
+                if hasattr(order.data, '_name') and order.data._name == stock_code:
+                    return False
+        
+        return True
+
+    def can_sell_stock(self, stock_code: str = None) -> bool:
+        """
+        检查是否可以卖出股票
+        
+        Args:
+            stock_code: 股票代码（可选，用于检查是否已有该股票的订单）
+            
+        Returns:
+            bool: 是否可以卖出
+        """
+        # 检查是否有未完成的订单
+        if self.active_orders:
+            return False
+        
+        # 检查是否有持仓可卖
+        if not self.position:
+            return False
+        
+        # 如果有指定股票代码，检查是否已有该股票的订单
+        if stock_code:
+            for order in self.active_orders.values():
+                if hasattr(order.data, '_name') and order.data._name == stock_code:
+                    return False
+        
+        return True
