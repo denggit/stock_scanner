@@ -1,21 +1,23 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-重构后的上升通道策略
-使用策略框架的所有组件，代码简洁且功能完整
-
-策略逻辑：
-1. 找出所有上升通道为NORMAL的股票
-2. 按股价距离下沿的百分比距离排序（从小到大）
-3. 平均买入前N只股票至满仓
-4. 每天检查持仓股票状态，非NORMAL状态则卖出
-5. 当未满N只股票时，重新选股并买入至N只
+上升通道策略实现
+基于技术分析的量化交易策略
 """
 
-from typing import Dict, Any, List, Optional
+import logging
+from datetime import datetime
+from typing import Dict, Any, List, Optional, Union
 
 import pandas as pd
 
+from backend.business.backtest.core.base_strategy import BaseStrategy
+from backend.business.backtest.core.trading_rules import AShareTradingRules
+from backend.business.backtest.strategies.core.managers.data_manager import DataManager
+from backend.business.backtest.strategies.core.managers.position_manager import PositionManager
+from backend.business.backtest.strategies.core.managers.trade_logger import TradeLogger
+from backend.business.backtest.strategies.core.managers.trade_manager import TradeManager
+from backend.business.backtest.strategies.analyzers.channel.manager import ChannelAnalyzerManager
 from backend.business.backtest.configs.rising_channel_config import RisingChannelConfig
 from backend.business.factor.core.engine.library.channel_analysis.channel_state import ChannelStatus
 from ...analyzers.channel import ChannelAnalyzerManager, ChannelAnalysisUtils, parse_r2_bounds
@@ -378,6 +380,22 @@ class RisingChannelStrategy(BaseStrategy):
                     'buy_position_ratio': stock_info['distance_to_lower'] / stock_info['channel_width_pct'] if stock_info['channel_width_pct'] > 0 else 0
                 })
                 
+                # 计算买入数量，避免前视偏差
+                per_trade_cash = self.get_per_trade_cash(self.params.max_positions)
+                current_price = stock_info['current_price']
+                
+                # 计算理论买入数量
+                theoretical_size = int(per_trade_cash / current_price)
+                
+                # 使用A股交易规则调整数量为100的整数倍
+                adjusted_size = AShareTradingRules.adjust_trade_quantity(theoretical_size)
+                
+                # 如果调整后数量为0，跳过这只股票
+                if adjusted_size <= 0:
+                    if self.params.enable_logging:
+                        self.logger.debug(f"股票 {stock_code} 调整后买入数量为0，跳过")
+                    continue
+                
                 signal = self._create_buy_signal(
                     stock_code,
                     stock_info['current_price'],
@@ -386,6 +404,10 @@ class RisingChannelStrategy(BaseStrategy):
                     stock_info['score'] / 100.0,
                     extra=extras
                 )
+                
+                # 将计算好的买入数量添加到信号中
+                signal['size'] = adjusted_size
+                
                 buy_signals.append(signal)
 
         return buy_signals
@@ -696,16 +718,16 @@ class RisingChannelStrategy(BaseStrategy):
 
     def _should_sell_stock(self, stock_code: str, channel_state, stock_data: Optional[pd.DataFrame] = None) -> bool:
         """
-        判断是否应该卖出股票（新规则）
+        判断是否应该卖出股票（优化后的规则）
 
-        新卖出规则（满足任一条件即卖出）：
+        卖出规则（满足任一条件即卖出）：
         1) 上升通道状态不为 NORMAL
-        2) 当日最高价 high 大于通道上沿 upper_today
+        2) 价格突破通道上沿（根据 sell_on_close_breakout 参数决定使用收盘价还是最高价）
 
         Args:
             stock_code: 股票代码
             channel_state: 通道状态对象（需包含 channel_status 与 upper_today 字段）
-            stock_data: 截止当前交易日的历史数据（用于获取当日最高价）
+            stock_data: 截止当前交易日的历史数据（用于获取当日价格）
         Returns:
             是否应该卖出
         """
@@ -716,20 +738,28 @@ class RisingChannelStrategy(BaseStrategy):
             if channel_state.channel_status != ChannelStatus.NORMAL:
                 return True
 
-            # 2) 当日最高价高于上沿：卖出
-            # 获取当日最高价
-            day_high = None
+            # 2) 价格突破通道上沿：卖出
+            # 根据参数决定使用收盘价还是最高价
+            sell_on_close = getattr(self.p, 'sell_on_close_breakout', True)
+            
+            # 获取当日价格
+            day_price = None
             if stock_data is not None and len(stock_data) >= 1:
                 try:
-                    day_high = float(stock_data.iloc[-1]['high'])
+                    if sell_on_close:
+                        # 使用收盘价判断突破（更稳健，避免盘中波动）
+                        day_price = float(stock_data.iloc[-1]['close'])
+                    else:
+                        # 使用最高价判断突破（更敏感，快速响应）
+                        day_price = float(stock_data.iloc[-1]['high'])
                 except Exception:
-                    day_high = None
+                    day_price = None
 
             # 获取通道上沿
             upper_today = getattr(channel_state, 'upper_today', None)
-            if (day_high is not None) and (upper_today is not None):
+            if (day_price is not None) and (upper_today is not None):
                 try:
-                    if float(day_high) > float(upper_today):
+                    if float(day_price) > float(upper_today):
                         return True
                 except Exception:
                     # 若比较失败，按未触发第二条处理

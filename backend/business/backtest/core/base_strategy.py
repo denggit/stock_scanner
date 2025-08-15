@@ -15,6 +15,11 @@ class BaseStrategy(bt.Strategy):
     """
     基础策略抽象类
     所有交易策略都应该继承此类
+    
+    订单管理改进：
+    - 使用字典 self.active_orders 替代单一变量 self.order
+    - 支持多订单并发管理，避免订单状态丢失
+    - 以订单引用ID (order.ref) 作为键进行管理
     """
 
     def __init__(self):
@@ -43,8 +48,10 @@ class BaseStrategy(bt.Strategy):
 
     def _init_trading_state(self):
         """初始化交易状态"""
-        self.order = None
-        self.buy_price = None
+        # 使用字典管理多个活跃订单，支持并发订单处理
+        self.active_orders = {}
+        # 使用字典存储每个持仓的买入价格，键为订单引用ID
+        self.position_buy_prices = {}
         self.position_size = 0
 
     def _init_trade_logger(self):
@@ -66,18 +73,26 @@ class BaseStrategy(bt.Strategy):
         """
         pass
 
-    def execute_buy(self, size: Optional[int] = None, price: Optional[float] = None):
+    def execute_buy(self, size: Optional[int] = None, price: Optional[float] = None, signal: Optional[Dict[str, Any]] = None):
         """
         执行买入操作
         
         Args:
-            size: 买入数量，None表示使用95%资金
+            size: 买入数量，None表示使用95%资金或从signal中获取
             price: 买入价格，None表示市价买入
+            signal: 买入信号字典，可能包含size等信息
+            
+        Returns:
+            bool: 是否成功创建订单
         """
-        if self.order or self.position:
+        # 检查是否有未完成的订单
+        if self.active_orders or self.position:
             return False
 
-        if size is None:
+        # 优先使用signal中的size，其次使用传入的size参数
+        if signal and 'size' in signal:
+            size = signal['size']
+        elif size is None:
             # 使用95%资金买入
             available_cash = self.broker.getcash() * 0.95
             size = int(available_cash / self.dataclose[0])
@@ -87,16 +102,22 @@ class BaseStrategy(bt.Strategy):
 
         # 执行买入
         if price:
-            self.order = self.buy(size=size, price=price)
+            order = self.buy(size=size, price=price)
         else:
-            self.order = self.buy(size=size)
+            order = self.buy(size=size)
 
-        self.buy_price = self.dataclose[0]
-        self.position_size = size
+        # 将订单添加到活跃订单字典中
+        if order:
+            self.active_orders[order.ref] = order
+            self.position_size = size
 
-        # 记录买入交易
-        self._log_trade("BUY", size, self.dataclose[0])
-        return True
+            # 记录买入交易
+            stock_code = signal.get('stock_code') if signal else None
+            reason = signal.get('reason') if signal else ''
+            self._log_trade("BUY", size, self.dataclose[0], stock_code=stock_code, reason=reason)
+            return True
+        
+        return False
 
     def execute_sell(self, size: Optional[int] = None, price: Optional[float] = None):
         """
@@ -105,8 +126,12 @@ class BaseStrategy(bt.Strategy):
         Args:
             size: 卖出数量，None表示全部卖出
             price: 卖出价格，None表示市价卖出
+            
+        Returns:
+            bool: 是否成功创建订单
         """
-        if self.order or not self.position:
+        # 检查是否有未完成的订单
+        if self.active_orders or not self.position:
             return False
 
         if size is None:
@@ -115,46 +140,72 @@ class BaseStrategy(bt.Strategy):
         if size <= 0:
             return False
 
-        # 计算收益率
-        returns = (self.dataclose[0] - self.buy_price) / self.buy_price * 100 if self.buy_price else 0
+        # 计算收益率 - 使用真实的买入价格
+        # 从position_buy_prices中获取对应的买入价格
+        buy_price = None
+        if self.position_buy_prices:
+            # 如果有多个买入价格，使用最新的一个
+            buy_price = list(self.position_buy_prices.values())[-1]
+        
+        returns = (self.dataclose[0] - buy_price) / buy_price * 100 if buy_price else 0
 
         # 执行卖出
         if price:
-            self.order = self.sell(size=size, price=price)
+            order = self.sell(size=size, price=price)
         else:
-            self.order = self.sell(size=size)
+            order = self.sell(size=size)
 
-        # 记录卖出交易
-        self._log_trade("SELL", size, self.dataclose[0], returns)
+        # 将订单添加到活跃订单字典中
+        if order:
+            self.active_orders[order.ref] = order
 
-        # 重置状态
-        self.buy_price = None
-        self.position_size = 0
-        return True
+            # 记录卖出交易
+            self._log_trade("SELL", size, self.dataclose[0], returns)
 
-    def _log_trade(self, action: str, size: int, price: float, returns: float = None):
+            # 重置状态
+            self.position_buy_prices.clear()
+            self.position_size = 0
+            return True
+        
+        return False
+
+    def _log_trade(self, action: str, size: int, price: float, returns: float = None, 
+                   stock_code: str = None, reason: str = '', buy_price: float = None, 
+                   holding_days: int = None):
         """
-        记录交易信息
+        记录交易信息 - 使用标准字段名
         
         Args:
             action: 交易动作 (BUY/SELL)
             size: 交易数量
             price: 交易价格
-            returns: 收益率（卖出时）
+            returns: 收益率（卖出时，百分比形式）
+            stock_code: 股票代码
+            reason: 交易原因
+            buy_price: 买入价格（卖出时）
+            holding_days: 持仓天数（卖出时）
         """
         trade = {
-            "id": self.trade_count,
+            # 标准字段名 - 统一使用英文
+            "trade_id": self.trade_count,
             "date": self.data.datetime.date(),
             "action": action,
-            "price": price,
+            "stock_code": stock_code,
             "size": size,
+            "price": price,
             "value": price * size,
+            "reason": reason,
             "cash": self.broker.getcash(),
             "portfolio_value": self.broker.getvalue()
         }
 
-        if returns is not None:
+        # 卖出时添加收益相关信息
+        if action == "SELL" and returns is not None:
             trade["returns"] = returns
+            if buy_price is not None:
+                trade["buy_price"] = buy_price
+            if holding_days is not None:
+                trade["holding_days"] = holding_days
 
         self.trades.append(trade)
         self.trade_count += 1
@@ -172,7 +223,8 @@ class BaseStrategy(bt.Strategy):
             "trade_count": self.trade_count,
             "current_position": self.position.size if self.position else 0,
             "current_cash": self.broker.getcash(),
-            "portfolio_value": self.broker.getvalue()
+            "portfolio_value": self.broker.getvalue(),
+            "active_orders_count": len(self.active_orders)
         }
 
     def _get_parameters(self) -> Dict[str, Any]:
@@ -186,25 +238,110 @@ class BaseStrategy(bt.Strategy):
         return {}
 
     def notify_order(self, order):
-        """订单状态通知"""
+        """
+        订单状态通知
+        
+        改进的订单管理：
+        - 使用 order.ref 作为键管理活跃订单
+        - 订单完成、取消或拒绝时从字典中移除
+        - 支持多订单并发处理
+        """
         if order.status in [order.Submitted, order.Accepted]:
+            return
+
+        # 检查订单是否在活跃订单字典中
+        if order.ref not in self.active_orders:
             return
 
         if order.status in [order.Completed]:
             if order.isbuy():
-                pass  # 买入完成
+                # 买入完成
+                pass
             else:
-                pass  # 卖出完成
+                # 卖出完成
+                pass
 
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
-            pass  # 订单取消或拒绝
+            # 订单取消或拒绝
+            pass
 
-        self.order = None
+        # 从活跃订单字典中移除已完成的订单
+        del self.active_orders[order.ref]
 
     def notify_trade(self, trade):
-        """交易完成通知"""
-        if not trade.isclosed:
-            return
+        """
+        交易完成通知
+        
+        改进的交易价格记录：
+        - 当交易开仓时，记录真实的成交价到position_buy_prices字典
+        - 当交易平仓时，从字典中删除对应的买入价格记录
+        """
+        if trade.isopen:
+            # 交易开仓时，记录真实的成交价
+            self.position_buy_prices[trade.ref] = trade.price
+        elif trade.isclosed:
+            # 交易平仓时，从字典中删除对应的买入价格记录
+            if trade.ref in self.position_buy_prices:
+                del self.position_buy_prices[trade.ref]
 
-        # 可以在这里添加交易完成后的逻辑
-        pass
+    def has_active_orders(self) -> bool:
+        """
+        检查是否有活跃订单
+        
+        Returns:
+            bool: 是否有未完成的订单
+        """
+        return len(self.active_orders) > 0
+
+    def get_active_orders_count(self) -> int:
+        """
+        获取活跃订单数量
+        
+        Returns:
+            int: 活跃订单数量
+        """
+        return len(self.active_orders)
+
+    def get_active_orders_info(self) -> Dict[int, Dict[str, Any]]:
+        """
+        获取活跃订单信息
+        
+        Returns:
+            Dict: 活跃订单信息字典，键为订单引用ID
+        """
+        orders_info = {}
+        for ref, order in self.active_orders.items():
+            orders_info[ref] = {
+                "ref": order.ref,
+                "status": order.status,
+                "size": order.size,
+                "price": order.price,
+                "is_buy": order.isbuy(),
+                "created": order.created
+            }
+        return orders_info
+
+    def get_per_trade_cash(self, max_positions: int) -> float:
+        """
+        计算单笔交易的可用资金，避免前视偏差
+        
+        使用T-1日收盘后的总资产除以最大持仓数来计算每笔交易的资金分配，
+        确保仓位计算只使用决策时刻已知的信息。
+        
+        Args:
+            max_positions: 最大持仓数量
+            
+        Returns:
+            float: 单笔交易的可用资金
+        """
+        if max_positions <= 0:
+            return 0.0
+            
+        # 使用T-1日收盘后的总资产（self.broker.getvalue()）
+        # 这避免了使用当天收盘价计算持股价值的前视偏差
+        total_value = self.broker.getvalue()
+        
+        # 平均分配到每个持仓
+        per_trade_cash = total_value / max_positions
+        
+        return per_trade_cash

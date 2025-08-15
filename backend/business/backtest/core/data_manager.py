@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 数据管理器
-使用单例模式管理回测数据
+负责数据的加载、验证和转换
 """
 
 from typing import Dict, Any, Optional, List
@@ -19,24 +19,11 @@ class DataManager:
     负责数据的加载、验证和转换
     """
 
-    _instance = None
-
-    def __new__(cls):
-        """单例模式实现"""
-        if cls._instance is None:
-            cls._instance = super(DataManager, cls).__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
     def __init__(self):
         """初始化数据管理器"""
-        if self._initialized:
-            return
-
         # 统一使用backtest主日志记录器，便于全局日志管理和追踪
         self.logger = setup_logger("backtest")
         self.data_cache = {}
-        self._initialized = True
 
     def load_data(self, data: pd.DataFrame, name: str = "data") -> bt.feeds.PandasData:
         """

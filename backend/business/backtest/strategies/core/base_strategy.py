@@ -348,12 +348,19 @@ class BaseStrategy(bt.Strategy):
                     if remaining_budget <= 0:
                         break
 
-                    # 使用“当日剩余买单数”进行等权分摊，避免同日多笔买入被过度稀释
-                    shares = self.trade_manager.calculate_buy_size(
-                        price, self.params.max_positions,
-                        available_cash_override=remaining_budget,
-                        intended_slots=remaining_buys
-                    )
+                    # 优先使用信号中预先计算好的size，避免前视偏差
+                    if 'size' in signal:
+                        shares = signal['size']
+                        if self.params.enable_logging:
+                            self.logger.info(f"使用信号中预先计算的买入数量: {shares}")
+                    else:
+                        # 回退到原有的预算分摊逻辑
+                        shares = self.trade_manager.calculate_buy_size(
+                            price, self.params.max_positions,
+                            available_cash_override=remaining_budget,
+                            intended_slots=remaining_buys
+                        )
+                    
                     if shares <= 0:
                         remaining_buys = max(0, remaining_buys - 1)
                         continue

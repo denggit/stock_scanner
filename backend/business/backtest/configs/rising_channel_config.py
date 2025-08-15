@@ -89,6 +89,9 @@ class RisingChannelConfig:
         'min_channel_score': 60.0,  # 最小通道评分（默认值，可被环境配置覆盖）
         'enable_logging': True,  # 是否启用日志
 
+        # 卖出规则参数
+        'sell_on_close_breakout': True,  # 是否使用收盘价突破通道上沿作为卖出条件（True=收盘价，False=最高价）
+
         # 通道分析参数
         'k': 2.0,  # 通道斜率参数
         'L_max': 120,  # 最大回看天数
@@ -125,6 +128,7 @@ class RisingChannelConfig:
                 'R2_min': 0.25,  # 更高R²要求
                 'width_pct_min': 0.05,  # 更宽通道要求
                 'width_pct_max': 0.18,  # 最大通道宽度
+                'sell_on_close_breakout': True,  # 保守策略使用收盘价突破，避免盘中波动
             }
         },
         'aggressive': {
@@ -137,6 +141,7 @@ class RisingChannelConfig:
                 'R2_min': 0.15,  # 较低R²要求
                 'width_pct_min': 0.03,  # 较窄通道要求
                 'width_pct_max': 0.25,  # 最大通道宽度
+                'sell_on_close_breakout': False,  # 激进策略使用最高价突破，快速响应
             }
         }
     }
