@@ -72,12 +72,16 @@ class ResultAnalyzer:
         # 推导策略开始生效日期（剔除min_data_points之前的日期）
         active_start_date = self._derive_active_start_date(strat, daily_returns)
 
+        # 交易成本指标
+        cost_metrics = self._calculate_cost_metrics(strat)
+
         # 合并所有指标
         all_metrics = {
             **basic_metrics,
             **risk_metrics,
             **trade_metrics,
-            **performance_metrics
+            **performance_metrics,
+            **cost_metrics
         }
 
         # 优先从trade_logger获取交易记录，保证与交易指标一致
@@ -983,6 +987,75 @@ class ResultAnalyzer:
         except Exception:
             return {}
         return {}
+
+    def _calculate_cost_metrics(self, strat) -> Dict[str, Any]:
+        """
+        计算交易成本相关指标
+        
+        Args:
+            strat: 策略实例
+            
+        Returns:
+            交易成本指标字典
+        """
+        try:
+            # 获取交易记录
+            trades = []
+            if hasattr(strat, 'trade_logger'):
+                trades = strat.trade_logger.get_all_trades() or []
+            elif hasattr(strat, 'trades'):
+                trades = getattr(strat, 'trades', []) or []
+            
+            # 筛选卖出交易（只有卖出交易才有成本）
+            sell_trades = [trade for trade in trades if trade.get('action') == 'SELL' or trade.get('交易动作') == 'SELL']
+            
+            if not sell_trades:
+                return {
+                    '总交易成本': 0.0,
+                    '平均每笔交易成本': 0.0,
+                    '交易成本占总盈利比例': 0.0,
+                    '交易成本占总收益比例': 0.0,
+                    '交易成本占净收益比例': 0.0
+                }
+            
+            # 计算总交易成本
+            total_cost = sum(trade.get('trade_cost', 0.0) or 0.0 for trade in sell_trades)
+            
+            # 计算平均每笔交易成本
+            avg_cost = total_cost / len(sell_trades) if sell_trades else 0.0
+            
+            # 计算总盈利（只计算盈利交易）
+            total_profit = sum(trade.get('profit_amount', 0.0) or 0.0 for trade in sell_trades 
+                             if (trade.get('profit_amount', 0.0) or 0.0) > 0)
+            
+            # 计算总收益（所有交易的收益，包括亏损）
+            total_returns = sum(trade.get('profit_amount', 0.0) or 0.0 for trade in sell_trades)
+            
+            # 计算净收益（总收益 - 总成本）
+            net_returns = total_returns - total_cost
+            
+            # 计算各种比例
+            cost_to_profit_ratio = (total_cost / total_profit * 100) if total_profit > 0 else 0.0
+            cost_to_returns_ratio = (total_cost / total_returns * 100) if total_returns != 0 else 0.0
+            cost_to_net_ratio = (total_cost / net_returns * 100) if net_returns != 0 else 0.0
+            
+            return {
+                '总交易成本': total_cost,
+                '平均每笔交易成本': avg_cost,
+                '交易成本占总盈利比例': cost_to_profit_ratio,
+                '交易成本占总收益比例': cost_to_returns_ratio,
+                '交易成本占净收益比例': cost_to_net_ratio
+            }
+            
+        except Exception as e:
+            self.logger.error(f"计算交易成本指标时出错: {e}")
+            return {
+                '总交易成本': 0.0,
+                '平均每笔交易成本': 0.0,
+                '交易成本占总盈利比例': 0.0,
+                '交易成本占总收益比例': 0.0,
+                '交易成本占净收益比例': 0.0
+            }
 
     def _derive_active_start_date(self, strat, daily_returns: Dict) -> Any:
         """根据策略的min_data_points与daily_returns推导开始生效日期。

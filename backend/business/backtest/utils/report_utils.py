@@ -190,7 +190,8 @@ class ReportUtils:
 
         # 添加盈亏比相关指标
         enhanced_metrics = base_metrics + [
-            '盈亏比(PF)', '盈利交易数', '亏损交易数', '平均盈利', '平均亏损', '交易净盈亏(卖出合计)'
+            '盈亏比(PF)', '盈利交易数', '亏损交易数', '平均盈利', '平均亏损', '交易净盈亏(卖出合计)',
+            '总交易成本', '平均每笔交易成本', '交易成本占总盈利比例', '交易成本占总收益比例', '交易成本占净收益比例'
         ]
 
         enhanced_values = base_values + [
@@ -199,7 +200,12 @@ class ReportUtils:
             str(pf_result['loss_trades_count']),
             f"{pf_result['avg_profit']:,.2f}",
             f"{pf_result['avg_loss']:,.2f}",
-            f"{pf_result['net_profit']:,.2f}"
+            f"{pf_result['net_profit']:,.2f}",
+            f"{safe_get('总交易成本', 0):,.2f}",
+            f"{safe_get('平均每笔交易成本', 0):,.2f}",
+            f"{safe_get('交易成本占总盈利比例', 0):.2f}%",
+            f"{safe_get('交易成本占总收益比例', 0):.2f}%",
+            f"{safe_get('交易成本占净收益比例', 0):.2f}%"
         ]
 
         summary_data = {

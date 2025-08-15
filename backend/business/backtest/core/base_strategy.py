@@ -269,6 +269,7 @@ class BaseStrategy(bt.Strategy):
         - 当交易开仓时，记录真实的成交价到position_buy_prices字典
         - 当交易平仓时，从字典中获取对应的买入价格计算收益率
         - 计算完成后，更新交易记录中的收益率信息
+        - 新增：计算并记录交易成本信息
         """
         if trade.isopen:
             # 交易开仓时，记录真实的成交价
@@ -279,10 +280,27 @@ class BaseStrategy(bt.Strategy):
                 buy_price = self.position_buy_prices[trade.ref]
                 returns = (trade.price - buy_price) / buy_price * 100
                 
-                # 更新最后一笔交易记录的收益率信息
+                # 计算交易成本：总成本 = 佣金 + 印花税 + 过户费等
+                # trade.pnl 是扣除所有费用后的净收益
+                # trade.pnlcomm 是扣除佣金后的收益
+                # 因此：交易成本 = trade.pnlcomm - trade.pnl
+                trade_cost = trade.pnlcomm - trade.pnl if hasattr(trade, 'pnlcomm') and hasattr(trade, 'pnl') else 0.0
+                
+                # 更新最后一笔交易记录的收益率和成本信息
                 if self.trades and self.trades[-1]["action"] == "SELL":
                     self.trades[-1]["returns"] = returns
                     self.trades[-1]["buy_price"] = buy_price
+                    self.trades[-1]["trade_cost"] = trade_cost
+                
+                # 同时更新 trade_logger 中的交易记录
+                if hasattr(self, 'trade_logger') and self.trade_logger:
+                    try:
+                        # 获取最新的交易记录并更新成本信息
+                        all_trades = self.trade_logger.get_all_trades()
+                        if all_trades and all_trades[-1].get('action') == 'SELL':
+                            all_trades[-1]['trade_cost'] = trade_cost
+                    except Exception as e:
+                        self.logger.warning(f"更新交易日志中的成本信息失败: {e}")
                 
                 # 从字典中删除对应的买入价格记录
                 del self.position_buy_prices[trade.ref]

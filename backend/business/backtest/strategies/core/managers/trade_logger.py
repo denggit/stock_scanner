@@ -49,7 +49,7 @@ class TradeLogger:
                   date: datetime, reason: str = '', confidence: float = 0.0,
                   returns: float = None, profit_amount: float = None,
                   buy_price: float = None, holding_days: int = None,
-                  **additional_data) -> int:
+                  trade_cost: float = None, **additional_data) -> int:
         """
         记录交易
         
@@ -65,6 +65,7 @@ class TradeLogger:
             profit_amount: 绝对收益金额（卖出时）
             buy_price: 买入价格（卖出时）
             holding_days: 持仓天数（卖出时）
+            trade_cost: 交易成本（佣金+印花税+过户费等）
             **additional_data: 其他附加数据
             
         Returns:
@@ -111,12 +112,14 @@ class TradeLogger:
                 '绝对收益': profit_amount,
                 '买入价格': buy_price,
                 '持仓天数': holding_days,
+                '交易成本': trade_cost,
 
                 # 兼容性字段
                 'returns': returns,
                 'profit_amount': profit_amount,
                 'buy_price': buy_price,
-                'holding_days': holding_days
+                'holding_days': holding_days,
+                'trade_cost': trade_cost
             })
 
             # 如果有收益率信息，添加额外字段

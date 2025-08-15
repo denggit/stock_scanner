@@ -613,6 +613,9 @@ class BaseStrategy(bt.Strategy):
         # 记录交易
         extra_fields = {k: v for k, v in signal.items() if
                         k not in ['action', 'stock_code', 'price', 'reason', 'confidence']}
+        
+        # 注意：交易成本将在 notify_trade 方法中计算并更新到交易记录中
+        # 这里先记录交易，交易成本会在交易完成后通过 notify_trade 更新
         self.trade_logger.log_trade(
             action='SELL',
             stock_code=stock_code,
@@ -625,6 +628,7 @@ class BaseStrategy(bt.Strategy):
             profit_amount=profit_amount,
             buy_price=buy_price,
             holding_days=holding_days,
+            trade_cost=0.0,  # 初始值，将在 notify_trade 中更新
             **extra_fields
         )
 
@@ -638,8 +642,8 @@ class BaseStrategy(bt.Strategy):
         """
         计算单笔交易的可用资金，避免前视偏差
         
-        使用T-1日收盘后的总资产除以最大持仓数来计算每笔交易的资金分配，
-        确保仓位计算只使用决策时刻已知的信息。
+        使用T-1日收盘后的总资产减去现金储备，然后除以最大持仓数来计算每笔交易的资金分配，
+        确保仓位计算只使用决策时刻已知的信息，同时保持稳健的资金管理原则。
         
         Args:
             max_positions: 最大持仓数量
@@ -654,8 +658,24 @@ class BaseStrategy(bt.Strategy):
         # 这避免了使用当天收盘价计算持股价值的前视偏差
         total_value = self.broker.getvalue()
         
-        # 平均分配到每个持仓
-        per_trade_cash = total_value / max_positions
+        # 获取交易管理器中的现金储备比例
+        min_cash_reserve_ratio = self.trade_manager.risk_params.get('min_cash_reserve', 0.05)
+        
+        # 计算需要保留的现金金额
+        min_cash_reserve = total_value * min_cash_reserve_ratio
+        
+        # 计算可用于投资的总风险资本
+        # 保护性检查：确保风险资本不会小于0
+        risk_capital = max(0.0, total_value - min_cash_reserve)
+        
+        # 使用风险资本来分配给每笔交易的资金
+        per_trade_cash = risk_capital / max_positions
+        
+        if self.params.enable_logging:
+            self.logger.debug(f"资金分配计算: 总资产={total_value:.2f}, "
+                             f"现金储备={min_cash_reserve:.2f}({min_cash_reserve_ratio*100:.1f}%), "
+                             f"风险资本={risk_capital:.2f}, "
+                             f"每笔交易={per_trade_cash:.2f}")
         
         return per_trade_cash
 

@@ -98,17 +98,29 @@ class RisingChannelStrategy(BaseStrategy):
     实现了策略逻辑与框架功能的解耦，便于维护和扩展。
     """
 
-    # 策略参数 - 从配置文件动态获取
-    @classmethod
-    def get_default_params(cls):
-        """从配置文件获取默认参数"""
-        config_params = RisingChannelConfig.get_strategy_params()
-        # 转换为backtrader需要的元组格式
-        return tuple((key, value) for key, value in config_params.items())
+    # 策略参数定义 - 使用开发环境的默认值
+    # 这些参数可以被 backtrader 优化引擎动态修改
+    params = (
+        # 策略基础参数
+        ('max_positions', 20),  # 最大持仓数量（开发环境默认值）
+        ('min_data_points', 60),  # 最小数据点数
+        ('min_channel_score', 60.0),  # 最小通道评分（开发环境默认值）
+        ('enable_logging', True),  # 是否启用日志
 
-    # 在类定义时获取默认参数
-    _default_config_params = RisingChannelConfig.get_strategy_params()
-    params = tuple((key, value) for key, value in _default_config_params.items())
+        # 卖出规则参数
+        ('sell_on_close_breakout', True),  # 是否使用收盘价突破通道上沿作为卖出条件
+
+        # 通道分析参数
+        ('k', 2.0),  # 通道斜率参数
+        ('L_max', 120),  # 最大回看天数
+        ('delta_cut', 5),  # 切割参数
+        ('pivot_m', 3),  # 枢轴参数
+        ('R2_min', 0.35),  # 最小R²值（用于通道有效性判定）
+        ('R2_max', 0.95),  # 最大R²值上限（仅用于选股过滤）
+        ('R2_range', None),  # 参数优化时可传入 [R2_min, R2_max]，两者均可为 None
+        ('width_pct_min', 0.05),  # 最小通道宽度
+        ('width_pct_max', 0.12),  # 最大通道宽度
+    )
 
     def __init__(self, stock_data_dict: Dict[str, pd.DataFrame] = None, cache_adapter=None, **kwargs):
         """
