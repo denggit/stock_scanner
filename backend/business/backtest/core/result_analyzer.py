@@ -106,15 +106,34 @@ class ResultAnalyzer:
             final_cash = cerebro.broker.getcash()  # 现金
             final_value = cerebro.broker.getvalue()  # 总资产
             
+            # 计算未平仓持仓价值
+            position_value = final_value - final_cash
+            
+            # 检测异常情况并修复
+            if final_value < final_cash:
+                self.logger.error(f"异常：总资产({final_value:.2f})小于现金({final_cash:.2f})，这是不可能的！")
+                self.logger.error("这可能是backtrader的bug或持仓计算错误")
+                
+                # 修复方案1：使用现金作为总资产（假设所有持仓都已平仓）
+                corrected_final_value = final_cash
+                self.logger.warning(f"修复：将总资产修正为现金值 {corrected_final_value:.2f}")
+                
+                # 修复方案2：如果策略有持仓记录，重新计算总资产
+                if hasattr(strat, 'position_manager'):
+                    try:
+                        position_manager = strat.position_manager
+                        manual_position_value = position_manager.get_total_position_value()
+                        corrected_final_value = final_cash + manual_position_value
+                        self.logger.warning(f"使用策略持仓管理器重新计算总资产: {corrected_final_value:.2f}")
+                    except Exception as e:
+                        self.logger.warning(f"无法使用策略持仓管理器重新计算: {e}")
+                
+                final_value = corrected_final_value
+                position_value = final_value - final_cash
+            
             # 统一基于总资产(final_value)计算核心指标
             net_profit_loss = final_value - initial_cash  # 净盈亏
             total_return_on_value = (final_value / initial_cash - 1) * 100 if initial_cash > 0 else 0
-            
-            # 保留基于现金的计算作为参考
-            cash_profit_loss = final_cash - initial_cash  # 现金盈亏
-            
-            # 计算未平仓持仓价值
-            position_value = final_value - final_cash
             
             # 现实策略（无杠杆）下总收益率不会小于 -100%，若资产异常为负，做展示层兜底
             if total_return_on_value < -100:
@@ -123,17 +142,15 @@ class ResultAnalyzer:
             self.logger.info(
                 f"基础指标 - 初始资金: {initial_cash}, 最终现金: {final_cash}, 最终总资产: {final_value}")
             self.logger.info(
-                f"净盈亏: {net_profit_loss:.2f}, 总收益率: {total_return_on_value:.2f}%")
+                f"未平仓持仓价值: {position_value:.2f}, 净盈亏: {net_profit_loss:.2f}, 总收益率: {total_return_on_value:.2f}%")
             
-            # 添加数据一致性验证
-            asset_return_rate = (final_value / initial_cash - 1) * 100 if initial_cash > 0 else 0
-            self.logger.info(f"数据一致性验证 - 总资产收益率: {asset_return_rate:.2f}%")
-            
-            # 检查异常情况
+            # 检查其他异常情况
             if final_cash == 0 and position_value > 0:
                 self.logger.warning("警告：最终现金为0，但有未平仓持仓，可能存在计算错误")
-            if abs(asset_return_rate - total_return_on_value) > 0.01:
-                self.logger.warning(f"警告：总资产收益率计算不一致，期望: {total_return_on_value:.2f}%, 实际: {asset_return_rate:.2f}%")
+            if final_value < 0:
+                self.logger.warning("警告：最终总资产为负值，可能存在计算错误")
+            if position_value < 0:
+                self.logger.warning("警告：未平仓持仓价值为负值，可能存在计算错误")
 
             return {
                 "初始资金": initial_cash,
@@ -141,9 +158,7 @@ class ResultAnalyzer:
                 "最终总资产": final_value,
                 "未平仓持仓价值": position_value,
                 "净盈亏": net_profit_loss,
-                "总收益率": total_return_on_value,
-                "现金盈亏": cash_profit_loss,
-                "总资产收益率": total_return_on_value # 与总收益率保持一致
+                "总收益率": total_return_on_value
             }
         except Exception as e:
             self.logger.error(f"计算基础指标时发生异常: {e}")
@@ -153,7 +168,7 @@ class ResultAnalyzer:
                 "净盈亏": 0,
                 "总收益率": 0,
                 "最终现金": 0,
-                "现金盈亏": 0
+                "未平仓持仓价值": 0
             }
 
     def _calculate_risk_metrics(self, strat, cerebro) -> Dict[str, Any]:
@@ -848,9 +863,9 @@ class ResultAnalyzer:
                     # 假设交易是均匀分布在回测期间的
                     average_holding_days = backtest_days / len(returns) if len(returns) > 0 else 30
 
-                    # 年化系数：基于平均持仓天数
+                    # 年化系数：基于平均持仓天数，使用交易日252天作为基准
                     if average_holding_days > 0:
-                        annualization_factor = np.sqrt(365.25 / average_holding_days)
+                        annualization_factor = np.sqrt(252 / average_holding_days)
                     else:
                         annualization_factor = np.sqrt(252)  # 默认日频
 

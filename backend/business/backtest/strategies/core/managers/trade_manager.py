@@ -320,11 +320,20 @@ class TradeManager:
             self.logger.warning(f"价格 {price} 超出允许范围，跳过交易")
             return 0
 
-        # 统一以“最严格的限制”为准：
+        # 获取总资产，检测异常情况
+        total_value = self.broker.getvalue() if self.broker else available_cash
+        
+        # 检测异常：总资产小于现金（这在逻辑上是不可能的）
+        if total_value < available_cash:
+            self.logger.warning(f"检测到异常：总资产({total_value:.2f})小于现金({available_cash:.2f})")
+            self.logger.warning("使用现金作为风险控制计算基准")
+            # 使用现金作为计算基准
+            total_value = available_cash
+        
+        # 统一以"最严格的限制"为准：
         # - 单票最大占比（基于总资产）
         # - 单票预算不超过 总资产 / max_positions（等权仓位上限，若提供）
         # - 最低现金留存（基于总资产）
-        total_value = self.broker.getvalue() if self.broker else available_cash
         min_cash_reserve = total_value * self.risk_params['min_cash_reserve']
         max_trade_value_by_percent = total_value * self.risk_params['max_single_position_percent']
         # 等权仓位上限：若未设置/无效，则不生效

@@ -43,7 +43,7 @@ class RisingChannelStrategy(BaseStrategy):
     1. 股票通道状态为NORMAL（正常上升通道）
     2. 通道评分 >= min_channel_score（默认60分）
     3. 当前价格位于通道内（>下沿 且 ≤上沿）
-    4. 距离通道下沿的百分比距离 <= max_distance_from_lower（默认10%）
+    4. 股价在中轴到下沿中间位置下方（几何位置判断）
     5. 当前持仓数量 < max_positions
     6. R²值在有效范围内（R2_min <= R² <= R2_max）
     7. 通道宽度在合理范围内（width_pct_min <= 宽度 <= width_pct_max）
@@ -248,9 +248,17 @@ class RisingChannelStrategy(BaseStrategy):
 
     def _generate_buy_signals(self, available_slots: Optional[int] = None) -> List[Dict[str, Any]]:
         """
-        生成买入信号
-        选择符合条件的NORMAL通道股票，且要求股价位于通道内（>下沿 且 ≤上沿）
+        生成买入信号 - 重新设计的智能买入策略
         
+        策略逻辑：
+        1. 查看该股是否为上升通道（NORMAL状态）
+        2. 如果是上升通道，计算当前通道中轴到下沿中间的位置
+        3. 如果股价在中轴到下沿中间位置的下方，记录该股票
+        4. 横截面对比，按股价到下沿位置的百分比从小到大排序依次买入
+        
+        Args:
+            available_slots: 可用买入槽位数
+            
         Returns:
             买入信号列表
         """
@@ -271,14 +279,14 @@ class RisingChannelStrategy(BaseStrategy):
         if not normal_stocks:
             return buy_signals
 
-        # 计算每只股票距离下沿的百分比距离，并排序
-        normal_stocks_with_distance = []
+        # 记录符合条件的股票（股价在中轴到下沿中间位置下方）
+        qualified_stocks = []
 
         for stock_info in normal_stocks:
             stock_code = stock_info['stock_code']
             channel_state = stock_info['channel_state']
 
-            # 先校验通道宽度有效性（代替底层 is_valid 语义）
+            # 校验通道宽度有效性
             if not self._is_channel_width_valid(channel_state):
                 if self.params.enable_logging:
                     self.logger.debug(
@@ -295,42 +303,62 @@ class RisingChannelStrategy(BaseStrategy):
             if not self._is_price_in_channel(current_price, channel_state):
                 continue
 
+            # 计算通道几何结构
+            mid_price = getattr(channel_state, 'mid_today', None)
+            lower_price = getattr(channel_state, 'lower_today', None)
+            
+            if mid_price is None or lower_price is None:
+                continue
+
+            # 计算中轴到下沿的中间位置
+            mid_to_lower_midpoint = (mid_price + lower_price) / 2.0
+
+            # 检查股价是否在中轴到下沿中间位置的下方
+            if current_price > mid_to_lower_midpoint:
+                if self.params.enable_logging:
+                    self.logger.debug(
+                        f"股票 {stock_code} 股价 {current_price:.2f} 在中轴到下沿中间位置 {mid_to_lower_midpoint:.2f} 上方，跳过"
+                    )
+                continue
+
             # 计算距离下沿的百分比距离
             distance_to_lower = self._calculate_distance_to_lower(
                 current_price, channel_state
             )
 
-            # 检查距离是否超过最大允许值
-            if distance_to_lower > self.params.max_distance_from_lower:
-                if self.params.enable_logging:
-                    self.logger.debug(f"股票 {stock_code} 距离下沿 {distance_to_lower:.2f}% "
-                                      f"超过最大允许值 {self.params.max_distance_from_lower:.2f}%，跳过")
-                continue
-
-            normal_stocks_with_distance.append({
+            # 记录符合条件的股票
+            qualified_stocks.append({
                 'stock_code': stock_code,
                 'current_price': current_price,
                 'distance_to_lower': distance_to_lower,
                 'channel_state': channel_state,
-                'score': stock_info['score']
+                'score': stock_info['score'],
+                'mid_to_lower_midpoint': mid_to_lower_midpoint,
+                'channel_width_pct': (getattr(channel_state, 'upper_today', 0) - lower_price) / mid_price * 100 if mid_price > 0 else 0
             })
 
-        # 按距离下沿排序（从小到大）
-        normal_stocks_with_distance.sort(key=lambda x: x['distance_to_lower'])
+        # 按距离下沿百分比从小到大排序（横截面排序）
+        qualified_stocks.sort(key=lambda x: x['distance_to_lower'])
 
-        # 计算需要买入的数量（若传入 available_slots，则以其为准）
+        if self.params.enable_logging and qualified_stocks:
+            self.logger.info(f"找到 {len(qualified_stocks)} 只符合条件的股票，按距离下沿排序:")
+            for i, stock in enumerate(qualified_stocks[:5]):  # 只显示前5只
+                self.logger.info(f"  {i+1}. {stock['stock_code']}: 距离下沿 {stock['distance_to_lower']:.2f}%, "
+                               f"通道宽度 {stock['channel_width_pct']:.1f}%, 评分 {stock['score']:.1f}")
+
+        # 计算需要买入的数量
         if available_slots is None:
             current_positions = self.position_manager.get_position_count()
             need_to_buy = min(
                 self.params.max_positions - current_positions,
-                len(normal_stocks_with_distance)
+                len(qualified_stocks)
             )
         else:
-            need_to_buy = min(available_slots, len(normal_stocks_with_distance))
+            need_to_buy = min(available_slots, len(qualified_stocks))
 
         # 生成买入信号
         for i in range(need_to_buy):
-            stock_info = normal_stocks_with_distance[i]
+            stock_info = qualified_stocks[i]
             stock_code = stock_info['stock_code']
 
             # 检查是否已经持仓
@@ -342,10 +370,19 @@ class RisingChannelStrategy(BaseStrategy):
                     score=stock_info.get('score'),
                     distance_to_lower=stock_info.get('distance_to_lower')
                 )
+                
+                # 添加额外的通道几何信息
+                extras.update({
+                    'mid_to_lower_midpoint': stock_info['mid_to_lower_midpoint'],
+                    'channel_width_pct': stock_info['channel_width_pct'],
+                    'buy_position_ratio': stock_info['distance_to_lower'] / stock_info['channel_width_pct'] if stock_info['channel_width_pct'] > 0 else 0
+                })
+                
                 signal = self._create_buy_signal(
                     stock_code,
                     stock_info['current_price'],
-                    f"通道NORMAL，价格位于通道内，距离下沿{stock_info['distance_to_lower']:.2f}%（≤{self.params.max_distance_from_lower:.1f}%），评分{stock_info['score']:.1f}",
+                    f"智能买入: 股价在中轴到下沿中间位置下方，距离下沿{stock_info['distance_to_lower']:.2f}% "
+                    f"(通道宽度{stock_info['channel_width_pct']:.1f}%)，评分{stock_info['score']:.1f}",
                     stock_info['score'] / 100.0,
                     extra=extras
                 )

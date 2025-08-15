@@ -57,7 +57,6 @@ class RisingChannelStrategy(BaseStrategy):
 
             # 筛选条件
             "min_signal_score": 60,  # 最小信号分数
-            "min_r2": 0.30,  # 最小R²值
             "min_slope_deg": 0.5,  # 最小斜率角度
             "max_volatility": 0.08,  # 最大波动率
 
@@ -379,20 +378,24 @@ class RisingChannelStrategy(BaseStrategy):
             if final_score * 100 < self._params['min_signal_score']:
                 return False
 
-            # R²值过滤
-            if channel_info.get('r2', 0) < self._params['min_r2']:
+            # R²值过滤 - 使用R2_min参数
+            r2_value = channel_info.get('r2')
+            if r2_value is not None and r2_value < self._params['R2_min']:
                 return False
 
             # 通道宽度过滤
-            if channel_info.get('width_pct', 0) > self._params['width_pct_max']:
+            width_pct = channel_info.get('width_pct')
+            if width_pct is not None and width_pct > self._params['width_pct_max']:
                 return False
 
             # 斜率角度过滤
-            if channel_info.get('slope_deg', 0) < self._params['min_slope_deg']:
+            slope_deg = channel_info.get('slope_deg')
+            if slope_deg is not None and slope_deg < self._params['min_slope_deg']:
                 return False
 
             # 波动率过滤
-            if channel_info.get('volatility', 0) > self._params['max_volatility']:
+            volatility = channel_info.get('volatility')
+            if volatility is not None and volatility > self._params['max_volatility']:
                 return False
 
             return True

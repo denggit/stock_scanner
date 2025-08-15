@@ -262,7 +262,7 @@ class BaseBacktestRunner:
     ) -> Dict[str, Any]:
         """
         多股票回测核心逻辑：
-        - 选主数据（时间轴）
+        - 将所有股票数据添加到backtrader中（修复数据源问题）
         - 添加策略（将全部股票数据通过参数传入策略）
         - 运行并回收策略信息与交易记录
         """
@@ -274,11 +274,15 @@ class BaseBacktestRunner:
             commission=self.config['commission']
         )
 
-        main_code = self._select_main_stock(stock_data_dict)
-        main_data = stock_data_dict[main_code]
-        self.logger.info(f"选择主数据源: {main_code}")
+        # 修复：将所有股票数据都添加到backtrader中，而不仅仅是主数据源
+        # 这样可以确保策略在买入任何股票时都能找到对应的数据源
+        for stock_code, stock_data in stock_data_dict.items():
+            engine.add_data(stock_data, name=stock_code)
+            self.logger.info(f"添加数据源: {stock_code}")
 
-        engine.add_data(main_data, name=main_code)
+        # 选择数据最长的股票作为主数据源（用于时间轴）
+        main_code = self._select_main_stock(stock_data_dict)
+        self.logger.info(f"选择主数据源: {main_code}")
 
         engine.add_strategy(
             self.strategy_class,

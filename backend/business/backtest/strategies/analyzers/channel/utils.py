@@ -69,14 +69,14 @@ class ChannelAnalysisUtils:
 
         # 当前值无效的情况  
         if current <= 0:
-            return distance_config.get('min_distance_below_reference', 0.1)
+            return 0.1  # 固定后备值，不再依赖配置参数
 
         # 计算实际距离
         distance = PriceUtils.calculate_percentage_distance(current, reference)
 
-        # 如果距离为负数，使用最小距离
+        # 如果距离为负数，返回0（新策略只处理通道内股票）
         if distance < 0:
-            distance = distance_config.get('min_distance_below_reference', 0.1)
+            return 0.0
 
         return distance
 

@@ -34,7 +34,7 @@ class RisingChannelConfig:
         'initial_cash': 200000.0,  # 初始资金20万
         'commission': 0.0003,  # 手续费率
         'stock_pool': 'no_st',  # 股票池：非ST股票
-        'start_date': '2025-06-01',  # 开始日期
+        'start_date': '2024-01-01',  # 开始日期
         'end_date': datetime.today().strftime("%Y-%m-%d"),  # 结束日期
         'min_data_days': 120  # 最小数据天数
     }
@@ -94,24 +94,23 @@ class RisingChannelConfig:
         'L_max': 120,  # 最大回看天数
         'delta_cut': 5,  # 切割参数
         'pivot_m': 3,  # 枢轴参数
-        'R2_min': 0.20,  # 最小R²值（用于通道有效性判定）；若在选股阶段想取消下限，可将选股用的 R2_min 设为 None
-        'R2_max': None,  # 最大R²值上限（仅用于选股过滤；None 表示不设上限）
+        'R2_min': 0.35,  # 最小R²值（用于通道有效性判定）；若在选股阶段想取消下限，可将选股用的 R2_min 设为 None
+        'R2_max': 0.95,  # 最大R²值上限（仅用于选股过滤；None 表示不设上限）
         'R2_range': None,  # 参数优化时可传入 [R2_min, R2_max]，两者均可为 None
-        'width_pct_min': 0.04,  # 最小通道宽度
-        'width_pct_max': 0.15,  # 最大通道宽度
-        'max_distance_from_lower': 10.0  # 买入时距离通道下沿的最大百分比距离（%）
+        'width_pct_min': 0.05,  # 最小通道宽度
+        'width_pct_max': 0.12,  # 最大通道宽度
     }
 
     # ==================== 参数优化范围 ====================
     OPTIMIZATION_RANGES = {
-        'max_positions': [20],  # 持仓数量范围
+        # 'max_positions': [20],  # 持仓数量范围
         # 'min_channel_score': [60.0],  # 通道评分范围
         # # 'k': [1.5, 2.0, 2.5],  # 通道斜率范围
         # # 'R2_min': [0.15, 0.20, 0.25],  # 最小R²值范围（用于通道有效性判定）
-        # 'width_pct_min': [0.03, 0.04, 0.05],  # 最小通道宽度范围
-        # 'width_pct_max': [0.12, 0.15, 0.20, 0.3],  # 最小通道宽度范围
-        'max_distance_from_lower': [2.0],  # 距离下沿最大值范围
-        'R2_range': [[0.2, 0.4], [0.4, 0.6]]
+        # 'width_pct_min': [0.04, 0.05],  # 最小通道宽度范围
+        # 'width_pct_max': [0.12, 0.15],  # 最大通道宽度范围
+        # 'R2_range': [[0.2, 0.45], [0.45, 0.70], [0.7, 0.95]]
+        # 'R2_min': [0.2, 0.35, 0.45]
     }
 
     # ==================== 策略变体配置 ====================
@@ -126,7 +125,6 @@ class RisingChannelConfig:
                 'R2_min': 0.25,  # 更高R²要求
                 'width_pct_min': 0.05,  # 更宽通道要求
                 'width_pct_max': 0.18,  # 最大通道宽度
-                'max_distance_from_lower': 10.0  # 更严格的距离要求
             }
         },
         'aggressive': {
@@ -139,7 +137,6 @@ class RisingChannelConfig:
                 'R2_min': 0.15,  # 较低R²要求
                 'width_pct_min': 0.03,  # 较窄通道要求
                 'width_pct_max': 0.25,  # 最大通道宽度
-                'max_distance_from_lower': 20.0  # 更宽松的距离要求
             }
         }
     }
@@ -150,7 +147,6 @@ class RisingChannelConfig:
         'fallback_distance_no_state': 100.0,  # 无通道状态时的固定距离
         'lower_price_ratio_invalid': 0.9,  # 下沿无效时的价格比例
         'lower_price_ratio_no_state': 0.0,  # 无通道状态时的价格比例
-        'min_distance_below_lower': 0.1,  # 价格低于下沿时的最小距离
     }
 
     # ==================== 日志配置 ====================

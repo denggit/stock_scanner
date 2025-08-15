@@ -684,6 +684,7 @@ def main():
                     step=10,
                     help="窗口最长天数，超出后向右滑动"
                 )
+            with col2:
                 params['delta_cut'] = st.number_input(
                     "滑动剔除天数 (delta_cut)",
                     min_value=1,
@@ -701,9 +702,6 @@ def main():
                     help="判断pivot low的宽度参数 (m左m右更高)"
                 )
 
-            with col2:
-                st.caption("已简化：移除 gain_trigger/beta_delta/break_days/reanchor_fail_max 参数")
-
             # 质量参数
             st.subheader("质量参数设置")
             col1, col2, col3 = st.columns(3)
@@ -720,7 +718,7 @@ def main():
                     "最小R²值 (R2_min)",
                     min_value=0.1,
                     max_value=0.5,
-                    value=0.20,
+                    value=0.35,
                     step=0.05,
                     help="最小回归拟合优度，低于此视为无效通道"
                 )
@@ -730,7 +728,7 @@ def main():
                     "通道宽度下限 (width_pct_min)",
                     min_value=0.02,
                     max_value=0.10,
-                    value=0.04,
+                    value=0.05,
                     step=0.01,
                     help="通道宽度下限，小于此视为过窄"
                 )
@@ -752,27 +750,11 @@ def main():
                     step=5,
                     help="最小综合信号分数，低于此不显示"
                 )
-                params['min_r2'] = st.number_input(
-                    "最小R²值 (min_r2)",
-                    min_value=0.1,
-                    max_value=0.6,
-                    value=0.30,
-                    step=0.05,
-                    help="最小R²值，用于最终筛选"
-                )
 
             # 筛选条件
             st.subheader("筛选条件设置")
             col1, col2, col3 = st.columns(3)
             with col1:
-                params['width_pct_max'] = st.number_input(
-                    "最大通道宽度 (width_pct_max)",
-                    min_value=0.10,
-                    max_value=0.25,
-                    value=0.15,
-                    step=0.01,
-                    help="最大通道宽度，超过此视为过宽"
-                )
                 params['min_slope_deg'] = st.number_input(
                     "最小斜率角度 (min_slope_deg)",
                     min_value=0.1,

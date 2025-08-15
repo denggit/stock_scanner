@@ -370,7 +370,15 @@ class BaseStrategy(bt.Strategy):
                             continue
 
                     # 以预算为准，不再强依赖 broker 现金时点
-                    self.buy(size=shares)
+                    # 修复：指定正确的数据源进行买入
+                    data_source = self._get_data_source_for_stock(stock_code)
+                    if data_source:
+                        self.buy(data=data_source, size=shares)
+                    else:
+                        self.logger.warning(f"未找到股票 {stock_code} 对应的数据源，跳过买入")
+                        remaining_buys = max(0, remaining_buys - 1)
+                        continue
+                    
                     remaining_budget -= est_cost
                     remaining_buys = max(0, remaining_buys - 1)
 
@@ -426,6 +434,32 @@ class BaseStrategy(bt.Strategy):
         子类可以覆盖此方法进行自定义初始化
         """
         pass
+
+    def _get_data_source_for_stock(self, stock_code: str):
+        """
+        获取股票对应的数据源
+        
+        Args:
+            stock_code: 股票代码
+            
+        Returns:
+            backtrader数据源，如果未找到返回None
+        """
+        try:
+            # 遍历所有数据源，查找匹配的股票代码
+            for data in self.datas:
+                if hasattr(data, '_name') and data._name == stock_code:
+                    return data
+            
+            # 如果没有找到完全匹配的，尝试其他匹配方式
+            for data in self.datas:
+                if hasattr(data, '_name') and stock_code in data._name:
+                    return data
+                    
+            return None
+        except Exception as e:
+            self.logger.error(f"获取股票 {stock_code} 数据源失败: {e}")
+            return None
 
     def _should_skip_early_days(self) -> bool:
         """
@@ -517,8 +551,13 @@ class BaseStrategy(bt.Strategy):
         shares = self.trade_manager.calculate_buy_size(price, self.params.max_positions)
 
         if shares > 0:
-            # 执行买入
-            self.buy(size=shares)
+            # 执行买入 - 修复：指定正确的数据源
+            data_source = self._get_data_source_for_stock(stock_code)
+            if data_source:
+                self.buy(data=data_source, size=shares)
+            else:
+                self.logger.warning(f"未找到股票 {stock_code} 对应的数据源，跳过买入")
+                return
 
             # 更新持仓
             self.position_manager.add_position(stock_code, shares, price, self.current_date)
@@ -567,8 +606,13 @@ class BaseStrategy(bt.Strategy):
 
         shares = position_info['shares']
 
-        # 执行卖出
-        self.sell(size=shares)
+        # 执行卖出 - 修复：指定正确的数据源
+        data_source = self._get_data_source_for_stock(stock_code)
+        if data_source:
+            self.sell(data=data_source, size=shares)
+        else:
+            self.logger.warning(f"未找到股票 {stock_code} 对应的数据源，跳过卖出")
+            return
 
         # 计算收益
         buy_price = position_info['buy_price']
