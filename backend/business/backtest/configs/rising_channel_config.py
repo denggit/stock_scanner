@@ -42,7 +42,7 @@ class RisingChannelConfig:
     # ==================== 环境配置 ====================
     ENVIRONMENTS = {
         "development": {
-            "max_stocks": 500,
+            "max_stocks": 200,
             "description": "开发环境 - 快速验证策略逻辑",
             # 环境级别的策略参数覆盖
             "strategy_overrides": {

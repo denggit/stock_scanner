@@ -105,6 +105,13 @@ class TradeLogger:
             'logged_at': datetime.now()
         }
 
+        # 添加交易成本信息（买入和卖出都需要）
+        if trade_cost is not None:
+            trade_record.update({
+                '交易成本': trade_cost,
+                'trade_cost': trade_cost
+            })
+
         # 添加收益相关信息（卖出时）
         if action == 'SELL':
             trade_record.update({
@@ -112,14 +119,12 @@ class TradeLogger:
                 '绝对收益': profit_amount,
                 '买入价格': buy_price,
                 '持仓天数': holding_days,
-                '交易成本': trade_cost,
 
                 # 兼容性字段
                 'returns': returns,
                 'profit_amount': profit_amount,
                 'buy_price': buy_price,
-                'holding_days': holding_days,
-                'trade_cost': trade_cost
+                'holding_days': holding_days
             })
 
             # 如果有收益率信息，添加额外字段
@@ -201,6 +206,57 @@ class TradeLogger:
                 )
             else:
                 self.logger.info(f"交易记录: 卖出 {stock_code} {size}股 @ {price:.2f}元")
+
+    def update_trade_cost(self, trade_id: int, trade_cost: float) -> bool:
+        """
+        更新指定交易的成本信息
+        
+        Args:
+            trade_id: 交易ID
+            trade_cost: 交易成本
+            
+        Returns:
+            bool: 更新是否成功
+        """
+        try:
+            # 查找对应的交易记录
+            for trade in self.trades:
+                if trade.get('trade_id') == trade_id:
+                    trade['交易成本'] = trade_cost
+                    trade['trade_cost'] = trade_cost
+                    self.logger.debug(f"已更新交易 {trade_id} 的成本信息: {trade_cost}")
+                    return True
+            
+            self.logger.warning(f"未找到交易ID {trade_id} 的记录")
+            return False
+        except Exception as e:
+            self.logger.error(f"更新交易成本信息失败: {e}")
+            return False
+
+    def update_last_sell_trade_cost(self, trade_cost: float) -> bool:
+        """
+        更新最后一笔卖出交易的成本信息
+        
+        Args:
+            trade_cost: 交易成本
+            
+        Returns:
+            bool: 更新是否成功
+        """
+        try:
+            # 从后往前查找最后一笔卖出交易
+            for trade in reversed(self.trades):
+                if trade.get('交易动作') == 'SELL' or trade.get('action') == 'SELL':
+                    trade['交易成本'] = trade_cost
+                    trade['trade_cost'] = trade_cost
+                    self.logger.debug(f"已更新最后一笔卖出交易的成本信息: {trade_cost}")
+                    return True
+            
+            self.logger.warning("未找到卖出交易记录")
+            return False
+        except Exception as e:
+            self.logger.error(f"更新最后一笔卖出交易成本信息失败: {e}")
+            return False
 
     def get_trades(self) -> List[Dict[str, Any]]:
         """

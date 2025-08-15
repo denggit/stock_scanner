@@ -293,12 +293,15 @@ class BaseStrategy(bt.Strategy):
                 # 同时更新 trade_logger 中的交易记录
                 if hasattr(self, 'trade_logger') and self.trade_logger:
                     try:
-                        # 获取最新的交易记录并更新成本信息
-                        all_trades = self.trade_logger.get_all_trades()
-                        if all_trades and all_trades[-1].get('action') == 'SELL':
-                            all_trades[-1]['trade_cost'] = trade_cost
+                        # 使用新的方法更新最后一笔卖出交易的成本信息
+                        success = self.trade_logger.update_last_sell_trade_cost(trade_cost)
+                        if not success:
+                            self.logger.warning("更新交易日志中的成本信息失败")
                     except Exception as e:
                         self.logger.warning(f"更新交易日志中的成本信息失败: {e}")
+                
+                # 记录实际的交易成本到日志
+                self.logger.info(f"交易 {trade.ref} 完成，实际成本: {trade_cost:.4f}")
                 
                 # 从字典中删除对应的买入价格记录
                 del self.position_buy_prices[trade.ref]

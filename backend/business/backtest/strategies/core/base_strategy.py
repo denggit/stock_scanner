@@ -549,6 +549,10 @@ class BaseStrategy(bt.Strategy):
             # 记录交易
             extra_fields = {k: v for k, v in signal.items() if
                             k not in ['action', 'stock_code', 'price', 'reason', 'confidence', 'size']}
+            
+            # 计算买入成本（预估）
+            buy_cost = AShareTradingRules.calculate_total_fees(shares * price, is_buy=True)
+            
             self.trade_logger.log_trade(
                 action='BUY',
                 stock_code=stock_code,
@@ -557,6 +561,7 @@ class BaseStrategy(bt.Strategy):
                 date=self.current_date,
                 reason=signal.get('reason', ''),
                 confidence=signal.get('confidence', 0.0),
+                trade_cost=buy_cost,  # 添加买入成本
                 **extra_fields
             )
 
@@ -614,8 +619,9 @@ class BaseStrategy(bt.Strategy):
         extra_fields = {k: v for k, v in signal.items() if
                         k not in ['action', 'stock_code', 'price', 'reason', 'confidence']}
         
-        # 注意：交易成本将在 notify_trade 方法中计算并更新到交易记录中
-        # 这里先记录交易，交易成本会在交易完成后通过 notify_trade 更新
+        # 计算卖出成本（预估）
+        sell_cost = AShareTradingRules.calculate_total_fees(shares * price, is_buy=False)
+        
         self.trade_logger.log_trade(
             action='SELL',
             stock_code=stock_code,
@@ -628,7 +634,7 @@ class BaseStrategy(bt.Strategy):
             profit_amount=profit_amount,
             buy_price=buy_price,
             holding_days=holding_days,
-            trade_cost=0.0,  # 初始值，将在 notify_trade 中更新
+            trade_cost=sell_cost,  # 使用计算出的卖出成本
             **extra_fields
         )
 
