@@ -137,6 +137,7 @@ class ResultAnalyzer:
             
             # 统一基于总资产(final_value)计算核心指标
             net_profit_loss = final_value - initial_cash  # 净盈亏
+            cash_profit_loss = final_cash - initial_cash  # 现金盈亏
             total_return_on_value = (final_value / initial_cash - 1) * 100 if initial_cash > 0 else 0
             
             # 现实策略（无杠杆）下总收益率不会小于 -100%，若资产异常为负，做展示层兜底
@@ -162,6 +163,7 @@ class ResultAnalyzer:
                 "最终总资产": final_value,
                 "未平仓持仓价值": position_value,
                 "净盈亏": net_profit_loss,
+                "现金盈亏": cash_profit_loss,
                 "总收益率": total_return_on_value
             }
         except Exception as e:
@@ -170,6 +172,7 @@ class ResultAnalyzer:
                 "初始资金": 0,
                 "最终总资产": 0,
                 "净盈亏": 0,
+                "现金盈亏": 0,
                 "总收益率": 0,
                 "最终现金": 0,
                 "未平仓持仓价值": 0

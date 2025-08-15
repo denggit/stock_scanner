@@ -280,11 +280,9 @@ class BaseStrategy(bt.Strategy):
                 buy_price = self.position_buy_prices[trade.ref]
                 returns = (trade.price - buy_price) / buy_price * 100
                 
-                # 计算交易成本：总成本 = 佣金 + 印花税 + 过户费等
-                # trade.pnl 是扣除所有费用后的净收益
-                # trade.pnlcomm 是扣除佣金后的收益
-                # 因此：交易成本 = trade.pnlcomm - trade.pnl
-                trade_cost = trade.pnlcomm - trade.pnl if hasattr(trade, 'pnlcomm') and hasattr(trade, 'pnl') else 0.0
+                # 计算交易成本：直接使用 trade.commission
+                # trade.commission 包含了整个交易周期的总成本（买入+卖出）
+                trade_cost = abs(trade.commission) if hasattr(trade, 'commission') else 0.0
                 
                 # 更新最后一笔交易记录的收益率和成本信息
                 if self.trades and self.trades[-1]["action"] == "SELL":
