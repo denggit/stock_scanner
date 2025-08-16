@@ -123,33 +123,31 @@ class BaseBacktestRunner:
         不包含策略层面的参数（如min_channel_score等）
         
         Args:
-            strategy_params: 策略参数，包含通道算法参数和数据预处理参数
+            strategy_params: 策略参数（实际不使用，从算法默认配置获取）
             
         Returns:
             Dict: 通道算法参数
         """
         try:
-            # 从策略参数中提取通道算法参数
-            algorithm_params = {
-                'k': strategy_params.get('k', 2.0),
-                'L_max': strategy_params.get('L_max', 120),
-                'delta_cut': strategy_params.get('delta_cut', 5),
-                'pivot_m': strategy_params.get('pivot_m', 3),
-                'min_data_points': strategy_params.get('min_data_points', 60),
-                'R2_min': strategy_params.get('R2_min', 0.20),
-                'width_pct_min': strategy_params.get('width_pct_min', 0.04),
-                'width_pct_max': strategy_params.get('width_pct_max', 0.12),
-                'adjust': strategy_params.get('adjust', 1),  # 复权类型
-                'logarithm': strategy_params.get('logarithm', False),  # 是否使用对数
-            }
+            # 直接从AscendingChannelRegression获取默认配置
+            from backend.business.factor.core.engine.library.channel_analysis.rising_channel import \
+                AscendingChannelRegression
 
-            self.logger.info(f"从策略参数提取算法参数: {algorithm_params}")
+            # 创建一个临时实例来获取默认配置
+            temp_analyzer = AscendingChannelRegression()
+            algorithm_params = temp_analyzer._get_config_dict()
+            
+            # 添加数据预处理参数
+            algorithm_params['adjust'] = strategy_params.get('adjust', 1)  # 默认后复权
+            algorithm_params['logarithm'] = strategy_params.get('logarithm', False)  # 默认不使用对数
+
+            self.logger.info(f"从AscendingChannelRegression获取算法参数: {algorithm_params}")
             return algorithm_params
 
         except Exception as e:
-            self.logger.warning(f"无法从策略参数提取算法参数，使用硬编码默认值: {e}")
+            self.logger.warning(f"无法从AscendingChannelRegression获取参数，使用硬编码默认值: {e}")
 
-            # 回退到硬编码的算法参数
+            # 回退到硬编码的算法参数（与AscendingChannelRegression._get_default_config()一致）
             return {
                 'k': 2.0,
                 'L_max': 120,
