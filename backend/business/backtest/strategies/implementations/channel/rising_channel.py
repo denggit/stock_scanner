@@ -745,13 +745,21 @@ class RisingChannelStrategy(BaseStrategy):
                 analyzer = self.channel_manager.get_analyzer()
                 if hasattr(analyzer, '_analyzer') and analyzer._analyzer is not None:
                     # 从真实的AscendingChannelRegression实例获取参数
-                    return analyzer._analyzer._get_config_dict()
+                    params = analyzer._analyzer._get_config_dict()
+                    # 添加数据预处理参数
+                    params['adjust'] = getattr(self.params, 'adjust', 1)
+                    params['logarithm'] = getattr(self.params, 'logarithm', False)
+                    return params
 
             # 如果无法从管理器获取，直接创建AscendingChannelRegression实例
             from backend.business.factor.core.engine.library.channel_analysis.rising_channel import \
                 AscendingChannelRegression
             temp_analyzer = AscendingChannelRegression()
-            return temp_analyzer._get_config_dict()
+            params = temp_analyzer._get_config_dict()
+            # 添加数据预处理参数
+            params['adjust'] = getattr(self.params, 'adjust', 1)
+            params['logarithm'] = getattr(self.params, 'logarithm', False)
+            return params
 
         except Exception as e:
             self.logger.warning(f"无法获取通道算法参数，使用默认值: {e}")
@@ -765,7 +773,9 @@ class RisingChannelStrategy(BaseStrategy):
                 'min_data_points': 60,
                 'R2_min': 0.20,
                 'width_pct_min': 0.04,
-                'width_pct_max': 0.12
+                'width_pct_max': 0.12,
+                'adjust': getattr(self.params, 'adjust', 1),
+                'logarithm': getattr(self.params, 'logarithm', False),
             }
 
     def _should_sell_stock(self, stock_code: str, channel_state, stock_data: Optional[pd.DataFrame] = None) -> bool:

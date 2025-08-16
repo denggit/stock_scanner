@@ -136,6 +136,10 @@ class BaseBacktestRunner:
             # 创建一个临时实例来获取默认配置
             temp_analyzer = AscendingChannelRegression()
             algorithm_params = temp_analyzer._get_config_dict()
+            
+            # 添加数据预处理参数
+            algorithm_params['adjust'] = strategy_params.get('adjust', 1)  # 默认后复权
+            algorithm_params['logarithm'] = strategy_params.get('logarithm', False)  # 默认不使用对数
 
             self.logger.info(f"从AscendingChannelRegression获取算法参数: {algorithm_params}")
             return algorithm_params
@@ -152,7 +156,9 @@ class BaseBacktestRunner:
                 'min_data_points': 60,
                 'R2_min': 0.20,
                 'width_pct_min': 0.04,
-                'width_pct_max': 0.12
+                'width_pct_max': 0.12,
+                'adjust': 1,  # 默认后复权
+                'logarithm': False,  # 默认不使用对数
             }
 
     # ------------------------ 对外主流程 ------------------------
@@ -171,7 +177,8 @@ class BaseBacktestRunner:
                 start_date=extended_start,
                 end_date=self.config['end_date'],
                 max_stocks=self.config['max_stocks'],
-                min_data_days=self.config['min_data_days']
+                min_data_days=self.config['min_data_days'],
+                strategy_params=self.strategy_params  # 传递策略参数，包含adjust和logarithm
             )
             self.logger.info(f"成功获取 {len(stock_data_dict)} 只股票的数据")
             if not stock_data_dict:

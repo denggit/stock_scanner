@@ -236,7 +236,8 @@ class DataUtils:
             adjust: str = "1",
             min_data_days: int = 60,
             max_stocks: Optional[int] = None,
-            progress_callback: Optional[callable] = None
+            progress_callback: Optional[callable] = None,
+            strategy_params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, pd.DataFrame]:
         """
         获取回测所需的股票数据
@@ -256,6 +257,7 @@ class DataUtils:
             min_data_days: 最小数据天数，少于这个天数的股票会被过滤
             max_stocks: 最大股票数量，用于限制回测规模
             progress_callback: 进度回调函数，用于显示获取进度
+            strategy_params: 策略参数字典，如果包含adjust参数会覆盖adjust参数
             
         Returns:
             Dict[str, pd.DataFrame]: 股票代码到数据的映射
@@ -272,6 +274,11 @@ class DataUtils:
         logger = setup_logger("backtest")
         data_fetcher = StockDataFetcher()
 
+        # 如果策略参数中包含adjust，优先使用策略参数中的值
+        if strategy_params and 'adjust' in strategy_params:
+            adjust = str(strategy_params['adjust'])
+            logger.info(f"使用策略参数中的复权类型: {adjust}")
+
         # 设置默认日期
         if end_date is None:
             end_date = datetime.now().strftime("%Y-%m-%d")
@@ -280,84 +287,68 @@ class DataUtils:
             # 默认获取一年的数据，确保有足够的历史数据用于计算指标
             start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
 
-        logger.info(f"开始获取股票数据: 股票池={stock_pool}, 时间范围={start_date} 到 {end_date}")
+        logger.info(f"获取股票数据: 股票池={stock_pool}, 日期范围={start_date}~{end_date}, 复权类型={adjust}")
 
-        # 1. 获取股票列表
+        # 获取股票列表
         try:
-            stock_list_df = data_fetcher.get_stock_list(pool_name=stock_pool)
-            logger.info(f"获取到 {len(stock_list_df)} 只股票")
+            stock_list = data_fetcher.get_stock_list(pool_name=stock_pool)
+            if stock_list.empty:
+                logger.error(f"无法获取股票池 {stock_pool} 的股票列表")
+                return {}
+
+            stock_codes = stock_list['code'].tolist()
+            logger.info(f"股票池 {stock_pool} 包含 {len(stock_codes)} 只股票")
+
+            # 限制股票数量
+            if max_stocks and len(stock_codes) > max_stocks:
+                stock_codes = stock_codes[:max_stocks]
+                logger.info(f"限制股票数量为 {max_stocks} 只")
+
         except Exception as e:
             logger.error(f"获取股票列表失败: {e}")
-            raise
+            return {}
 
-        # 限制股票数量（如果指定了max_stocks）
-        if max_stocks and len(stock_list_df) > max_stocks:
-            stock_list_df = stock_list_df.head(max_stocks)
-            logger.info(f"限制股票数量为 {max_stocks} 只")
-
-        # 2. 获取每只股票的历史数据
-        all_stock_data = {}
-        total_stocks = len(stock_list_df)
+        # 获取股票数据
+        stock_data_dict = {}
+        total_stocks = len(stock_codes)
         success_count = 0
         failed_count = 0
 
-        for idx, (_, stock_info) in enumerate(stock_list_df.iterrows()):
-            stock_code = stock_info['code']
-
+        for i, stock_code in enumerate(stock_codes):
             try:
                 # 获取股票数据
-                stock_data = data_fetcher.fetch_stock_data(
+                df = data_fetcher.fetch_stock_data(
                     code=stock_code,
-                    period=period,
                     start_date=start_date,
                     end_date=end_date,
+                    period=period,
                     adjust=adjust
                 )
 
-                # 检查数据质量
-                if stock_data.empty:
-                    logger.warning(f"股票 {stock_code} 数据为空")
+                # 验证数据质量
+                if len(df) >= min_data_days and not df.empty:
+                    stock_data_dict[stock_code] = df
+                    success_count += 1
+                    logger.debug(f"成功获取股票 {stock_code} 数据: {len(df)} 条记录")
+                else:
                     failed_count += 1
-                    continue
+                    logger.debug(f"股票 {stock_code} 数据不足: {len(df)} < {min_data_days}")
 
-                # 检查数据天数
-                if len(stock_data) < min_data_days:
-                    logger.warning(f"股票 {stock_code} 数据天数不足: {len(stock_data)} < {min_data_days}")
-                    failed_count += 1
-                    continue
-
-                # 数据验证
-                validation_result = DataUtils.validate_data(stock_data)
-                if not validation_result["is_valid"]:
-                    logger.warning(f"股票 {stock_code} 数据验证失败: {validation_result['errors']}")
-                    failed_count += 1
-                    continue
-
-                # 数据清理
-                cleaned_data = DataUtils.clean_data(stock_data)
-
-                # 保存数据
-                all_stock_data[stock_code] = cleaned_data
-                success_count += 1
-
-                logger.debug(f"成功获取股票 {stock_code} 数据: {len(cleaned_data)} 条记录")
+                # 进度回调
+                if progress_callback:
+                    progress_callback()
 
             except Exception as e:
-                logger.warning(f"获取股票 {stock_code} 数据失败: {e}")
                 failed_count += 1
-                continue
+                logger.warning(f"获取股票 {stock_code} 数据失败: {e}")
 
-            # 进度回调
-            if progress_callback:
-                progress = (idx + 1) / total_stocks
-                progress_callback(progress, stock_code, success_count, failed_count)
+            # 定期输出进度
+            if (i + 1) % 50 == 0 or (i + 1) == total_stocks:
+                logger.info(f"数据获取进度: {i + 1}/{total_stocks} "
+                           f"(成功: {success_count}, 失败: {failed_count})")
 
-        logger.info(f"数据获取完成: 成功 {success_count} 只，失败 {failed_count} 只")
-
-        if not all_stock_data:
-            raise ValueError("没有获取到任何有效的股票数据")
-
-        return all_stock_data
+        logger.info(f"数据获取完成: 成功 {success_count} 只股票，失败 {failed_count} 只股票")
+        return stock_data_dict
 
     @staticmethod
     def validate_data(data: pd.DataFrame) -> Dict[str, Any]:
