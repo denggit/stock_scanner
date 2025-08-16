@@ -919,8 +919,15 @@ class RisingChannelStrategy(BaseStrategy):
             "width_pct_min": self.params.width_pct_min,
             "width_pct_max": self.params.width_pct_max
         }
+        
+        # 添加策略层面的质量筛选参数
         if self.params.R2_min is not None:
             params["R2_min"] = self.params.R2_min
+        if self.params.R2_max is not None:
+            params["R2_max"] = self.params.R2_max
+        if hasattr(self.params, 'min_channel_score'):
+            params["min_channel_score"] = self.params.min_channel_score
+            
         return params
 
     def _get_parameters(self) -> Dict[str, Any]:
