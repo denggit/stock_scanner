@@ -34,7 +34,7 @@ class RisingChannelConfig:
         'initial_cash': 200000.0,  # 初始资金20万
         'commission': 0.0003,  # 手续费率
         'stock_pool': 'no_st',  # 股票池：非ST股票
-        'start_date': '2024-01-01',  # 开始日期
+        'start_date': '2020-01-01',  # 开始日期
         'end_date': datetime.today().strftime("%Y-%m-%d"),  # 结束日期
         'min_data_days': 120  # 最小数据天数
     }
@@ -42,7 +42,7 @@ class RisingChannelConfig:
     # ==================== 环境配置 ====================
     ENVIRONMENTS = {
         "development": {
-            "max_stocks": 200,
+            "max_stocks": None,
             "description": "开发环境 - 快速验证策略逻辑",
             # 环境级别的策略参数覆盖
             "strategy_overrides": {
@@ -98,7 +98,7 @@ class RisingChannelConfig:
         'delta_cut': 5,  # 切割参数
         'pivot_m': 3,  # 枢轴参数
         'R2_min': 0.35,  # 最小R²值（用于通道有效性判定）；若在选股阶段想取消下限，可将选股用的 R2_min 设为 None
-        'R2_max': 0.95,  # 最大R²值上限（仅用于选股过滤；None 表示不设上限）
+        'R2_max': 0.90,  # 最大R²值上限（仅用于选股过滤；None 表示不设上限）
         'R2_range': None,  # 参数优化时可传入 [R2_min, R2_max]，两者均可为 None
         'width_pct_min': 0.05,  # 最小通道宽度
         'width_pct_max': 0.12,  # 最大通道宽度

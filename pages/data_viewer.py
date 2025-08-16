@@ -661,6 +661,7 @@ def main():
         # 股票代码输入框
         code = st.text_input('股票代码', value=default_code,
                              help="请输入6位数字的股票代码，如：000001")
+        code = code.strip()[-6:]
 
         # 添加股票代码格式提示
         if code and not (code.isdigit() and len(code) == 6):
