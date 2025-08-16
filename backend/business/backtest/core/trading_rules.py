@@ -190,10 +190,60 @@ class AShareTradingRules:
         return adjusted_quantity
 
     @classmethod
+    def calculate_precise_price_limits(cls, reference_price: float, stock_code: str = None, is_st: bool = False) -> Dict[str, Any]:
+        """
+        计算精确的涨跌停价格，考虑A股最小变动单位（0.01元）和四舍五入规则
+        
+        Args:
+            reference_price: 参考价格（通常是前一日收盘价）
+            stock_code: 股票代码（用于确定涨跌停幅度）
+            is_st: 是否为ST股票
+            
+        Returns:
+            包含精确涨跌停价格的字典
+            
+        Note:
+            A股涨跌停价格计算规则：
+            1. 理论涨跌停价格 = 参考价格 × (1 ± 涨跌停幅度)
+            2. 实际涨跌停价格 = 理论价格按最小变动单位（0.01元）四舍五入
+            3. 实际涨跌停幅度可能小于理论幅度
+        """
+        # 获取涨跌停幅度
+        if stock_code:
+            limit_rate = cls.get_price_limit_rate_by_code(stock_code, is_st)
+        else:
+            limit_rate = cls.ST_PRICE_LIMIT_RATE if is_st else cls.PRICE_LIMIT_RATE
+        
+        # 计算理论涨跌停价格
+        theoretical_upper = reference_price * (1 + limit_rate)
+        theoretical_lower = reference_price * (1 - limit_rate)
+        
+        # 按最小变动单位（0.01元）四舍五入
+        precise_upper = round(theoretical_upper / 0.01) * 0.01
+        precise_lower = round(theoretical_lower / 0.01) * 0.01
+        
+        # 计算实际涨跌停幅度
+        actual_upper_rate = (precise_upper - reference_price) / reference_price
+        actual_lower_rate = (precise_lower - reference_price) / reference_price
+        
+        return {
+            "theoretical_upper": theoretical_upper,
+            "theoretical_lower": theoretical_lower,
+            "precise_upper": precise_upper,
+            "precise_lower": precise_lower,
+            "theoretical_rate": limit_rate,
+            "actual_upper_rate": actual_upper_rate,
+            "actual_lower_rate": actual_lower_rate,
+            "reference_price": reference_price,
+            "stock_code": stock_code,
+            "is_st": is_st
+        }
+
+    @classmethod
     def check_price_limit(cls, current_price: float, reference_price: float, 
                          stock_code: str = None, is_st: bool = False) -> Dict[str, Any]:
         """
-        检查价格是否触及涨跌停
+        检查价格是否触及涨跌停（使用精确价格计算）
         
         Args:
             current_price: 当前价格
@@ -204,22 +254,19 @@ class AShareTradingRules:
         Returns:
             检查结果字典
         """
-        # 根据股票代码确定涨跌停幅度
-        if stock_code:
-            limit_rate = cls.get_price_limit_rate_by_code(stock_code, is_st)
-        else:
-            # 兼容旧版本，使用默认规则
-            limit_rate = cls.ST_PRICE_LIMIT_RATE if is_st else cls.PRICE_LIMIT_RATE
-
-        upper_limit = reference_price * (1 + limit_rate)
-        lower_limit = reference_price * (1 - limit_rate)
-
+        # 获取精确的涨跌停价格
+        price_limits = cls.calculate_precise_price_limits(reference_price, stock_code, is_st)
+        
         return {
-            "is_upper_limit": current_price >= upper_limit,
-            "is_lower_limit": current_price <= lower_limit,
-            "upper_limit": upper_limit,
-            "lower_limit": lower_limit,
-            "limit_rate": limit_rate,
+            "is_upper_limit": current_price >= price_limits["precise_upper"],
+            "is_lower_limit": current_price <= price_limits["precise_lower"],
+            "upper_limit": price_limits["precise_upper"],
+            "lower_limit": price_limits["precise_lower"],
+            "theoretical_upper": price_limits["theoretical_upper"],
+            "theoretical_lower": price_limits["theoretical_lower"],
+            "limit_rate": price_limits["theoretical_rate"],
+            "actual_upper_rate": price_limits["actual_upper_rate"],
+            "actual_lower_rate": price_limits["actual_lower_rate"],
             "stock_code": stock_code,
             "is_st": is_st
         }

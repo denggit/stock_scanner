@@ -253,15 +253,15 @@ class BaseStrategy(bt.Strategy):
             df = self.data_manager.get_stock_data_until(stock_code, self.current_date, min_data_points=2)
             if df is not None and len(df) >= 2:
                 prev_close = float(df.iloc[-2]['close'])
-                # 细化原因：计算上/下限
-                limit_info = AShareTradingRules.check_price_limit(price, prev_close, is_st=False)
+                # 细化原因：计算上/下限（使用精确涨跌停价格计算）
+                limit_info = AShareTradingRules.check_price_limit(price, prev_close, stock_code=stock_code, is_st=False)
                 if action == 'BUY' and limit_info.get('is_upper_limit'):
                     reasons.append(
-                        f"涨停禁买: 当前价={price:.4f} ≥ 涨停价={limit_info.get('upper_limit', 0):.4f}"
+                        f"涨停禁买: 当前价={price:.4f} ≥ 涨停价={limit_info.get('upper_limit', 0):.4f} (实际涨幅{limit_info.get('actual_upper_rate', 0)*100:.2f}%)"
                     )
                 if action == 'SELL' and limit_info.get('is_lower_limit'):
                     reasons.append(
-                        f"跌停禁卖: 当前价={price:.4f} ≤ 跌停价={limit_info.get('lower_limit', 0):.4f}"
+                        f"跌停禁卖: 当前价={price:.4f} ≤ 跌停价={limit_info.get('lower_limit', 0):.4f} (实际跌幅{abs(limit_info.get('actual_lower_rate', 0))*100:.2f}%)"
                     )
         except Exception:
             # 数据不足或异常时不强制拦截，不记录为失败
@@ -312,7 +312,7 @@ class BaseStrategy(bt.Strategy):
                     df = self.data_manager.get_stock_data_until(stock_code, self.current_date, min_data_points=2)
                     if df is not None and len(df) >= 2:
                         prev_close = float(df.iloc[-2]['close'])
-                        if is_trade_blocked_by_price_limit(price, prev_close, 'SELL', is_st=False):
+                        if is_trade_blocked_by_price_limit(price, prev_close, 'SELL', stock_code=stock_code, is_st=False):
                             continue
                     est_net = self.trade_manager.estimate_sell_total_proceeds(pos['shares'], price)
                     estimated_sell_proceeds += est_net
@@ -514,7 +514,7 @@ class BaseStrategy(bt.Strategy):
             df = self.data_manager.get_stock_data_until(stock_code, self.current_date, min_data_points=2)
             if df is not None and len(df) >= 2:
                 prev_close = float(df.iloc[-2]['close'])
-                if is_trade_blocked_by_price_limit(price, prev_close, signal['action'], is_st=False):
+                if is_trade_blocked_by_price_limit(price, prev_close, signal['action'], stock_code=stock_code, is_st=False):
                     return False
         except Exception:
             # 数据不足或异常时，不做强制拦截
@@ -589,7 +589,7 @@ class BaseStrategy(bt.Strategy):
             df = self.data_manager.get_stock_data_until(stock_code, self.current_date, min_data_points=2)
             if df is not None and len(df) >= 2:
                 prev_close = float(df.iloc[-2]['close'])
-                if is_trade_blocked_by_price_limit(price, prev_close, 'SELL', is_st=False):
+                if is_trade_blocked_by_price_limit(price, prev_close, 'SELL', stock_code=stock_code, is_st=False):
                     return
         except Exception:
             pass
