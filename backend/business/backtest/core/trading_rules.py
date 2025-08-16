@@ -6,6 +6,7 @@ A股交易规则配置
 """
 
 from typing import Dict, Any
+import re
 
 # 为 backtrader 手续费模型提供支持
 try:
@@ -35,8 +36,8 @@ class AShareTradingRules:
     # 过户费规则
     TRANSFER_FEE_RATE = 0.00002  # 过户费率（十万分之二）
 
-    # 涨跌停规则
-    PRICE_LIMIT_RATE = 0.10  # 涨跌停幅度（10%）
+    # 涨跌停规则 - 默认值（将被动态方法覆盖）
+    PRICE_LIMIT_RATE = 0.10  # 默认涨跌停幅度（10%）
     ST_PRICE_LIMIT_RATE = 0.05  # ST股票涨跌停幅度（5%）
 
     # 交易时间规则
@@ -51,6 +52,56 @@ class AShareTradingRules:
         "news_announcement": True,  # 重大事项停牌
         "trading_halt": True  # 交易异常停牌
     }
+
+    @classmethod
+    def get_price_limit_rate_by_code(cls, stock_code: str, is_st: bool = False) -> float:
+        """
+        根据股票代码确定涨跌停幅度
+        
+        Args:
+            stock_code: 股票代码（如：'000001'、'300001'、'688001'等）
+            is_st: 是否为ST股票
+            
+        Returns:
+            涨跌停幅度（如：0.10表示10%）
+            
+        Note:
+            涨跌停规则：
+            - 沪市主板（60xxxx）：±10%
+            - 深市主板（000xxx、001xxx）：±10%
+            - 创业板（300xxx）：±20%
+            - 科创板（688xxx）：±20%
+            - 北交所（83xxxx、87xxxx、43xxxx）：±30%（新股前5日无涨跌幅限制）
+            - ST股票：在对应板块基础上减半
+        """
+        # 清理股票代码，移除市场前缀
+        clean_code = stock_code.upper().replace('SH', '').replace('SZ', '').replace('BJ', '')
+        
+        # 根据代码段判断涨跌停幅度
+        if re.match(r'^60\d{4}$', clean_code):
+            # 沪市主板
+            base_rate = 0.10
+        elif re.match(r'^000\d{3}$|^001\d{3}$', clean_code):
+            # 深市主板
+            base_rate = 0.10
+        elif re.match(r'^300\d{3}$', clean_code):
+            # 创业板
+            base_rate = 0.20
+        elif re.match(r'^688\d{3}$', clean_code):
+            # 科创板
+            base_rate = 0.20
+        elif re.match(r'^83\d{4}$|^87\d{4}$|^43\d{4}$', clean_code):
+            # 北交所
+            base_rate = 0.30
+        else:
+            # 默认使用主板规则
+            base_rate = 0.10
+        
+        # ST股票涨跌停幅度减半
+        if is_st:
+            return base_rate * 0.5
+        
+        return base_rate
 
     @classmethod
     def calculate_commission(cls, trade_amount: float, is_buy: bool = True) -> float:
@@ -139,19 +190,26 @@ class AShareTradingRules:
         return adjusted_quantity
 
     @classmethod
-    def check_price_limit(cls, current_price: float, reference_price: float, is_st: bool = False) -> Dict[str, Any]:
+    def check_price_limit(cls, current_price: float, reference_price: float, 
+                         stock_code: str = None, is_st: bool = False) -> Dict[str, Any]:
         """
         检查价格是否触及涨跌停
         
         Args:
             current_price: 当前价格
             reference_price: 参考价格（通常是前一日收盘价）
+            stock_code: 股票代码（用于确定涨跌停幅度）
             is_st: 是否为ST股票
             
         Returns:
             检查结果字典
         """
-        limit_rate = cls.ST_PRICE_LIMIT_RATE if is_st else cls.PRICE_LIMIT_RATE
+        # 根据股票代码确定涨跌停幅度
+        if stock_code:
+            limit_rate = cls.get_price_limit_rate_by_code(stock_code, is_st)
+        else:
+            # 兼容旧版本，使用默认规则
+            limit_rate = cls.ST_PRICE_LIMIT_RATE if is_st else cls.PRICE_LIMIT_RATE
 
         upper_limit = reference_price * (1 + limit_rate)
         lower_limit = reference_price * (1 - limit_rate)
@@ -161,7 +219,9 @@ class AShareTradingRules:
             "is_lower_limit": current_price <= lower_limit,
             "upper_limit": upper_limit,
             "lower_limit": lower_limit,
-            "limit_rate": limit_rate
+            "limit_rate": limit_rate,
+            "stock_code": stock_code,
+            "is_st": is_st
         }
 
     @classmethod
@@ -182,12 +242,20 @@ class AShareTradingRules:
             "price_limit_rate": cls.PRICE_LIMIT_RATE,
             "st_price_limit_rate": cls.ST_PRICE_LIMIT_RATE,
             "trading_hours": cls.TRADING_HOURS,
-            "suspension_rules": cls.SUSPENSION_RULES
+            "suspension_rules": cls.SUSPENSION_RULES,
+            "price_limit_rules": {
+                "sh_main": "60xxxx: ±10%",
+                "sz_main": "000xxx/001xxx: ±10%",
+                "gem": "300xxx: ±20%",
+                "star": "688xxx: ±20%",
+                "beijing": "83xxxx/87xxxx/43xxxx: ±30%",
+                "st_stocks": "ST股票: 对应板块基础上减半"
+            }
         }
 
 
 def is_trade_blocked_by_price_limit(current_price: float, reference_price: float, action: str,
-                                    is_st: bool = False) -> bool:
+                                    stock_code: str = None, is_st: bool = False) -> bool:
     """
     纯函数：基于涨跌停规则判断是否应拦截交易
     
@@ -195,12 +263,14 @@ def is_trade_blocked_by_price_limit(current_price: float, reference_price: float
         current_price: 当前价格
         reference_price: 参考价格（通常昨日收盘价）
         action: 交易方向，'BUY' 或 'SELL'
+        stock_code: 股票代码（用于确定涨跌停幅度）
         is_st: 是否ST股票
     
     Returns:
         True 表示应拦截（涨停禁买/跌停禁卖），False 表示不拦截
     """
-    result = AShareTradingRules.check_price_limit(current_price, reference_price, is_st=is_st)
+    result = AShareTradingRules.check_price_limit(current_price, reference_price, 
+                                                 stock_code=stock_code, is_st=is_st)
     if action == 'BUY' and result["is_upper_limit"]:
         return True
     if action == 'SELL' and result["is_lower_limit"]:
