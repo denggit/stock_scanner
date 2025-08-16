@@ -28,6 +28,7 @@ class ChannelStatus(Enum):
     BREAKOUT = "BREAKOUT"  # 突破上沿（含加速）
     BREAKDOWN = "BREAKDOWN"  # 跌破下沿/通道失效
     ASCENDING_WEAK = "ASCENDING_WEAK"  # 弱上升通道（趋势向上，但质量不达标）
+    OTHER = "OTHER"        # 其它状态（不属于上升通道的股票）
 
 
 @dataclass
@@ -270,5 +271,6 @@ class ChannelState:
             ChannelStatus.BREAKOUT: "突破上沿",
             ChannelStatus.BREAKDOWN: "跌破下沿/失效",
             ChannelStatus.ASCENDING_WEAK: "弱上升通道",
+            ChannelStatus.OTHER: "其它状态",
         }
         return status_descriptions.get(self.channel_status, "未知状态")

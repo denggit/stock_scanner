@@ -483,6 +483,36 @@ class ChannelAnalyzerManager:
 
         return weak_stocks
 
+    def filter_other_status_channels(self, analysis_results: Dict[str, Dict[str, Any]],
+                                     min_score: float = 0.0) -> List[Dict[str, Any]]:
+        """
+        筛选OTHER状态的通道
+        
+        Args:
+            analysis_results: 批量分析结果
+            min_score: 最小评分阈值
+            
+        Returns:
+            符合条件的股票列表
+        """
+        other_stocks = []
+
+        for stock_code, result in analysis_results.items():
+            channel_state = result['channel_state']
+            score = result['score']
+
+            if (channel_state and
+                    hasattr(channel_state, 'channel_status') and
+                    channel_state.channel_status == ChannelStatus.OTHER and
+                    score >= min_score):
+                other_stocks.append({
+                    'stock_code': stock_code,
+                    'channel_state': channel_state,
+                    'score': score
+                })
+
+        return other_stocks
+
     def _check_cache(self, stock_code: str, date: datetime) -> bool:
         """检查分析结果缓存"""
         return (stock_code in self.results_cache and

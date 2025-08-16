@@ -102,8 +102,8 @@ class StandardChannelStrategy(ChannelCalculationStrategy):
         # 4. 回归计算
         beta, sigma, r2 = self._calculate_regression(window_df, anchor_date)
 
-        # 5. 回归有效性检查
-        if beta is None or beta <= 0 or r2 < config['R2_min']:
+        # 5. 回归有效性检查（移除斜率为负的丢弃逻辑）
+        if beta is None or r2 < config['R2_min']:
             return ChannelCalculationResult(
                 is_valid=False, anchor_date=anchor_date, anchor_price=anchor_price,
                 window_df=window_df, beta=beta, sigma=sigma, r2=r2, state=None,
@@ -292,13 +292,17 @@ class HistoryCalculationTemplate:
                 
                 # 状态判定：根据是否有state和break_reason来确定状态
                 if result.state is not None:
-                    # 有state但质量检查不通过，可能是ASCENDING_WEAK
+                    # 有state但质量检查不通过，需要进一步判断
                     if result.break_reason in ["invalid_width", "invalid_regression"]:
-                        base_record['channel_status'] = ChannelStatus.ASCENDING_WEAK.value
+                        # 检查斜率方向
+                        if result.beta is not None and result.beta > 0:
+                            base_record['channel_status'] = ChannelStatus.ASCENDING_WEAK.value
+                        else:
+                            base_record['channel_status'] = ChannelStatus.OTHER.value
                     else:
-                        base_record['channel_status'] = ChannelStatus.BREAKDOWN.value
+                        base_record['channel_status'] = ChannelStatus.OTHER.value
                 else:
-                    base_record['channel_status'] = ChannelStatus.BREAKDOWN.value
+                    base_record['channel_status'] = ChannelStatus.OTHER.value
         else:
             # 有效通道
             state = result.state
@@ -314,7 +318,6 @@ class HistoryCalculationTemplate:
                 'mid_tomorrow': state.mid_tomorrow,
                 'upper_tomorrow': state.upper_tomorrow,
                 'lower_tomorrow': state.lower_tomorrow,
-                'channel_status': ChannelStatus.NORMAL.value,
                 'window_size': len(result.window_df),
                 'days_since_anchor': (current_date - result.anchor_date).days,
                 'cumulative_gain': state.cumulative_gain,
@@ -328,6 +331,14 @@ class HistoryCalculationTemplate:
                 'slope_deg': np.degrees(np.arctan(result.beta)) if result.beta else None,
                 'volatility': result.sigma / state.mid_today if result.sigma and state.mid_today and state.mid_today > 0 else None
             })
+            
+            # 根据斜率方向确定状态
+            if result.beta is not None and result.beta > 0:
+                # 斜率为正，使用原有的状态判定逻辑
+                base_record['channel_status'] = state.channel_status.value
+            else:
+                # 斜率不为正，标记为OTHER
+                base_record['channel_status'] = ChannelStatus.OTHER.value
 
         return base_record
 
@@ -422,7 +433,7 @@ class AscendingChannelRegression:
         该方法负责计算上升通道并完成状态判定，包括：
         1. 通道计算
         2. 质量检查（R²、通道宽度等）
-        3. 状态判定（NORMAL、BREAKOUT、BREAKDOWN、ASCENDING_WEAK）
+        3. 状态判定（NORMAL、BREAKOUT、BREAKDOWN、ASCENDING_WEAK、OTHER）
         
         Args:
             df (pd.DataFrame): 股票数据
@@ -445,7 +456,7 @@ class AscendingChannelRegression:
                 # 若返回了state（如invalid_width），需要重新判定状态
                 return self._determine_channel_status(result.state, current_close, result.r2, result.break_reason)
             else:
-                # 构造一个最小可用状态并标记为 BREAKDOWN
+                # 构造一个最小可用状态并标记为 OTHER
                 cumulative_gain = None
                 if result.anchor_price is not None and result.anchor_price > 0:
                     cumulative_gain = (current_close - result.anchor_price) / result.anchor_price
@@ -457,7 +468,7 @@ class AscendingChannelRegression:
                     mid_today=0.0, upper_today=0.0, lower_today=0.0,
                     mid_tomorrow=0.0, upper_tomorrow=0.0, lower_tomorrow=0.0,
                     r2=result.r2,
-                    channel_status=ChannelStatus.BREAKDOWN,
+                    channel_status=ChannelStatus.OTHER,
                     cumulative_gain=cumulative_gain
                 )
                 return state
@@ -471,6 +482,7 @@ class AscendingChannelRegression:
         确定通道状态
         
         根据通道质量和当前价格位置，确定最终的通道状态：
+        - 如果斜率不为正：OTHER
         - 如果质量检查不通过但趋势向上：ASCENDING_WEAK
         - 如果质量检查通过：根据价格位置判定 NORMAL/BREAKOUT/BREAKDOWN
         
@@ -484,6 +496,12 @@ class AscendingChannelRegression:
             ChannelState: 更新后的通道状态对象
         """
         config = self._get_config_dict()
+        
+        # 首先检查斜率方向
+        if state.beta is None or state.beta <= 0:
+            # 斜率不为正，标记为OTHER状态
+            state.channel_status = ChannelStatus.OTHER
+            return state
         
         # 质量检查：检查R²和通道宽度
         quality_check_passed = self._check_channel_quality(state, r2, config)
