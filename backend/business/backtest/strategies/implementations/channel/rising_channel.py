@@ -954,10 +954,6 @@ class RisingChannelStrategy(BaseStrategy):
             params["R2_max"] = self.params.R2_max
         if hasattr(self.params, 'min_channel_score'):
             params["min_channel_score"] = self.params.min_channel_score
-        
-        # 添加对数模式参数
-        if hasattr(self.params, 'logarithm'):
-            params["logarithm"] = self.params.logarithm
             
         return params
 
