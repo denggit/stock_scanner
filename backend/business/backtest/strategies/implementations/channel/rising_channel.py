@@ -656,10 +656,11 @@ class RisingChannelStrategy(BaseStrategy):
     def _is_channel_width_valid(self, channel_state) -> bool:
         """
         通道宽度有效性校验
-
-        以 (upper_today - lower_today) / mid_today 作为宽度百分比，
-        要求 width_pct_min <= 宽度 <= width_pct_max。
-
+        
+        根据策略的logarithm参数动态选择宽度计算和验证方式：
+        - 对数模式：使用 sigma 和 k 参数计算通道宽度近似值
+        - 线性模式：使用传统的 (upper_today - lower_today) / mid_today 计算
+        
         Args:
             channel_state: 通道状态对象
         Returns:
@@ -668,13 +669,32 @@ class RisingChannelStrategy(BaseStrategy):
         try:
             if channel_state is None:
                 return False
-            upper = getattr(channel_state, 'upper_today', None)
-            lower = getattr(channel_state, 'lower_today', None)
-            mid = getattr(channel_state, 'mid_today', None)
-            if upper is None or lower is None or mid is None or float(mid) <= 0:
-                return False
-            width_pct = (float(upper) - float(lower)) / float(mid)
-            return (width_pct >= float(self.params.width_pct_min)) and (width_pct <= float(self.params.width_pct_max))
+                
+            # 获取当前策略是否处于对数模式
+            use_log_mode = getattr(self.params, 'logarithm', False)
+            
+            if use_log_mode:
+                # --- 对数模式下的验证逻辑 ---
+                sigma = getattr(channel_state, 'sigma', None)
+                if sigma is None:
+                    return False
+
+                k = getattr(channel_state, 'k', 2.0)
+                # 通道的总宽度近似为 2 * k * sigma
+                channel_width_approx = 2 * k * sigma
+
+                return (self.params.width_pct_min <= channel_width_approx <= self.params.width_pct_max)
+            else:
+                # --- 线性模式下的验证逻辑 (保持原有逻辑) ---
+                upper = getattr(channel_state, 'upper_today', None)
+                lower = getattr(channel_state, 'lower_today', None)
+                mid = getattr(channel_state, 'mid_today', None)
+
+                if upper is None or lower is None or mid is None or float(mid) <= 0:
+                    return False
+
+                width_pct = (float(upper) - float(lower)) / float(mid)
+                return (self.params.width_pct_min <= width_pct <= self.params.width_pct_max)
         except Exception:
             return False
 
