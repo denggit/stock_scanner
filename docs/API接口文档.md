@@ -63,10 +63,6 @@ GET /api/stock/{code}
 - `start_date` (string, optional): 开始日期，格式 `YYYY-MM-DD`
 - `end_date` (string, optional): 结束日期，格式 `YYYY-MM-DD`
 - `ma_periods` (array, optional): 移动平均线周期列表，如 `[5, 10, 20]`
-- `adjust` (string, optional): 复权类型，默认 `3`
-  - `1`: 后复权
-  - `2`: 前复权
-  - `3`: 不复权
 
 **请求示例**:
 
@@ -76,9 +72,6 @@ curl "http://localhost:8000/api/stock/000001"
 
 # 带参数的请求
 curl "http://localhost:8000/api/stock/000001?period=daily&start_date=2024-01-01&end_date=2024-12-31&ma_periods=5&ma_periods=20"
-
-# 带复权参数的请求
-curl "http://localhost:8000/api/stock/000001?period=daily&start_date=2024-01-01&end_date=2024-12-31&adjust=1"
 ```
 
 **成功响应** (200):

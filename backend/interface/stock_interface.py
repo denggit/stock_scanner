@@ -27,11 +27,10 @@ async def get_stock_data(
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         ma_periods: Optional[List[int]] = None,
-        adjust: str = Query('3', enum=['1', '2', '3'], description="复权类型：1-后复权，2-前复权，3-不复权"),
 ):
     """获取股票数据"""
     logger.info(
-        f"API call: get_stock_data - code: {code}, period: {period}, start_date: {start_date}, end_date: {end_date}, ma_periods: {ma_periods}, adjust: {adjust}")
+        f"API call: get_stock_data - code: {code}, period: {period}, start_date: {start_date}, end_date: {end_date}, ma_periods: {ma_periods}")
     try:
         # 如果没有指定日期，默认获取最近一年的数据
         if not end_date:
@@ -46,8 +45,7 @@ async def get_stock_data(
             period=period,
             start_date=start_date,
             end_date=end_date,
-            ma_periods=ma_periods,
-            adjust=adjust
+            ma_periods=ma_periods
         )
         logger.info(f"stock_service.get_stock_data returned: {type(data)}")
 

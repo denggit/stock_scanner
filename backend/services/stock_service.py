@@ -30,7 +30,6 @@ class StockService:
             start_date: Optional[str] = None,
             end_date: Optional[str] = None,
             ma_periods: Optional[List[int]] = None,
-            adjust: str = '3',
     ) -> List[Dict[str, Any]]:
         """获取股票数据，考虑均线计算需要的额外数据"""
         try:
@@ -55,7 +54,6 @@ class StockService:
                 start_date=start_date,
                 end_date=end_date,
                 period=period,
-                adjust=adjust,
             )
 
             if df.empty:
