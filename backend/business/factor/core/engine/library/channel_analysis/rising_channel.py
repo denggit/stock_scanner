@@ -118,7 +118,16 @@ class StandardChannelStrategy(ChannelCalculationStrategy):
         window_df_log = df_log[df_log['trade_date'] >= anchor_date]
         
         # 转换回原始价格空间的锚点价格
-        anchor_price = np.exp(anchor_price_log) if use_logarithm else anchor_price_log
+        if use_logarithm:
+            # 防止数值溢出
+            if anchor_price_log > 700:  # np.log(1e304) ≈ 700
+                anchor_price = float('inf')
+            elif anchor_price_log < -700:  # np.log(1e-304) ≈ -700
+                anchor_price = 0.0
+            else:
+                anchor_price = np.exp(anchor_price_log)
+        else:
+            anchor_price = anchor_price_log
 
         # 5. 回归计算（在对数空间中进行）
         beta, sigma, r2 = self._calculate_regression(window_df_log, anchor_date, use_logarithm)
@@ -160,7 +169,11 @@ class StandardChannelStrategy(ChannelCalculationStrategy):
             )
 
         # 10. 设置其他字段
-        state.cumulative_gain = (current_close - anchor_price) / anchor_price
+        # 防止除零和无效值
+        if anchor_price and anchor_price > 0 and not np.isinf(anchor_price):
+            state.cumulative_gain = (current_close - anchor_price) / anchor_price
+        else:
+            state.cumulative_gain = None
         state.r2 = r2
 
         return ChannelCalculationResult(
@@ -294,7 +307,9 @@ class HistoryCalculationTemplate:
             if result.anchor_date is not None:
                 # 计算累计涨幅（如果有anchor_price）
                 cumulative_gain = None
-                if result.anchor_price is not None and result.anchor_price > 0:
+                if (result.anchor_price is not None and 
+                    result.anchor_price > 0 and 
+                    not np.isinf(result.anchor_price)):
                     cumulative_gain = (current_close - result.anchor_price) / result.anchor_price
                 base_record.update({
                     'anchor_date': result.anchor_date,
@@ -502,7 +517,9 @@ class AscendingChannelRegression:
             else:
                 # 构造一个最小可用状态并标记为 OTHER
                 cumulative_gain = None
-                if result.anchor_price is not None and result.anchor_price > 0:
+                if (result.anchor_price is not None and 
+                    result.anchor_price > 0 and 
+                    not np.isinf(result.anchor_price)):
                     cumulative_gain = (current_close - result.anchor_price) / result.anchor_price
                 state = ChannelState(
                     anchor_date=result.anchor_date, anchor_price=result.anchor_price,
@@ -611,7 +628,14 @@ class AscendingChannelRegression:
         beta, sigma, r2 = self._calculate_regression(self.state.window_df, self.state.anchor_date, self.logarithm)
         self.state.update_channel_boundaries(beta, sigma, self.k, self.logarithm)
         self.state.r2 = r2  # 更新r2字段
-        self.state.cumulative_gain = (bar['close'] - self.state.anchor_price) / self.state.anchor_price
+        
+        # 防止除零和无效值
+        if (self.state.anchor_price is not None and 
+            self.state.anchor_price > 0 and 
+            not np.isinf(self.state.anchor_price)):
+            self.state.cumulative_gain = (bar['close'] - self.state.anchor_price) / self.state.anchor_price
+        else:
+            self.state.cumulative_gain = None
 
         # 基于当日价格的三态判定（即时）
         if bar['close'] > self.state.upper_today:

@@ -760,42 +760,39 @@ class RisingChannelStrategy(BaseStrategy):
             通道算法参数字典
         """
         try:
-            # 从通道分析器管理器获取实际使用的算法参数
-            if hasattr(self, 'channel_manager') and self.channel_manager is not None:
-                analyzer = self.channel_manager.get_analyzer()
-                if hasattr(analyzer, '_analyzer') and analyzer._analyzer is not None:
-                    # 从真实的AscendingChannelRegression实例获取参数
-                    params = analyzer._analyzer._get_config_dict()
-                    # 添加数据预处理参数
-                    params['adjust'] = getattr(self.params, 'adjust', 1)
-                    params['logarithm'] = getattr(self.params, 'logarithm', False)
-                    return params
-
-            # 如果无法从管理器获取，直接创建AscendingChannelRegression实例
-            from backend.business.factor.core.engine.library.channel_analysis.rising_channel import \
-                AscendingChannelRegression
-            temp_analyzer = AscendingChannelRegression()
-            params = temp_analyzer._get_config_dict()
-            # 添加数据预处理参数
-            params['adjust'] = getattr(self.params, 'adjust', 1)
-            params['logarithm'] = getattr(self.params, 'logarithm', False)
+            # 直接从策略参数中提取通道算法参数
+            # 这样可以确保使用正确的参数值，而不是依赖默认值
+            params = {
+                'k': getattr(self.params, 'k', 2.0),
+                'L_max': getattr(self.params, 'L_max', 120),
+                'delta_cut': getattr(self.params, 'delta_cut', 5),
+                'pivot_m': getattr(self.params, 'pivot_m', 3),
+                'min_data_points': getattr(self.params, 'min_data_points', 60),
+                'R2_min': getattr(self.params, 'R2_min', 0.20),
+                'width_pct_min': getattr(self.params, 'width_pct_min', 0.04),
+                'width_pct_max': getattr(self.params, 'width_pct_max', 0.12),
+                'adjust': getattr(self.params, 'adjust', 1),
+                'logarithm': getattr(self.params, 'logarithm', True),  # 修改默认值为True，与配置一致
+            }
+            
+            self.logger.info(f"从策略参数提取通道算法参数: {params}")
             return params
 
         except Exception as e:
-            self.logger.warning(f"无法获取通道算法参数，使用默认值: {e}")
+            self.logger.warning(f"无法从策略参数提取通道算法参数，使用默认值: {e}")
 
-            # 回退到硬编码的算法参数（仅保留必要项）
+            # 回退到硬编码的算法参数（与配置一致）
             return {
                 'k': 2.0,
                 'L_max': 120,
                 'delta_cut': 5,
                 'pivot_m': 3,
                 'min_data_points': 60,
-                'R2_min': 0.20,
-                'width_pct_min': 0.04,
-                'width_pct_max': 0.12,
-                'adjust': getattr(self.params, 'adjust', 1),
-                'logarithm': getattr(self.params, 'logarithm', False),
+                'R2_min': 0.70,  # 与配置一致
+                'width_pct_min': 0.05,  # 与配置一致
+                'width_pct_max': 0.12,  # 与配置一致
+                'adjust': 1,  # 后复权
+                'logarithm': True,  # 使用对数计算，与配置一致
             }
 
     def _should_sell_stock(self, stock_code: str, channel_state, stock_data: Optional[pd.DataFrame] = None) -> bool:
