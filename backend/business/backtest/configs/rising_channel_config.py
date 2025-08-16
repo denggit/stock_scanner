@@ -102,10 +102,6 @@ class RisingChannelConfig:
         'R2_range': None,  # 参数优化时可传入 [R2_min, R2_max]，两者均可为 None
         'width_pct_min': 0.05,  # 最小通道宽度
         'width_pct_max': 0.12,  # 最大通道宽度
-        
-        # 数据预处理参数
-        'adjust': 1,  # 复权类型：1-后复权，2-前复权，3-不复权
-        'logarithm': False,  # 是否使用对数价格计算通道
     }
 
     # ==================== 参数优化范围 ====================

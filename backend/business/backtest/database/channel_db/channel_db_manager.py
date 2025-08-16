@@ -60,8 +60,6 @@ class ParameterHasher:
         for k, v in sorted(params.items()):
             if isinstance(v, float):
                 parts.append(f"{k}_{v:.3f}")
-            elif isinstance(v, bool):
-                parts.append(f"{k}_{str(v).lower()}")
             else:
                 parts.append(f"{k}_{v}")
         return "_".join(parts)

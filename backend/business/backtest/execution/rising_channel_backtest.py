@@ -101,8 +101,6 @@ class RisingChannelBacktestRunner(BaseBacktestRunner):
         self.logger.info(f"  最小通道宽度: {self.strategy_params.get('width_pct_min')}")
         self.logger.info(f"  最大通道宽度: {self.strategy_params.get('width_pct_max')}")
         # self.logger.info(f"  距离下沿最大百分比: {self.strategy_params.get('max_distance_from_lower')}%")  # 已移除 - 新策略使用几何位置判断
-        self.logger.info(f"  复权类型: {self.strategy_params.get('adjust')} (1-后复权, 2-前复权, 3-不复权)")
-        self.logger.info(f"  使用对数价格: {self.strategy_params.get('logarithm')}")
         self.logger.info(f"  启用日志: {self.strategy_params.get('enable_logging')}")
         self.logger.info("=" * 60)
 
