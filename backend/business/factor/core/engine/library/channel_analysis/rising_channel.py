@@ -81,26 +81,8 @@ class StandardChannelStrategy(ChannelCalculationStrategy):
                 break_reason="insufficient_data"
             )
 
-        # 2. 对数转换处理
-        use_logarithm = config.get('logarithm', False)
-        if use_logarithm:
-            # 检查价格是否为正数
-            if (df['close'] <= 0).any():
-                return ChannelCalculationResult(
-                    is_valid=False, anchor_date=None, anchor_price=None,
-                    window_df=pd.DataFrame(), beta=None, sigma=None, r2=None, state=None,
-                    break_reason="invalid_price_for_log"
-                )
-            # 创建对数价格副本
-            df_log = df.copy()
-            df_log['close'] = np.log(df_log['close'])
-            current_close_log = np.log(current_close)
-        else:
-            df_log = df
-            current_close_log = current_close
-
-        # 3. 全局pivot_low锚点查找
-        search_df = df_log.tail(config['L_max'])
+        # 2. 全局pivot_low锚点查找
+        search_df = df.tail(config['L_max'])
         pivots = self.pivot_detector.get_anchor_candidates(search_df, n_candidates=20)
         today = search_df['trade_date'].iloc[-1]
         valid_pivots = [(d, p) for d, p in pivots if (today - pd.to_datetime(d)).days >= config['min_data_points']]
@@ -112,37 +94,32 @@ class StandardChannelStrategy(ChannelCalculationStrategy):
                 break_reason="no_valid_anchor"
             )
 
-        # 4. 选择最早最低锚点
-        anchor_date, anchor_price_log = min(valid_pivots, key=lambda x: x[1])
+        # 3. 选择最早最低锚点
+        anchor_date, anchor_price = min(valid_pivots, key=lambda x: x[1])
         anchor_date = pd.to_datetime(anchor_date)
-        window_df_log = df_log[df_log['trade_date'] >= anchor_date]
-        
-        # 转换回原始价格空间的锚点价格
-        anchor_price = np.exp(anchor_price_log) if use_logarithm else anchor_price_log
+        window_df = df[df['trade_date'] >= anchor_date]
 
-        # 5. 回归计算（在对数空间中进行）
-        beta, sigma, r2 = self._calculate_regression(window_df_log, anchor_date, use_logarithm)
+        # 4. 回归计算
+        beta, sigma, r2 = self._calculate_regression(window_df, anchor_date)
 
-        # 6. 回归有效性检查（移除斜率为负的丢弃逻辑）
+        # 5. 回归有效性检查（移除斜率为负的丢弃逻辑）
         if beta is None or r2 < config['R2_min']:
             return ChannelCalculationResult(
                 is_valid=False, anchor_date=anchor_date, anchor_price=anchor_price,
-                window_df=window_df_log, beta=beta, sigma=sigma, r2=r2, state=None,
+                window_df=window_df, beta=beta, sigma=sigma, r2=r2, state=None,
                 break_reason="invalid_regression"
             )
 
-        # 7. 构建通道状态
+        # 6. 构建通道状态
         state = ChannelState(
-            anchor_date=anchor_date, anchor_price=anchor_price, window_df=window_df_log,
+            anchor_date=anchor_date, anchor_price=anchor_price, window_df=window_df,
             beta=beta, sigma=sigma, last_update=current_date,
             mid_today=0.0, upper_today=0.0, lower_today=0.0,
             mid_tomorrow=0.0, upper_tomorrow=0.0, lower_tomorrow=0.0
         )
-        
-        # 更新通道边界（考虑对数空间）
-        state.update_channel_boundaries(beta, sigma, config['k'], use_logarithm)
+        state.update_channel_boundaries(beta, sigma, config['k'])
 
-        # 8. 基于当日价格的三态判定
+        # 基于当日价格的三态判定
         if current_close > state.upper_today:
             state.channel_status = ChannelStatus.BREAKOUT
         elif current_close < state.lower_today:
@@ -150,36 +127,30 @@ class StandardChannelStrategy(ChannelCalculationStrategy):
         else:
             state.channel_status = ChannelStatus.NORMAL
 
-        # 9. 通道宽度检查（保持：宽度无效则记为无效，但带回已计算状态与边界）
+        # 7. 通道宽度检查（保持：宽度无效则记为无效，但带回已计算状态与边界）
         width_pct = (state.upper_today - state.lower_today) / state.mid_today if state.mid_today else None
         if width_pct is None or width_pct < config['width_pct_min'] or width_pct > config['width_pct_max']:
             return ChannelCalculationResult(
                 is_valid=False, anchor_date=anchor_date, anchor_price=anchor_price,
-                window_df=window_df_log, beta=beta, sigma=sigma, r2=r2, state=state,
+                window_df=window_df, beta=beta, sigma=sigma, r2=r2, state=state,
                 break_reason="invalid_width"
             )
 
-        # 10. 设置其他字段
+        # 8. 设置其他字段
         state.cumulative_gain = (current_close - anchor_price) / anchor_price
         state.r2 = r2
 
         return ChannelCalculationResult(
             is_valid=True, anchor_date=anchor_date, anchor_price=anchor_price,
-            window_df=window_df_log, beta=beta, sigma=sigma, r2=r2, state=state
+            window_df=window_df, beta=beta, sigma=sigma, r2=r2, state=state
         )
 
-    def _calculate_regression(self, df: pd.DataFrame, anchor_date: pd.Timestamp, use_logarithm: bool = False):
+    def _calculate_regression(self, df: pd.DataFrame, anchor_date: pd.Timestamp):
         """计算线性回归参数，返回(beta, sigma, r2)"""
         dates = pd.to_datetime(df['trade_date'])
         anchor_date = pd.to_datetime(anchor_date)
         days_since_anchor = (dates - anchor_date).dt.days
-        
-        # 如果已经在对数空间，直接使用；否则根据use_logarithm决定是否转换
-        if use_logarithm and not np.allclose(df['close'].values, np.log(df['close'].values)):
-            # 检查是否已经是对数价格
-            prices = np.log(df['close'].values)
-        else:
-            prices = df['close'].values
+        prices = df['close'].values
 
         if len(days_since_anchor) < 2 or np.std(days_since_anchor) == 0 or np.std(prices) == 0:
             return None, None, None
@@ -203,18 +174,13 @@ class HistoryCalculationTemplate:
         self.config = config
 
     def calculate_history(self, df: pd.DataFrame, min_window_size: int,
-                          step_days: int = 1, logarithm: Optional[bool] = None) -> pd.DataFrame:
+                          step_days: int = 1) -> pd.DataFrame:
         """模板方法：计算历史通道数据"""
         # 预处理
         df = self._preprocess_data(df, min_window_size)
 
         # 初始化结果容器
         history_data = []
-
-        # 获取配置，支持动态对数参数
-        config = self.config.copy()
-        if logarithm is not None:
-            config['logarithm'] = logarithm
 
         # 抑制日志
         with self._suppress_logs():
@@ -225,7 +191,7 @@ class HistoryCalculationTemplate:
                 current_close = current_df.iloc[-1]['close']
 
                 # 使用策略计算通道
-                result = self.strategy.calculate_for_date(current_df, current_date, current_close, config)
+                result = self.strategy.calculate_for_date(current_df, current_date, current_close, self.config)
 
                 # 构建记录
                 record = self._build_record_from_result(result, current_date, current_close)
@@ -417,8 +383,6 @@ class AscendingChannelRegression:
         self.R2_min = params.get('R2_min', config_section.get('R2_min', 0.20))
         self.width_pct_min = params.get('width_pct_min', config_section.get('width_pct_min', 0.04))
         self.width_pct_max = params.get('width_pct_max', config_section.get('width_pct_max', 0.12))
-        # 添加对数参数支持
-        self.logarithm = params.get('logarithm', config_section.get('logarithm', False))
 
     def _get_config_dict(self) -> Dict[str, Any]:
         """获取配置字典"""
@@ -430,8 +394,7 @@ class AscendingChannelRegression:
             'min_data_points': self.min_data_points,
             'R2_min': self.R2_min,
             'width_pct_min': self.width_pct_min,
-            'width_pct_max': self.width_pct_max,
-            'logarithm': self.logarithm
+            'width_pct_max': self.width_pct_max
         }
 
     def _load_config(self, config_path: Optional[str]) -> Dict[str, Any]:
@@ -459,12 +422,11 @@ class AscendingChannelRegression:
                 'min_data_points': 60,
                 'R2_min': 0.20,
                 'width_pct_min': 0.04,
-                'width_pct_max': 0.15,
-                'logarithm': False
+                'width_pct_max': 0.15
             }
         }
 
-    def fit_channel(self, df: pd.DataFrame, logarithm: Optional[bool] = None) -> ChannelState:
+    def fit_channel(self, df: pd.DataFrame) -> ChannelState:
         """
         拟合上升通道（单点计算）
         
@@ -475,7 +437,6 @@ class AscendingChannelRegression:
         
         Args:
             df (pd.DataFrame): 股票数据
-            logarithm (Optional[bool]): 是否使用对数空间计算，None表示使用默认配置
             
         Returns:
             ChannelState: 通道状态对象
@@ -486,13 +447,8 @@ class AscendingChannelRegression:
         current_date = df.iloc[-1]['trade_date']
         current_close = df.iloc[-1]['close']
 
-        # 获取配置，支持动态对数参数
-        config = self._get_config_dict()
-        if logarithm is not None:
-            config['logarithm'] = logarithm
-
         # 使用策略计算
-        result = self.strategy.calculate_for_date(df, current_date, current_close, config)
+        result = self.strategy.calculate_for_date(df, current_date, current_close, self._get_config_dict())
 
         if not result.is_valid:
             # 处理无效结果
@@ -608,8 +564,8 @@ class AscendingChannelRegression:
         if len(self.state.window_df) > self.L_max:
             self._slide_window()
 
-        beta, sigma, r2 = self._calculate_regression(self.state.window_df, self.state.anchor_date, self.logarithm)
-        self.state.update_channel_boundaries(beta, sigma, self.k, self.logarithm)
+        beta, sigma, r2 = self._calculate_regression(self.state.window_df, self.state.anchor_date)
+        self.state.update_channel_boundaries(beta, sigma, self.k)
         self.state.r2 = r2  # 更新r2字段
         self.state.cumulative_gain = (bar['close'] - self.state.anchor_price) / self.state.anchor_price
 
@@ -663,11 +619,11 @@ class AscendingChannelRegression:
             self.state.window_df['trade_date'] >= new_anchor_date
             ].reset_index(drop=True)
 
-        beta, sigma, r2 = self._calculate_regression(self.state.window_df, new_anchor_date, self.logarithm)
+        beta, sigma, r2 = self._calculate_regression(self.state.window_df, new_anchor_date)
         self.state.beta = beta
         self.state.sigma = sigma
         self.state.r2 = r2  # 更新r2字段
-        self.state.update_channel_boundaries(beta, sigma, self.k, self.logarithm)
+        self.state.update_channel_boundaries(beta, sigma, self.k)
         self.state.reset_break_counters()
         self.state.reanchor_fail_up = 0
         self.state.reanchor_fail_down = 0

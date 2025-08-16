@@ -24,9 +24,6 @@ ascending_channel:
   # 通道宽度上限，超过此视为过宽
   width_pct_max: 0.12
   
-  # 是否使用对数空间计算（新增参数）
-  logarithm: false
-  
   # 日志级别
   log_level: "INFO"
   
