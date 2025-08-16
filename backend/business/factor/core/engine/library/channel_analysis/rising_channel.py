@@ -289,7 +289,7 @@ class HistoryCalculationTemplate:
                     # 计算波动率
                     if result.sigma and result.state.mid_today and result.state.mid_today > 0:
                         base_record['volatility'] = result.sigma / result.state.mid_today
-
+                
                 # 状态判定：根据是否有state和break_reason来确定状态
                 if result.state is not None:
                     # 有state但质量检查不通过，需要进一步判断
@@ -331,7 +331,7 @@ class HistoryCalculationTemplate:
                 'slope_deg': np.degrees(np.arctan(result.beta)) if result.beta else None,
                 'volatility': result.sigma / state.mid_today if result.sigma and state.mid_today and state.mid_today > 0 else None
             })
-
+            
             # 根据斜率方向确定状态
             if result.beta is not None and result.beta > 0:
                 # 斜率为正，使用原有的状态判定逻辑
@@ -476,8 +476,8 @@ class AscendingChannelRegression:
         # 有效结果，进行状态判定
         return self._determine_channel_status(result.state, current_close, result.r2, None)
 
-    def _determine_channel_status(self, state: ChannelState, current_close: float,
-                                  r2: Optional[float], break_reason: Optional[str]) -> ChannelState:
+    def _determine_channel_status(self, state: ChannelState, current_close: float, 
+                                 r2: Optional[float], break_reason: Optional[str]) -> ChannelState:
         """
         确定通道状态
         
@@ -496,21 +496,21 @@ class AscendingChannelRegression:
             ChannelState: 更新后的通道状态对象
         """
         config = self._get_config_dict()
-
+        
         # 首先检查斜率方向
         if state.beta is None or state.beta <= 0:
             # 斜率不为正，标记为OTHER状态
             state.channel_status = ChannelStatus.OTHER
             return state
-
+        
         # 质量检查：检查R²和通道宽度
         quality_check_passed = self._check_channel_quality(state, r2, config)
-
+        
         if not quality_check_passed:
             # 质量检查不通过，但趋势向上，标记为弱上升通道
             state.channel_status = ChannelStatus.ASCENDING_WEAK
             return state
-
+        
         # 质量检查通过，根据价格位置判定状态
         if current_close > state.upper_today:
             state.channel_status = ChannelStatus.BREAKOUT
@@ -518,11 +518,11 @@ class AscendingChannelRegression:
             state.channel_status = ChannelStatus.BREAKDOWN
         else:
             state.channel_status = ChannelStatus.NORMAL
-
+            
         return state
 
-    def _check_channel_quality(self, state: ChannelState, r2: Optional[float],
-                               config: Dict[str, Any]) -> bool:
+    def _check_channel_quality(self, state: ChannelState, r2: Optional[float], 
+                              config: Dict[str, Any]) -> bool:
         """
         检查通道质量
         
@@ -539,7 +539,7 @@ class AscendingChannelRegression:
         # 检查R²
         if r2 is None or r2 < config['R2_min']:
             return False
-
+            
         # 检查通道宽度
         if state.mid_today and state.mid_today > 0:
             width_pct = (state.upper_today - state.lower_today) / state.mid_today
@@ -547,8 +547,17 @@ class AscendingChannelRegression:
                 return False
         else:
             return False
-
+            
         return True
+
+    def fit_channel_history(self, df: pd.DataFrame, min_window_size: int = 60) -> pd.DataFrame:
+        """计算历史上升通道数据（批量计算）"""
+        return self.history_calculator.calculate_history(df, min_window_size, step_days=1)
+
+    def fit_channel_history_optimized(self, df: pd.DataFrame, min_window_size: int = 60,
+                                      step_days: int = 1) -> pd.DataFrame:
+        """优化的历史通道数据计算（批量计算，可配置步长）"""
+        return self.history_calculator.calculate_history(df, min_window_size, step_days)
 
     # 保留原有的动态更新相关方法，确保向后兼容
     def update(self, state: ChannelState, bar: Dict[str, Any]) -> Dict[str, Any]:
@@ -598,6 +607,10 @@ class AscendingChannelRegression:
         # 仅基于窗口长度判断是否重锚
         return len(self.state.window_df) > self.L_max
 
+    def _check_beta_change(self) -> bool:
+        """检查斜率变化"""
+        return False
+
     def _reanchor(self) -> None:
         """执行重锚操作"""
         logger.info("开始重锚操作(pivot_low)")
@@ -646,6 +659,367 @@ class AscendingChannelRegression:
         elif (self.state.break_cnt_down >= self.break_days):
             self.state.channel_status = ChannelStatus.BREAKDOWN
             logger.debug("通道失效: 连续跌破下沿 → 标记为 BREAKDOWN")
+
+    # 向后兼容方法
+    def force_reanchor(self, state: ChannelState) -> ChannelState:
+        """强制重锚"""
+        self.state = state
+        self._reanchor()
+        return self.state
+
+    def get_channel_info(self, state: Optional[ChannelState] = None) -> Dict[str, Any]:
+        """获取通道信息"""
+        if state is None:
+            state = self.state
+        if state is None:
+            return {}
+        return state.to_dict()
+
+    # 增量更新方法保持不变
+    def update_channel_history_incremental(self, history_df: pd.DataFrame, new_data: pd.DataFrame) -> pd.DataFrame:
+        """增量更新历史通道数据"""
+        if history_df.empty:
+            raise ValueError("历史通道数据不能为空")
+
+        new_data = new_data.sort_values('trade_date').reset_index(drop=True)
+        new_data['trade_date'] = pd.to_datetime(new_data['trade_date'])
+
+        last_record = history_df.iloc[-1]
+
+        if pd.isna(last_record['beta']):
+            logger.warning("最后一条历史记录无效，无法进行增量更新")
+            return history_df
+
+        last_state = ChannelState(
+            anchor_date=pd.to_datetime(last_record['anchor_date']),
+            anchor_price=last_record['anchor_price'],
+            window_df=pd.DataFrame(),
+            beta=last_record['beta'],
+            sigma=last_record['sigma'],
+            mid_today=last_record['mid_today'],
+            upper_today=last_record['upper_today'],
+            lower_today=last_record['lower_today'],
+            mid_tomorrow=last_record['mid_tomorrow'],
+            upper_tomorrow=last_record['upper_tomorrow'],
+            lower_tomorrow=last_record['lower_tomorrow']
+        )
+
+        last_state.break_cnt_up = last_record['break_cnt_up']
+        last_state.break_cnt_down = last_record['break_cnt_down']
+        last_state.reanchor_fail_up = last_record['reanchor_fail_up']
+        last_state.reanchor_fail_down = last_record['reanchor_fail_down']
+        last_state.cumulative_gain = last_record['cumulative_gain']
+        last_state.channel_status = ChannelStatus(last_record['channel_status'])
+        last_state.last_update = pd.to_datetime(last_record['trade_date'])
+
+        window_size = last_record['window_size']
+        if pd.isna(window_size) or window_size <= 0:
+            logger.warning("无法重建窗口数据，window_size无效")
+            return history_df
+
+        new_history_data = []
+
+        import logging
+        original_level = logging.getLogger().level
+        logging.getLogger().setLevel(logging.ERROR)
+
+        try:
+            for _, row in new_data.iterrows():
+                try:
+                    new_bar = {
+                        'trade_date': row['trade_date'],
+                        'open': row['open'],
+                        'high': row['high'],
+                        'low': row['low'],
+                        'close': row['close'],
+                        'volume': row['volume']
+                    }
+
+                    updated_info = self.update(last_state, new_bar)
+                    last_state = self.state
+
+                    new_record = {
+                        'trade_date': row['trade_date'],
+                        'close': row['close'],
+                        'beta': last_state.beta,
+                        'sigma': last_state.sigma,
+                        'mid_today': last_state.mid_today,
+                        'upper_today': last_state.upper_today,
+                        'lower_today': last_state.lower_today,
+                        'mid_tomorrow': last_state.mid_tomorrow,
+                        'upper_tomorrow': last_state.upper_tomorrow,
+                        'lower_tomorrow': last_state.lower_tomorrow,
+                        'channel_status': last_state.channel_status.value,
+                        'anchor_date': last_state.anchor_date,
+                        'anchor_price': last_state.anchor_price,
+                        'break_cnt_up': last_state.break_cnt_up,
+                        'break_cnt_down': last_state.break_cnt_down,
+                        'reanchor_fail_up': last_state.reanchor_fail_up,
+                        'reanchor_fail_down': last_state.reanchor_fail_down,
+                        'cumulative_gain': last_state.cumulative_gain,
+                        'window_size': len(last_state.window_df),
+                        'days_since_anchor': (row['trade_date'] - last_state.anchor_date).days
+                    }
+
+                    new_history_data.append(new_record)
+
+                except Exception as e:
+                    logger.warning(f"增量更新时点 {row['trade_date']} 失败: {e}")
+
+                    base_record = {
+                        'trade_date': row['trade_date'],
+                        'close': row['close'],
+                        'beta': None,
+                        'sigma': None,
+                        'mid_today': None,
+                        'upper_today': None,
+                        'lower_today': None,
+                        'mid_tomorrow': None,
+                        'upper_tomorrow': None,
+                        'lower_tomorrow': None,
+                        'channel_status': None,
+                        'anchor_date': None,
+                        'anchor_price': None,
+                        'break_cnt_up': None,
+                        'break_cnt_down': None,
+                        'reanchor_fail_up': None,
+                        'reanchor_fail_down': None,
+                        'cumulative_gain': None,
+                        'window_size': None,
+                        'days_since_anchor': None
+                    }
+
+                    new_history_data.append(base_record)
+                    last_state = None
+                    continue
+        finally:
+            logging.getLogger().setLevel(original_level)
+
+        if new_history_data:
+            new_history_df = pd.DataFrame(new_history_data)
+            updated_history_df = pd.concat([history_df, new_history_df], ignore_index=True)
+            logger.info(f"增量更新完成: 添加了 {len(new_history_data)} 条新记录")
+            return updated_history_df
+        else:
+            logger.warning("增量更新失败: 没有成功添加新记录")
+            return history_df
+
+    def update_channel_history_with_state(self, history_df: pd.DataFrame,
+                                          last_state: ChannelState,
+                                          new_data: pd.DataFrame) -> pd.DataFrame:
+        """基于完整状态对象的增量更新"""
+        if history_df.empty:
+            raise ValueError("历史通道数据不能为空")
+
+        if last_state is None:
+            raise ValueError("最后状态对象不能为空")
+
+        new_data = new_data.sort_values('trade_date').reset_index(drop=True)
+        new_data['trade_date'] = pd.to_datetime(new_data['trade_date'])
+
+        new_history_data = []
+        current_state = last_state
+
+        for _, row in new_data.iterrows():
+            try:
+                new_bar = {
+                    'trade_date': row['trade_date'],
+                    'open': row['open'],
+                    'high': row['high'],
+                    'low': row['low'],
+                    'close': row['close'],
+                    'volume': row['volume']
+                }
+
+                updated_info = self.update(current_state, new_bar)
+                current_state = self.state
+
+                new_record = {
+                    'trade_date': row['trade_date'],
+                    'close': row['close'],
+                    'beta': current_state.beta,
+                    'sigma': current_state.sigma,
+                    'mid_today': current_state.mid_today,
+                    'upper_today': current_state.upper_today,
+                    'lower_today': current_state.lower_today,
+                    'mid_tomorrow': current_state.mid_tomorrow,
+                    'upper_tomorrow': current_state.upper_tomorrow,
+                    'lower_tomorrow': current_state.lower_tomorrow,
+                    'channel_status': current_state.channel_status.value,
+                    'anchor_date': current_state.anchor_date,
+                    'anchor_price': current_state.anchor_price,
+                    'break_cnt_up': current_state.break_cnt_up,
+                    'break_cnt_down': current_state.break_cnt_down,
+                    'reanchor_fail_up': current_state.reanchor_fail_up,
+                    'reanchor_fail_down': current_state.reanchor_fail_down,
+                    'cumulative_gain': current_state.cumulative_gain,
+                    'window_size': len(current_state.window_df),
+                    'days_since_anchor': (row['trade_date'] - current_state.anchor_date).days
+                }
+
+                new_history_data.append(new_record)
+
+            except Exception as e:
+                logger.warning(f"增量更新时点 {row['trade_date']} 失败: {e}")
+                continue
+
+        if new_history_data:
+            new_history_df = pd.DataFrame(new_history_data)
+            updated_history_df = pd.concat([history_df, new_history_df], ignore_index=True)
+            logger.info(f"增量更新完成: 添加了 {len(new_history_data)} 条新记录")
+            return updated_history_df
+        else:
+            logger.warning("增量更新失败: 没有成功添加新记录")
+            return history_df
+
+    def update_channel_history_incremental_improved(self, history_df: pd.DataFrame,
+                                                    original_df: pd.DataFrame,
+                                                    new_data: pd.DataFrame) -> pd.DataFrame:
+        """改进的增量更新历史通道数据"""
+        if history_df.empty:
+            raise ValueError("历史通道数据不能为空")
+
+        original_df = original_df.sort_values('trade_date').reset_index(drop=True)
+        original_df['trade_date'] = pd.to_datetime(original_df['trade_date'])
+
+        new_data = new_data.sort_values('trade_date').reset_index(drop=True)
+        new_data['trade_date'] = pd.to_datetime(new_data['trade_date'])
+
+        last_record = history_df.iloc[-1]
+
+        if pd.isna(last_record['beta']):
+            logger.warning("最后一条历史记录无效，无法进行增量更新")
+            return history_df
+
+        last_state = ChannelState(
+            anchor_date=pd.to_datetime(last_record['anchor_date']),
+            anchor_price=last_record['anchor_price'],
+            window_df=pd.DataFrame(),
+            beta=last_record['beta'],
+            sigma=last_record['sigma'],
+            mid_today=last_record['mid_today'],
+            upper_today=last_record['upper_today'],
+            lower_today=last_record['lower_today'],
+            mid_tomorrow=last_record['mid_tomorrow'],
+            upper_tomorrow=last_record['upper_tomorrow'],
+            lower_tomorrow=last_record['lower_tomorrow']
+        )
+
+        last_state.break_cnt_up = last_record['break_cnt_up']
+        last_state.break_cnt_down = last_record['break_cnt_down']
+        last_state.reanchor_fail_up = last_record['reanchor_fail_up']
+        last_state.reanchor_fail_down = last_record['reanchor_fail_down']
+        last_state.cumulative_gain = last_record['cumulative_gain']
+        last_state.channel_status = ChannelStatus(last_record['channel_status'])
+        last_state.last_update = pd.to_datetime(last_record['trade_date'])
+
+        window_size = last_record['window_size']
+        if pd.isna(window_size) or window_size <= 0:
+            logger.warning("无法重建窗口数据，window_size无效")
+            return history_df
+
+        last_history_date = last_record['trade_date']
+        last_history_idx = original_df[original_df['trade_date'] == last_history_date].index
+
+        if len(last_history_idx) == 0:
+            logger.warning(f"无法在原始数据中找到历史记录日期: {last_history_date}")
+            return history_df
+
+        last_history_idx = last_history_idx[0]
+        start_idx = max(0, last_history_idx - window_size + 1)
+        window_df = original_df.iloc[start_idx:last_history_idx + 1]
+
+        if len(window_df) != window_size:
+            logger.warning(f"窗口大小不匹配: 期望 {window_size}, 实际 {len(window_df)}")
+            window_size = len(window_df)
+
+        last_state.window_df = window_df
+        new_history_data = []
+
+        import logging
+        original_level = logging.getLogger().level
+        logging.getLogger().setLevel(logging.ERROR)
+
+        try:
+            for _, row in new_data.iterrows():
+                try:
+                    new_bar = {
+                        'trade_date': row['trade_date'],
+                        'open': row['open'],
+                        'high': row['high'],
+                        'low': row['low'],
+                        'close': row['close'],
+                        'volume': row['volume']
+                    }
+
+                    updated_info = self.update(last_state, new_bar)
+                    last_state = self.state
+
+                    new_record = {
+                        'trade_date': row['trade_date'],
+                        'close': row['close'],
+                        'beta': last_state.beta,
+                        'sigma': last_state.sigma,
+                        'mid_today': last_state.mid_today,
+                        'upper_today': last_state.upper_today,
+                        'lower_today': last_state.lower_today,
+                        'mid_tomorrow': last_state.mid_tomorrow,
+                        'upper_tomorrow': last_state.upper_tomorrow,
+                        'lower_tomorrow': last_state.lower_tomorrow,
+                        'channel_status': last_state.channel_status.value,
+                        'anchor_date': last_state.anchor_date,
+                        'anchor_price': last_state.anchor_price,
+                        'break_cnt_up': last_state.break_cnt_up,
+                        'break_cnt_down': last_state.break_cnt_down,
+                        'reanchor_fail_up': last_state.reanchor_fail_up,
+                        'reanchor_fail_down': last_state.reanchor_fail_down,
+                        'cumulative_gain': last_state.cumulative_gain,
+                        'window_size': len(last_state.window_df),
+                        'days_since_anchor': (row['trade_date'] - last_state.anchor_date).days
+                    }
+
+                    new_history_data.append(new_record)
+
+                except Exception as e:
+                    logger.warning(f"增量更新时点 {row['trade_date']} 失败: {e}")
+
+                    base_record = {
+                        'trade_date': row['trade_date'],
+                        'close': row['close'],
+                        'beta': None,
+                        'sigma': None,
+                        'mid_today': None,
+                        'upper_today': None,
+                        'lower_today': None,
+                        'mid_tomorrow': None,
+                        'upper_tomorrow': None,
+                        'lower_tomorrow': None,
+                        'channel_status': None,
+                        'anchor_date': None,
+                        'anchor_price': None,
+                        'break_cnt_up': None,
+                        'break_cnt_down': None,
+                        'reanchor_fail_up': None,
+                        'reanchor_fail_down': None,
+                        'cumulative_gain': None,
+                        'window_size': None,
+                        'days_since_anchor': None
+                    }
+
+                    new_history_data.append(base_record)
+                    last_state = None
+                    continue
+        finally:
+            logging.getLogger().setLevel(original_level)
+
+        if new_history_data:
+            new_history_df = pd.DataFrame(new_history_data)
+            updated_history_df = pd.concat([history_df, new_history_df], ignore_index=True)
+            logger.info(f"改进增量更新完成: 添加了 {len(new_history_data)} 条新记录")
+            return updated_history_df
+        else:
+            logger.warning("改进增量更新失败: 没有成功添加新记录")
+            return history_df
 
 
 # 因子注册装饰器

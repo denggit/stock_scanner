@@ -6,7 +6,7 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -42,7 +42,7 @@ class DataUtils:
         """
         if len(data) < period:
             return pd.Series([np.nan] * len(data), index=data.index)
-
+        
         return data[column].rolling(window=period, min_periods=period).mean()
 
     @staticmethod
@@ -60,11 +60,11 @@ class DataUtils:
         """
         if len(data) < ma_period:
             return False
-
+        
         ma = DataUtils.calculate_moving_average(data, ma_period, price_column)
         if ma.empty or pd.isna(ma.iloc[-1]):
             return False
-
+        
         current_price = data[price_column].iloc[-1]
         return bool(current_price > ma.iloc[-1])
 
@@ -83,10 +83,10 @@ class DataUtils:
         """
         if len(data) < lookback_days:
             return False
-
+        
         recent_data = data[price_column].iloc[-lookback_days:]
         current_price = recent_data.iloc[-1]
-
+        
         # 检查当前价格是否在最近期间的最高价附近（允许1%的误差）
         max_price = recent_data.max()
         return bool(current_price >= max_price * 0.99)
@@ -106,30 +106,30 @@ class DataUtils:
         """
         if len(data) < long_period:
             return False
-
+        
         short_ma = DataUtils.calculate_moving_average(data, short_period)
         long_ma = DataUtils.calculate_moving_average(data, long_period)
-
+        
         if short_ma.empty or long_ma.empty:
             return False
-
+        
         # 短期均线在长期均线之上，且短期均线向上倾斜
         short_ma_current = short_ma.iloc[-1]
         long_ma_current = long_ma.iloc[-1]
-
+        
         if pd.isna(short_ma_current) or pd.isna(long_ma_current):
             return False
-
+        
         # 检查短期均线是否在长期均线之上
         if short_ma_current <= long_ma_current:
             return False
-
+        
         # 检查短期均线是否向上倾斜（最近3个值递增）
         if len(short_ma) >= 3:
             recent_short_ma = short_ma.iloc[-3:].dropna()
             if len(recent_short_ma) >= 3:
                 return bool(recent_short_ma.iloc[-1] > recent_short_ma.iloc[-2] > recent_short_ma.iloc[-3])
-
+        
         return False
 
     @staticmethod
@@ -147,17 +147,17 @@ class DataUtils:
         """
         if len(data) < lookback_days:
             return False
-
+        
         if 'volume' not in data.columns:
             return False
-
+        
         recent_volume = data['volume'].iloc[-lookback_days:]
         current_volume = recent_volume.iloc[-1]
         avg_volume = recent_volume.mean()
-
+        
         if avg_volume <= 0:
             return False
-
+        
         return bool(current_volume >= avg_volume * volume_threshold)
 
     @staticmethod
@@ -186,45 +186,45 @@ class DataUtils:
             List[str]: 通过预筛选的股票代码列表
         """
         filtered_stocks = []
-
+        
         for stock_code, data in stock_data_dict.items():
             try:
                 # 检查数据完整性
                 if len(data) < min_data_points:
                     continue
-
+                
                 # 检查是否有必要的列
                 required_columns = ['close', 'high', 'low']
                 if not all(col in data.columns for col in required_columns):
                     continue
-
+                
                 # 应用预筛选条件
                 conditions_met = 0
-
+                
                 # 条件1: 价格高于移动平均线
                 if DataUtils.check_price_above_ma(data, ma_period):
                     conditions_met += 1
-
+                
                 # 条件2: 最近创下阶段性新高
                 if DataUtils.check_recent_high(data, lookback_days):
                     conditions_met += 1
-
+                
                 # 条件3: 上升趋势强度
                 if DataUtils.check_uptrend_strength(data):
                     conditions_met += 1
-
+                
                 # 条件4: 成交量放大（可选条件）
                 if enable_volume_check and DataUtils.check_volume_surge(data, lookback_days, volume_threshold):
                     conditions_met += 1
-
+                
                 # 检查是否满足最小条件数量
                 if conditions_met >= min_conditions_met:
                     filtered_stocks.append(stock_code)
-
+                    
             except Exception as e:
                 logging.debug(f"预筛选股票 {stock_code} 时出错: {e}")
                 continue
-
+        
         return filtered_stocks
 
     @staticmethod
@@ -233,7 +233,7 @@ class DataUtils:
             start_date: str = None,
             end_date: str = None,
             period: str = "daily",
-            adjust: str = "1",
+            adjust: str = "3",
             min_data_days: int = 60,
             max_stocks: Optional[int] = None,
             progress_callback: Optional[callable] = None
@@ -358,6 +358,192 @@ class DataUtils:
             raise ValueError("没有获取到任何有效的股票数据")
 
         return all_stock_data
+
+    @staticmethod
+    def get_stock_list_info(stock_pool: str = "no_st") -> pd.DataFrame:
+        """
+        获取股票列表信息
+        
+        Args:
+            stock_pool: 股票池名称
+            
+        Returns:
+            DataFrame: 股票列表信息
+        """
+        if StockDataFetcher is None:
+            raise ImportError("无法导入StockDataFetcher，请确保数据模块可用")
+
+        data_fetcher = StockDataFetcher()
+        return data_fetcher.get_stock_list(pool_name=stock_pool)
+
+    @staticmethod
+    def get_single_stock_data(
+            stock_code: str,
+            start_date: str = None,
+            end_date: str = None,
+            period: str = "daily",
+            adjust: str = "3"
+    ) -> pd.DataFrame:
+        """
+        获取单只股票的数据
+        
+        Args:
+            stock_code: 股票代码
+            start_date: 开始日期
+            end_date: 结束日期
+            period: 数据周期
+            adjust: 复权类型
+            
+        Returns:
+            DataFrame: 股票数据
+        """
+        if StockDataFetcher is None:
+            raise ImportError("无法导入StockDataFetcher，请确保数据模块可用")
+
+        data_fetcher = StockDataFetcher()
+
+        # 设置默认日期
+        if end_date is None:
+            end_date = datetime.now().strftime("%Y-%m-%d")
+
+        if start_date is None:
+            start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+
+        # 获取数据
+        stock_data = data_fetcher.fetch_stock_data(
+            code=stock_code,
+            period=period,
+            start_date=start_date,
+            end_date=end_date,
+            adjust=adjust
+        )
+
+        # 数据验证和清理
+        if not stock_data.empty:
+            validation_result = DataUtils.validate_data(stock_data)
+            if validation_result["is_valid"]:
+                return DataUtils.clean_data(stock_data)
+            else:
+                logging.warning(f"股票 {stock_code} 数据验证失败: {validation_result['errors']}")
+
+        return stock_data
+
+    @staticmethod
+    def filter_stocks_by_condition(
+            stock_list: pd.DataFrame,
+            min_amount: Optional[float] = None,
+            min_volume: Optional[float] = None,
+            start_date: str = None,
+            end_date: str = None
+    ) -> pd.DataFrame:
+        """
+        根据条件过滤股票
+        
+        Args:
+            stock_list: 股票列表
+            min_amount: 最小成交额
+            min_volume: 最小成交量
+            start_date: 开始日期
+            end_date: 结束日期
+            
+        Returns:
+            DataFrame: 过滤后的股票列表
+        """
+        if StockDataFetcher is None:
+            raise ImportError("无法导入StockDataFetcher，请确保数据模块可用")
+
+        if stock_list.empty:
+            return stock_list
+
+        # 设置默认日期
+        if end_date is None:
+            end_date = datetime.now().strftime("%Y-%m-%d")
+
+        if start_date is None:
+            start_date = (datetime.now() - timedelta(days=20)).strftime("%Y-%m-%d")
+
+        data_fetcher = StockDataFetcher()
+        filtered_stocks = []
+
+        for _, stock_info in stock_list.iterrows():
+            stock_code = stock_info['code']
+
+            try:
+                # 获取最近的数据
+                stock_data = data_fetcher.fetch_stock_data(
+                    code=stock_code,
+                    start_date=start_date,
+                    end_date=end_date
+                )
+
+                if stock_data.empty:
+                    continue
+
+                # 检查成交额条件
+                if min_amount is not None:
+                    avg_amount = stock_data['amount'].mean()
+                    if avg_amount < min_amount:
+                        continue
+
+                # 检查成交量条件
+                if min_volume is not None:
+                    avg_volume = stock_data['volume'].mean()
+                    if avg_volume < min_volume:
+                        continue
+
+                filtered_stocks.append(stock_info)
+
+            except Exception as e:
+                logging.warning(f"检查股票 {stock_code} 条件失败: {e}")
+                continue
+
+        return pd.DataFrame(filtered_stocks)
+
+    @staticmethod
+    def create_sample_data(days: int = 252, start_price: float = 100.0,
+                           volatility: float = 0.02, trend: float = 0.001) -> pd.DataFrame:
+        """
+        创建示例数据
+        
+        Args:
+            days: 数据天数
+            start_price: 起始价格
+            volatility: 波动率
+            trend: 趋势
+            
+        Returns:
+            示例数据
+        """
+        # 生成日期序列
+        start_date = datetime(2023, 1, 1)
+        dates = [start_date + timedelta(days=i) for i in range(days)]
+
+        # 生成价格数据
+        np.random.seed(42)
+        returns = np.random.normal(trend, volatility, days)
+        prices = [start_price]
+
+        for i in range(1, days):
+            price = prices[-1] * (1 + returns[i])
+            prices.append(price)
+
+        # 生成OHLCV数据
+        data = []
+        for date, close in zip(dates, prices):
+            open_price = close * (1 + np.random.normal(0, 0.005))
+            high_price = max(open_price, close) * (1 + abs(np.random.normal(0, 0.01)))
+            low_price = min(open_price, close) * (1 - abs(np.random.normal(0, 0.01)))
+            volume = np.random.randint(1000000, 10000000)
+
+            data.append({
+                'open': open_price,
+                'high': high_price,
+                'low': low_price,
+                'close': close,
+                'volume': volume
+            })
+
+        return pd.DataFrame(data, index=dates)
 
     @staticmethod
     def validate_data(data: pd.DataFrame) -> Dict[str, Any]:
