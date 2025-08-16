@@ -19,9 +19,16 @@ from plotly.subplots import make_subplots
 from backend.utils.indicators import CalIndicators
 
 
-def fetch_stock_data(code: str, period: str = 'daily', start_date: str = None, end_date: str = None) -> tuple[
+def fetch_stock_data(code: str, period: str = 'daily', start_date: str = None, end_date: str = None, adjust: str = '3') -> tuple[
     pd.DataFrame, str]:
-    """从后端API获取股票数据，带上时间范围
+    """从后端API获取股票数据，带上时间范围和复权类型
+    
+    Args:
+        code: 股票代码
+        period: 数据周期
+        start_date: 开始日期
+        end_date: 结束日期
+        adjust: 复权类型，'1'表示后复权，'2'表示前复权，'3'表示不复权
     
     Returns:
         tuple: (DataFrame, error_message) - 如果成功返回(DataFrame, None)，如果失败返回(empty_DataFrame, error_message)
@@ -29,7 +36,7 @@ def fetch_stock_data(code: str, period: str = 'daily', start_date: str = None, e
     backend_url = os.getenv('BACKEND_URL')
     backend_port = os.getenv('BACKEND_PORT')
 
-    params = {'period': period}
+    params = {'period': period, 'adjust': adjust}
 
     if start_date and end_date:
         params['start_date'] = start_date
@@ -65,7 +72,7 @@ def fetch_stock_data(code: str, period: str = 'daily', start_date: str = None, e
 
 def plot_candlestick(df: pd.DataFrame, ma_periods: list, show_volume: bool = True, show_macd: bool = False,
                      show_ascending_channel: bool = False, ascending_channel_info: dict = None,
-                     start_date: str = None, end_date: str = None) -> go.Figure:
+                     start_date: str = None, end_date: str = None, adjust: str = '3') -> go.Figure:
     """绘制K线图和副图 - 支持拖动和缩放，新增上升通道支持"""
     # 多获取数据的df，用于计算均线
     df_extra = df.copy()
@@ -424,9 +431,13 @@ def plot_candlestick(df: pd.DataFrame, ma_periods: list, show_volume: bool = Tru
         )
 
     # 调整图表布局
+    # 根据复权类型设置标题
+    adjust_title_map = {'1': '后复权', '2': '前复权', '3': '不复权'}
+    adjust_title = adjust_title_map.get(adjust, '不复权')
+    
     fig.update_layout(
         title=dict(
-            text='K线图',
+            text=f'K线图 ({adjust_title})',
             x=0.5,
             font=dict(size=20, color=colors['text'])
         ),
@@ -670,6 +681,42 @@ def main():
         period = st.selectbox('数据周期', options=['daily', 'weekly', 'monthly'],
                               help="daily: 日线数据，weekly: 周线数据，monthly: 月线数据")
 
+        # 复权类型选择
+        adjust_options = {
+            '不复权': '3',
+            '后复权': '1', 
+            '前复权': '2'
+        }
+        adjust_display = st.selectbox('复权类型', options=list(adjust_options.keys()), 
+                                      help="不复权: 原始价格数据，后复权: 以最新价格为基准调整历史价格，前复权: 以最早价格为基准调整历史价格")
+        adjust = adjust_options[adjust_display]
+        
+        # 复权类型说明
+        with st.expander("📖 复权类型说明", expanded=False):
+            st.markdown("""
+            **复权类型说明：**
+            
+            **🔢 不复权 (原始数据)**
+            - 显示股票的真实历史价格
+            - 适合查看股票的实际涨跌幅度
+            - 分红、送股等事件会导致价格跳跃
+            
+            **📈 后复权 (推荐)**
+            - 以最新价格为基准调整历史价格
+            - 适合技术分析，价格连续性更好
+            - 消除了分红、送股等事件的影响
+            
+            **📉 前复权**
+            - 以最早价格为基准调整历史价格
+            - 适合查看长期趋势
+            - 历史价格相对稳定，但最新价格可能很高
+            
+            **💡 建议：**
+            - 技术分析推荐使用**后复权**
+            - 查看真实涨跌幅使用**不复权**
+            - 长期趋势分析可使用**前复权**
+            """)
+
         # 日期选择(默认值为一年前到今天)
         st.subheader("📅 日期范围")
         start_date = st.date_input("开始日期", value=default_start_date,
@@ -793,7 +840,7 @@ def main():
                 adjusted_start = start_date_str
 
             # 获取数据（包括额外的历史数据）
-            df, error_message = fetch_stock_data(code, period, adjusted_start, end_date_str)
+            df, error_message = fetch_stock_data(code, period, adjusted_start, end_date_str, adjust)
 
             if not df.empty:
                 # 验证数据质量
@@ -821,7 +868,9 @@ def main():
                     'show_macd': show_macd,
                     'show_ascending_channel': show_ascending_channel,
                     'start_date': start_date_str,
-                    'end_date': end_date_str
+                    'end_date': end_date_str,
+                    'adjust': adjust,
+                    'adjust_display': adjust_display
                 }
 
                 # 如果启用了上升通道，计算上升通道信息
@@ -894,7 +943,8 @@ def main():
             show_ascending_channel=params['show_ascending_channel'],
             ascending_channel_info=ascending_channel_info,
             start_date=params['start_date'],
-            end_date=params['end_date']
+            end_date=params['end_date'],
+            adjust=params['adjust']
         ), use_container_width=True)
 
         # 显示上升通道信息（如果启用）
@@ -1027,7 +1077,7 @@ def main():
 
         # 显示基本信息
         st.subheader("基本信息")
-        info_col1, info_col2, info_col3 = st.columns(3)
+        info_col1, info_col2, info_col3, info_col4 = st.columns(4)
         with info_col1:
             st.metric("当前价格", f"￥{df.iloc[-1]['close']: .2f}")
         with info_col2:
@@ -1035,6 +1085,9 @@ def main():
         with info_col3:
             st.metric("振幅",
                       f"{((df['high'].iloc[-1] - df['low'].iloc[-1]) / df['close'].iloc[-2]) * 100: .2f}%")
+        with info_col4:
+            adjust_display_map = {'1': '后复权', '2': '前复权', '3': '不复权'}
+            st.metric("复权类型", adjust_display_map.get(params['adjust'], '不复权'))
 
         # 显示数据统计信息
         st.subheader("数据统计")
