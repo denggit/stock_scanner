@@ -10,6 +10,14 @@
 3. STRATEGY_PARAMS: 策略参数（策略级别，可被环境配置覆盖）
 4. OPTIMIZATION_RANGES: 参数优化范围
 5. STRATEGY_VARIANTS: 策略变体配置
+
+数据预处理配置：
+- adjust: 复权类型（1-后复权，2-前复权，3-不复权）
+- logarithm: 是否使用对数空间计算（True-启用，False-禁用）
+
+默认配置：后复权+对数计算（推荐）
+- adjust=1: 使用后复权数据，消除除权除息影响
+- logarithm=True: 启用对数空间计算，实现价格尺度免疫
 """
 
 import os
@@ -43,7 +51,7 @@ class RisingChannelConfig:
     ENVIRONMENTS = {
         "development": {
             "max_stocks": 500,
-            "description": "开发环境 - 快速验证策略逻辑",
+            "description": "开发环境 - 快速验证策略逻辑（后复权+对数计算）",
             # 环境级别的策略参数覆盖
             "strategy_overrides": {
                 "max_positions": 20,  # 覆盖策略默认值
@@ -56,7 +64,8 @@ class RisingChannelConfig:
                 "优化基线环境（仅在单次回测/对比回测中生效）。\n"
                 "注意：当运行'参数优化'流程时，不使用此处的 max_stocks 与 strategy_overrides；\n"
                 "优化流程会使用 OPTIMIZATION_CONFIG.max_stocks_for_optimization 控制抽样规模，"
-                "并使用 OPTIMIZATION_RANGES 里的参数网格进行穷举。"
+                "并使用 OPTIMIZATION_RANGES 里的参数网格进行穷举。\n"
+                "默认使用后复权+对数计算。"
             ),
             "strategy_overrides": {
                 "max_positions": 20,
@@ -65,7 +74,7 @@ class RisingChannelConfig:
         },
         "production": {
             "max_stocks": None,  # 不限制
-            "description": "生产环境 - 全量股票回测",
+            "description": "生产环境 - 全量股票回测（后复权+对数计算）",
             "strategy_overrides": {
                 "max_positions": 20,  # 生产环境默认值
                 "min_channel_score": 60.0,
@@ -73,7 +82,7 @@ class RisingChannelConfig:
         },
         "full_backtest": {
             "max_stocks": None,
-            "description": "完整回测 - 大量股票测试",
+            "description": "完整回测 - 大量股票测试（后复权+对数计算）",
             "strategy_overrides": {
                 "max_positions": 20,
                 "min_channel_score": 60.0,
@@ -103,27 +112,39 @@ class RisingChannelConfig:
         'width_pct_min': 0.05,  # 最小通道宽度
         'width_pct_max': 0.12,  # 最大通道宽度
         
-        # 数据预处理参数
+        # 数据预处理参数 - 后复权+对数计算配置
         'adjust': 1,  # 复权类型：1-后复权，2-前复权，3-不复权
-        'logarithm': False,  # 是否使用对数价格计算通道
+        'logarithm': True,  # 是否使用对数价格计算通道（默认启用）
     }
 
     # ==================== 参数优化范围 ====================
     OPTIMIZATION_RANGES = {
-        # 'max_positions': [20],  # 持仓数量范围
-        # 'min_channel_score': [60.0],  # 通道评分范围
-        # # 'k': [1.5, 2.0, 2.5],  # 通道斜率范围
-        # # 'R2_min': [0.15, 0.20, 0.25],  # 最小R²值范围（用于通道有效性判定）
+        # 基础参数优化范围
+        # 'max_positions': [20, 30, 50],  # 持仓数量范围
+        # 'min_channel_score': [50.0, 60.0, 70.0],  # 通道评分范围
+        
+        # 通道分析参数优化范围
+        # 'k': [1.5, 2.0, 2.5],  # 通道斜率范围
+        # 'R2_min': [0.15, 0.20, 0.25],  # 最小R²值范围（用于通道有效性判定）
         # 'width_pct_min': [0.04, 0.05],  # 最小通道宽度范围
         # 'width_pct_max': [0.12, 0.15],  # 最大通道宽度范围
-        # 'R2_range': [[0.2, 0.45], [0.45, 0.70], [0.7, 0.95]]
-        # 'R2_min': [0.2, 0.35, 0.45]
+        
+        # 数据预处理参数优化范围
+        # 'logarithm': [False, True],  # 线性空间 vs 对数空间
+        # 'adjust': [1, 2, 3],  # 复权类型：1-后复权，2-前复权，3-不复权
+        
+        # 组合优化示例（取消注释以启用）
+        # 'logarithm': [False, True],  # 测试线性空间和对数空间
+        # 'k': [1.5, 2.0, 2.5],  # 通道宽度倍数
+        # 'R2_min': [0.15, 0.20, 0.25],  # 最小R²值
+        # 'width_pct_min': [0.04, 0.05],  # 最小通道宽度
+        # 'width_pct_max': [0.12, 0.15],  # 最大通道宽度
     }
 
     # ==================== 策略变体配置 ====================
     STRATEGY_VARIANTS = {
         'conservative': {
-            'name': '保守策略',
+            'name': '保守策略（后复权+对数计算）',
             'params': {
                 'max_positions': 30,  # 较少持仓
                 'min_channel_score': 70.0,  # 更高评分要求
@@ -133,10 +154,12 @@ class RisingChannelConfig:
                 'width_pct_min': 0.05,  # 更宽通道要求
                 'width_pct_max': 0.18,  # 最大通道宽度
                 'sell_on_close_breakout': True,  # 保守策略使用收盘价突破，避免盘中波动
+                'adjust': 1,  # 后复权
+                'logarithm': True,  # 启用对数计算
             }
         },
         'aggressive': {
-            'name': '激进策略',
+            'name': '激进策略（后复权+对数计算）',
             'params': {
                 'max_positions': 70,  # 更多持仓
                 'min_channel_score': 50.0,  # 较低评分要求
@@ -146,6 +169,36 @@ class RisingChannelConfig:
                 'width_pct_min': 0.03,  # 较窄通道要求
                 'width_pct_max': 0.25,  # 最大通道宽度
                 'sell_on_close_breakout': False,  # 激进策略使用最高价突破，快速响应
+                'adjust': 1,  # 后复权
+                'logarithm': True,  # 启用对数计算
+            }
+        },
+        'linear_space': {
+            'name': '线性空间策略（后复权）',
+            'params': {
+                'max_positions': 50,  # 中等持仓
+                'min_channel_score': 60.0,  # 中等评分要求
+                'k': 2.0,  # 中等斜率
+                'R2_min': 0.20,  # 中等R²要求
+                'width_pct_min': 0.04,  # 中等通道宽度
+                'width_pct_max': 0.12,  # 最大通道宽度
+                'sell_on_close_breakout': True,  # 使用收盘价突破
+                'adjust': 1,  # 后复权
+                'logarithm': False,  # 线性空间计算
+            }
+        },
+        'logarithm_space': {
+            'name': '对数空间策略（后复权）',
+            'params': {
+                'max_positions': 50,  # 中等持仓
+                'min_channel_score': 60.0,  # 中等评分要求
+                'k': 2.0,  # 中等斜率
+                'R2_min': 0.20,  # 中等R²要求
+                'width_pct_min': 0.04,  # 中等通道宽度
+                'width_pct_max': 0.12,  # 最大通道宽度
+                'sell_on_close_breakout': True,  # 使用收盘价突破
+                'adjust': 1,  # 后复权
+                'logarithm': True,  # 对数空间计算
             }
         }
     }
