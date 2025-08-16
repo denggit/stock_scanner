@@ -97,8 +97,8 @@ class RisingChannelConfig:
         'L_max': 120,  # 最大回看天数
         'delta_cut': 5,  # 切割参数
         'pivot_m': 3,  # 枢轴参数
-        'R2_min': 0.35,  # 最小R²值（用于通道有效性判定）；若在选股阶段想取消下限，可将选股用的 R2_min 设为 None
-        'R2_max': 0.90,  # 最大R²值上限（仅用于选股过滤；None 表示不设上限）
+        'R2_min': 0.70,  # 最小R²值（用于通道有效性判定）；若在选股阶段想取消下限，可将选股用的 R2_min 设为 None
+        'R2_max': 0.95,  # 最大R²值上限（仅用于选股过滤；None 表示不设上限）
         'R2_range': None,  # 参数优化时可传入 [R2_min, R2_max]，两者均可为 None
         'width_pct_min': 0.05,  # 最小通道宽度
         'width_pct_max': 0.12,  # 最大通道宽度
