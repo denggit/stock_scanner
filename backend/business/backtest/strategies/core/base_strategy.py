@@ -53,6 +53,9 @@ class BaseStrategy(bt.Strategy):
         # 设置日志记录器
         self.logger = setup_logger("backtest")
 
+        # 禁用backtrader的默认日志配置，防止重复日志
+        self._disable_backtrader_logging()
+
         # 初始化各个管理器
         self._init_managers()
 
@@ -760,3 +763,17 @@ class BaseStrategy(bt.Strategy):
             "current_positions": self.position_manager.get_position_count(),
             "portfolio_value": self.broker.getvalue() if hasattr(self, 'broker') and self.broker else 0
         }
+
+    def _disable_backtrader_logging(self):
+        """禁用backtrader的默认日志配置"""
+        try:
+            import logging
+            # 禁用backtrader的默认日志处理器
+            for logger_name in ['backtrader', 'bt', 'cerebro']:
+                logger = logging.getLogger(logger_name)
+                logger.disabled = True
+                # 清除可能存在的处理器
+                for handler in logger.handlers[:]:
+                    logger.removeHandler(handler)
+        except Exception as e:
+            self.logger.warning(f"禁用backtrader日志配置时出现警告: {e}")

@@ -8,6 +8,7 @@
 from typing import Dict, Any, Optional, List, Type
 
 import backtrader as bt
+import logging
 
 from backend.utils.logger import setup_logger
 from .base_strategy import BaseStrategy
@@ -38,8 +39,30 @@ class BacktestEngine:
         # 统一使用backtest主日志记录器，便于全局日志管理和追踪
         self.logger = setup_logger("backtest")
 
+        # 禁用backtrader的默认日志配置，防止重复日志
+        self._disable_backtrader_logging()
+
         # 初始化分析器
         self._init_analyzers()
+
+    def _disable_backtrader_logging(self):
+        """禁用backtrader的默认日志配置"""
+        try:
+            # 禁用backtrader的默认日志处理器
+            bt_logger = logging.getLogger('backtrader')
+            bt_logger.disabled = True
+            
+            # 禁用backtrader相关的其他日志记录器
+            for logger_name in ['backtrader', 'bt', 'cerebro']:
+                logger = logging.getLogger(logger_name)
+                logger.disabled = True
+                # 清除可能存在的处理器
+                for handler in logger.handlers[:]:
+                    logger.removeHandler(handler)
+                    
+            self.logger.info("已禁用backtrader默认日志配置")
+        except Exception as e:
+            self.logger.warning(f"禁用backtrader日志配置时出现警告: {e}")
 
     def _init_analyzers(self):
         """初始化分析器"""
