@@ -343,6 +343,8 @@ class ChannelAnalyzerManager:
             base_score = 60.0  # 提高NORMAL状态的基础评分
         elif status == ChannelStatus.BREAKOUT:
             base_score = 50.0
+        elif status == ChannelStatus.ASCENDING_WEAK:
+            base_score = 30.0  # 弱上升通道的基础评分
         elif status == ChannelStatus.BREAKDOWN:
             base_score = 20.0
         else:
@@ -450,6 +452,36 @@ class ChannelAnalyzerManager:
                 })
 
         return normal_stocks
+
+    def filter_weak_ascending_channels(self, analysis_results: Dict[str, Dict[str, Any]],
+                                       min_score: float = 30.0) -> List[Dict[str, Any]]:
+        """
+        筛选ASCENDING_WEAK状态的通道
+        
+        Args:
+            analysis_results: 批量分析结果
+            min_score: 最小评分阈值
+            
+        Returns:
+            符合条件的股票列表
+        """
+        weak_stocks = []
+
+        for stock_code, result in analysis_results.items():
+            channel_state = result['channel_state']
+            score = result['score']
+
+            if (channel_state and
+                    hasattr(channel_state, 'channel_status') and
+                    channel_state.channel_status == ChannelStatus.ASCENDING_WEAK and
+                    score >= min_score):
+                weak_stocks.append({
+                    'stock_code': stock_code,
+                    'channel_state': channel_state,
+                    'score': score
+                })
+
+        return weak_stocks
 
     def _check_cache(self, stock_code: str, date: datetime) -> bool:
         """检查分析结果缓存"""

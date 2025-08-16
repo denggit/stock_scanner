@@ -27,6 +27,7 @@ class ChannelStatus(Enum):
     NORMAL = "NORMAL"      # 通道正常
     BREAKOUT = "BREAKOUT"  # 突破上沿（含加速）
     BREAKDOWN = "BREAKDOWN"  # 跌破下沿/通道失效
+    ASCENDING_WEAK = "ASCENDING_WEAK"  # 弱上升通道（趋势向上，但质量不达标）
 
 
 @dataclass
@@ -268,5 +269,6 @@ class ChannelState:
             ChannelStatus.NORMAL: "通道正常",
             ChannelStatus.BREAKOUT: "突破上沿",
             ChannelStatus.BREAKDOWN: "跌破下沿/失效",
+            ChannelStatus.ASCENDING_WEAK: "弱上升通道",
         }
         return status_descriptions.get(self.channel_status, "未知状态")

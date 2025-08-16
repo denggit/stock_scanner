@@ -41,6 +41,7 @@ channel_status:
   NORMAL: "通道正常"
   BREAKOUT: "突破上沿"
   BREAKDOWN: "跌破下沿/失效"
+  ASCENDING_WEAK: "弱上升通道"
 
 # 异常处理配置
 error_handling:

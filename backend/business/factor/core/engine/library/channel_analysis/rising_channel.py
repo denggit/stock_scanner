@@ -289,7 +289,16 @@ class HistoryCalculationTemplate:
                     # 计算波动率
                     if result.sigma and result.state.mid_today and result.state.mid_today > 0:
                         base_record['volatility'] = result.sigma / result.state.mid_today
-            base_record['channel_status'] = ChannelStatus.BREAKDOWN.value
+                
+                # 状态判定：根据是否有state和break_reason来确定状态
+                if result.state is not None:
+                    # 有state但质量检查不通过，可能是ASCENDING_WEAK
+                    if result.break_reason in ["invalid_width", "invalid_regression"]:
+                        base_record['channel_status'] = ChannelStatus.ASCENDING_WEAK.value
+                    else:
+                        base_record['channel_status'] = ChannelStatus.BREAKDOWN.value
+                else:
+                    base_record['channel_status'] = ChannelStatus.BREAKDOWN.value
         else:
             # 有效通道
             state = result.state
@@ -407,7 +416,20 @@ class AscendingChannelRegression:
         }
 
     def fit_channel(self, df: pd.DataFrame) -> ChannelState:
-        """拟合上升通道（单点计算）"""
+        """
+        拟合上升通道（单点计算）
+        
+        该方法负责计算上升通道并完成状态判定，包括：
+        1. 通道计算
+        2. 质量检查（R²、通道宽度等）
+        3. 状态判定（NORMAL、BREAKOUT、BREAKDOWN、ASCENDING_WEAK）
+        
+        Args:
+            df (pd.DataFrame): 股票数据
+            
+        Returns:
+            ChannelState: 通道状态对象
+        """
         df = df.sort_values('trade_date').reset_index(drop=True)
         df['trade_date'] = pd.to_datetime(df['trade_date'])
 
@@ -418,27 +440,97 @@ class AscendingChannelRegression:
         result = self.strategy.calculate_for_date(df, current_date, current_close, self._get_config_dict())
 
         if not result.is_valid:
-            # 若返回了state（如invalid_width），直接沿用已判定的三态
+            # 处理无效结果
             if result.state is not None:
-                return result.state
-            # 否则构造一个最小可用状态并标记为 BREAKDOWN
-            cumulative_gain = None
-            if result.anchor_price is not None and result.anchor_price > 0:
-                cumulative_gain = (current_close - result.anchor_price) / result.anchor_price
-            state = ChannelState(
-                anchor_date=result.anchor_date, anchor_price=result.anchor_price,
-                window_df=result.window_df if result.window_df is not None else pd.DataFrame(),
-                beta=result.beta if result.beta is not None else 0.0,
-                sigma=result.sigma if result.sigma is not None else 0.0,
-                mid_today=0.0, upper_today=0.0, lower_today=0.0,
-                mid_tomorrow=0.0, upper_tomorrow=0.0, lower_tomorrow=0.0,
-                r2=result.r2,
-                channel_status=ChannelStatus.BREAKDOWN,
-                cumulative_gain=cumulative_gain
-            )
-            return state
+                # 若返回了state（如invalid_width），需要重新判定状态
+                return self._determine_channel_status(result.state, current_close, result.r2, result.break_reason)
+            else:
+                # 构造一个最小可用状态并标记为 BREAKDOWN
+                cumulative_gain = None
+                if result.anchor_price is not None and result.anchor_price > 0:
+                    cumulative_gain = (current_close - result.anchor_price) / result.anchor_price
+                state = ChannelState(
+                    anchor_date=result.anchor_date, anchor_price=result.anchor_price,
+                    window_df=result.window_df if result.window_df is not None else pd.DataFrame(),
+                    beta=result.beta if result.beta is not None else 0.0,
+                    sigma=result.sigma if result.sigma is not None else 0.0,
+                    mid_today=0.0, upper_today=0.0, lower_today=0.0,
+                    mid_tomorrow=0.0, upper_tomorrow=0.0, lower_tomorrow=0.0,
+                    r2=result.r2,
+                    channel_status=ChannelStatus.BREAKDOWN,
+                    cumulative_gain=cumulative_gain
+                )
+                return state
 
-        return result.state
+        # 有效结果，进行状态判定
+        return self._determine_channel_status(result.state, current_close, result.r2, None)
+
+    def _determine_channel_status(self, state: ChannelState, current_close: float, 
+                                 r2: Optional[float], break_reason: Optional[str]) -> ChannelState:
+        """
+        确定通道状态
+        
+        根据通道质量和当前价格位置，确定最终的通道状态：
+        - 如果质量检查不通过但趋势向上：ASCENDING_WEAK
+        - 如果质量检查通过：根据价格位置判定 NORMAL/BREAKOUT/BREAKDOWN
+        
+        Args:
+            state (ChannelState): 通道状态对象
+            current_close (float): 当前收盘价
+            r2 (Optional[float]): 回归拟合优度
+            break_reason (Optional[str]): 失效原因
+            
+        Returns:
+            ChannelState: 更新后的通道状态对象
+        """
+        config = self._get_config_dict()
+        
+        # 质量检查：检查R²和通道宽度
+        quality_check_passed = self._check_channel_quality(state, r2, config)
+        
+        if not quality_check_passed:
+            # 质量检查不通过，但趋势向上，标记为弱上升通道
+            state.channel_status = ChannelStatus.ASCENDING_WEAK
+            return state
+        
+        # 质量检查通过，根据价格位置判定状态
+        if current_close > state.upper_today:
+            state.channel_status = ChannelStatus.BREAKOUT
+        elif current_close < state.lower_today:
+            state.channel_status = ChannelStatus.BREAKDOWN
+        else:
+            state.channel_status = ChannelStatus.NORMAL
+            
+        return state
+
+    def _check_channel_quality(self, state: ChannelState, r2: Optional[float], 
+                              config: Dict[str, Any]) -> bool:
+        """
+        检查通道质量
+        
+        检查R²和通道宽度是否满足要求
+        
+        Args:
+            state (ChannelState): 通道状态对象
+            r2 (Optional[float]): 回归拟合优度
+            config (Dict[str, Any]): 配置参数
+            
+        Returns:
+            bool: 质量检查是否通过
+        """
+        # 检查R²
+        if r2 is None or r2 < config['R2_min']:
+            return False
+            
+        # 检查通道宽度
+        if state.mid_today and state.mid_today > 0:
+            width_pct = (state.upper_today - state.lower_today) / state.mid_today
+            if width_pct < config['width_pct_min'] or width_pct > config['width_pct_max']:
+                return False
+        else:
+            return False
+            
+        return True
 
     def fit_channel_history(self, df: pd.DataFrame, min_window_size: int = 60) -> pd.DataFrame:
         """计算历史上升通道数据（批量计算）"""
