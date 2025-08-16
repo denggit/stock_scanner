@@ -253,15 +253,30 @@ class AShareTradingRules:
             
         Returns:
             检查结果字典
+            
+        Note:
+            跌停处理规则：
+            - 涨停：当前价格 >= 涨停价时无法买入
+            - 跌停：当前价格在跌停价上下各一分钱范围内时无法卖出（按跌停处理）
         """
         # 获取精确的涨跌停价格
         price_limits = cls.calculate_precise_price_limits(reference_price, stock_code, is_st)
         
+        # 涨停判断：当前价格 >= 涨停价
+        is_upper_limit = current_price >= price_limits["precise_upper"]
+        
+        # 跌停判断：当前价格在跌停价上下各一分钱范围内
+        # 即：跌停价 - 0.01 <= 当前价格 <= 跌停价 + 0.01
+        # 注意：跌停价上下各一分钱范围内都无法卖出，按跌停处理
+        lower_limit_price = price_limits["precise_lower"]
+        is_lower_limit = (lower_limit_price - 0.01) <= current_price <= (lower_limit_price + 0.01)
+        
         return {
-            "is_upper_limit": current_price >= price_limits["precise_upper"],
-            "is_lower_limit": current_price <= price_limits["precise_lower"],
+            "is_upper_limit": is_upper_limit,
+            "is_lower_limit": is_lower_limit,
             "upper_limit": price_limits["precise_upper"],
             "lower_limit": price_limits["precise_lower"],
+            "lower_limit_range": (lower_limit_price - 0.01, lower_limit_price + 0.01),
             "theoretical_upper": price_limits["theoretical_upper"],
             "theoretical_lower": price_limits["theoretical_lower"],
             "limit_rate": price_limits["theoretical_rate"],

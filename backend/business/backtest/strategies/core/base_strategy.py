@@ -264,7 +264,7 @@ class BaseStrategy(bt.Strategy):
                     )
                 if action == 'SELL' and limit_info.get('is_lower_limit'):
                     reasons.append(
-                        f"跌停禁卖: 当前价={price:.4f} ≤ 跌停价={limit_info.get('lower_limit', 0):.4f} (实际跌幅{abs(limit_info.get('actual_lower_rate', 0))*100:.2f}%)"
+                        f"跌停禁卖: 当前价={price:.4f} 在跌停范围内 (跌停价={limit_info.get('lower_limit', 0):.4f}, 实际跌幅{abs(limit_info.get('actual_lower_rate', 0))*100:.2f}%)"
                     )
         except Exception:
             # 数据不足或异常时不强制拦截，不记录为失败
