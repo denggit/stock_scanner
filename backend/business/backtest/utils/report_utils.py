@@ -863,6 +863,9 @@ class ReportUtils:
                 '今日下沿',
                 '通道宽度',
                 '距下沿(%)',
+                '成交量比',
+                '当日成交量',
+                '5日平均成交量',
             ]
 
             # 收集存在于原df中的通道字段
@@ -886,7 +889,8 @@ class ReportUtils:
 
             # 对通道数值列进行格式化
             numeric_channel_fields = [
-                '通道评分', '斜率β', 'R²', '今日中轴', '今日上沿', '今日下沿', '通道宽度', '距下沿(%)'
+                '通道评分', '斜率β', 'R²', '今日中轴', '今日上沿', '今日下沿', '通道宽度', '距下沿(%)',
+                '成交量比', '当日成交量', '5日平均成交量'
             ]
             for f in available_channel_fields:
                 if f in numeric_channel_fields:
@@ -1198,6 +1202,11 @@ class ReportUtils:
                     except Exception:
                         holding_days = 1
 
+                    # 提取成交量相关数据（从买入交易）
+                    volume_ratio = buy_trade.get('volume_ratio', buy_trade.get('成交量比', None))
+                    current_volume = buy_trade.get('current_volume', buy_trade.get('当日成交量', None))
+                    avg_volume = buy_trade.get('avg_volume', buy_trade.get('5日平均成交量', None))
+
                     record = {
                         '买入日期': buy_date,
                         '卖出日期': sell_date,
@@ -1216,6 +1225,9 @@ class ReportUtils:
                         '通道宽度(绝对值)': round(width_abs, 2) if width_abs is not None else '',
                         '通道宽度(%)': round(width_pct, 2) if width_pct is not None else '',
                         '距下沿(%)': buy_trade.get('距下沿(%)', ''),
+                        '买入日成交量比': round(volume_ratio, 2) if volume_ratio is not None else '',
+                        '买入日成交量': round(current_volume, 0) if current_volume is not None else '',
+                        '买入日5日平均成交量': round(avg_volume, 0) if avg_volume is not None else '',
                     }
 
                     analysis_records.append(record)

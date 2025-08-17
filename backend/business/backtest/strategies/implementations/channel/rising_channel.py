@@ -49,7 +49,7 @@ class RisingChannelStrategy(BaseStrategy):
     1. 依然是上升通道为NORMAL状态的股票
     2. 几何位置要求：股价在中轴到下沿中间位置的下方
     3. close > open的股票
-    4. 当日交易量大于过去五日平均交易量
+    4. 当日交易量大于过去五日平均交易量的1.2倍（可配置）
     5. 根据当日交易量对比过去五日平均交易量的增长比来从大到小排序
     
     依次买入挑选出来的股票直到满仓或无满足条件的股票
@@ -127,6 +127,9 @@ class RisingChannelStrategy(BaseStrategy):
         ('R2_range', None),  # 参数优化时可传入 [R2_min, R2_max]，两者均可为 None
         ('width_pct_min', 0.05),  # 最小通道宽度
         ('width_pct_max', 0.12),  # 最大通道宽度
+        
+        # 成交量过滤参数
+        ('min_volume_ratio', 1.2),  # 最小成交量比（当日成交量/5日平均成交量）
     )
 
     def __init__(self, stock_data_dict: Dict[str, pd.DataFrame] = None, cache_adapter=None, **kwargs):
@@ -486,9 +489,11 @@ class RisingChannelStrategy(BaseStrategy):
                     self.logger.debug(f"T+1日买入 - 股票 {stock_code} 成交量数据无效，跳过")
                 continue
             
-            if current_volume <= avg_volume:
+            # 检查成交量比要求：当日交易量大于过去五日平均交易量的min_volume_ratio倍
+            volume_ratio = current_volume / avg_volume
+            if volume_ratio < self.params.min_volume_ratio:
                 if self.params.enable_logging:
-                    self.logger.debug(f"T+1日买入 - 股票 {stock_code} 当日成交量 {current_volume:.0f} <= 5日平均 {avg_volume:.0f}，跳过")
+                    self.logger.debug(f"T+1日买入 - 股票 {stock_code} 成交量比 {volume_ratio:.2f} < {self.params.min_volume_ratio}，跳过")
                 continue
 
             # 计算成交量增长比
@@ -547,7 +552,11 @@ class RisingChannelStrategy(BaseStrategy):
                 extras.update({
                     'current_volume': stock_info['current_volume'],
                     'avg_volume': stock_info['avg_volume'],
-                    'volume_ratio': stock_info['volume_ratio']
+                    'volume_ratio': stock_info['volume_ratio'],
+                    # 添加中文字段名，确保与报告生成兼容
+                    '当日成交量': stock_info['current_volume'],
+                    '5日平均成交量': stock_info['avg_volume'],
+                    '成交量比': stock_info['volume_ratio']
                 })
 
                 # 计算买入数量
@@ -1113,6 +1122,7 @@ class RisingChannelStrategy(BaseStrategy):
             "width_pct_min": config_params.get('width_pct_min', self.params.width_pct_min),
             "width_pct_max": config_params.get('width_pct_max', self.params.width_pct_max),
             "adjust": config_params.get('adjust', self.params.adjust),  # 复权类型参数，通道缓存需要包含
+            "min_volume_ratio": config_params.get('min_volume_ratio', self.params.min_volume_ratio),  # 最小成交量比参数
         }
 
         # 添加策略层面的质量筛选参数
