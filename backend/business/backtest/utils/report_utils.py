@@ -1176,6 +1176,28 @@ class ReportUtils:
                         except Exception:
                             profit_amount = None
 
+                    # 计算持仓天数
+                    holding_days = None
+                    try:
+                        # 优先使用卖出记录中的持仓天数
+                        for k in ['holding_days', '持仓天数']:
+                            if k in sell_trade and sell_trade[k] is not None:
+                                holding_days = int(sell_trade[k])
+                                break
+                        
+                        # 如果没有持仓天数记录，则根据买入和卖出日期计算
+                        if holding_days is None:
+                            from datetime import datetime
+                            try:
+                                buy_dt = pd.to_datetime(buy_date)
+                                sell_dt = pd.to_datetime(sell_date)
+                                delta = sell_dt - buy_dt
+                                holding_days = max(delta.days, 1)  # 至少1天
+                            except Exception:
+                                holding_days = 1
+                    except Exception:
+                        holding_days = 1
+
                     record = {
                         '买入日期': buy_date,
                         '卖出日期': sell_date,
@@ -1184,6 +1206,7 @@ class ReportUtils:
                         '卖出价格': round(sell_price, 2) if sell_price else 0,
                         '收益额': round(profit_amount, 2) if profit_amount is not None else 0,
                         '收益率(%)': round(returns, 2) if returns else 0,
+                        '总持仓交易日': holding_days,
                         '通道评分': buy_trade.get('通道评分', ''),
                         '斜率β': buy_trade.get('斜率β', ''),
                         'R²': buy_trade.get('R²', ''),
