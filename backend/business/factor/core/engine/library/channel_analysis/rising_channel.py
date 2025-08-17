@@ -328,34 +328,28 @@ class HistoryCalculationTemplate:
             
             # 根据斜率方向和质量检查确定状态
             if result.beta is not None and result.beta > 0:
-                # 斜率为正，检查斜率是否达到最小阈值
+                # 斜率为正，检查通道质量
                 config = self.config
-                slope_min = config.get('slope_min', 0.001)
-                if result.beta < slope_min:
-                    # 斜率为正但小于最小阈值，标记为弱上升通道
+                quality_check_passed = self._check_channel_quality_for_history(state, result.r2, config)
+                
+                if not quality_check_passed:
+                    # 质量检查不通过，标记为弱上升通道
                     base_record['channel_status'] = ChannelStatus.ASCENDING_WEAK.value
                 else:
-                    # 斜率为正且达到最小阈值，检查通道质量
-                    quality_check_passed = self._check_channel_quality_for_history(state, result.r2, config)
+                    # 质量检查通过，根据价格位置判定状态
+                    close_val = current_close
+                    upper_val = state.upper_today
+                    lower_val = state.lower_today
                     
-                    if not quality_check_passed:
-                        # 质量检查不通过，标记为弱上升通道
-                        base_record['channel_status'] = ChannelStatus.ASCENDING_WEAK.value
+                    if close_val > upper_val:
+                        # 股价在通道上沿以上
+                        base_record['channel_status'] = ChannelStatus.BREAKOUT.value
+                    elif close_val < lower_val:
+                        # 股价在通道下沿以下
+                        base_record['channel_status'] = ChannelStatus.BREAKDOWN.value
                     else:
-                        # 质量检查通过，根据价格位置判定状态
-                        close_val = current_close
-                        upper_val = state.upper_today
-                        lower_val = state.lower_today
-                        
-                        if close_val > upper_val:
-                            # 股价在通道上沿以上
-                            base_record['channel_status'] = ChannelStatus.BREAKOUT.value
-                        elif close_val < lower_val:
-                            # 股价在通道下沿以下
-                            base_record['channel_status'] = ChannelStatus.BREAKDOWN.value
-                        else:
-                            # 股价在通道内
-                            base_record['channel_status'] = ChannelStatus.NORMAL.value
+                        # 股价在通道内
+                        base_record['channel_status'] = ChannelStatus.NORMAL.value
             else:
                 # 斜率为负，标记为OTHER
                 base_record['channel_status'] = ChannelStatus.OTHER.value
@@ -431,7 +425,6 @@ class AscendingChannelRegression:
         self.delta_cut = params.get('delta_cut', config_section['delta_cut'])
         self.pivot_m = params.get('pivot_m', config_section['pivot_m'])
         self.min_data_points = params.get('min_data_points', config_section['min_data_points'])
-        self.slope_min = params.get('slope_min', config_section.get('slope_min', 0.001))
         self.R2_min = params.get('R2_min', config_section.get('R2_min', 0.20))
         self.width_pct_min = params.get('width_pct_min', config_section.get('width_pct_min', 0.04))
         self.width_pct_max = params.get('width_pct_max', config_section.get('width_pct_max', 0.12))
@@ -444,7 +437,6 @@ class AscendingChannelRegression:
             'delta_cut': self.delta_cut,
             'pivot_m': self.pivot_m,
             'min_data_points': self.min_data_points,
-            'slope_min': self.slope_min,
             'R2_min': self.R2_min,
             'width_pct_min': self.width_pct_min,
             'width_pct_max': self.width_pct_max
@@ -473,7 +465,6 @@ class AscendingChannelRegression:
                 'delta_cut': 5,
                 'pivot_m': 3,
                 'min_data_points': 60,
-                'slope_min': 0.001,
                 'R2_min': 0.20,
                 'width_pct_min': 0.04,
                 'width_pct_max': 0.15
@@ -537,8 +528,7 @@ class AscendingChannelRegression:
         
         按照优先级顺序确定通道状态：
         1. 如果斜率为负：OTHER（不是上升通道）
-        2. 如果斜率为正但小于slope_min：ASCENDING_WEAK（弱上升通道）
-        3. 如果斜率为正且大于等于slope_min：
+        2. 如果斜率为正：
            a) 检查通道质量（宽度和R²）
            b) 如果质量不达标：ASCENDING_WEAK
            c) 如果质量达标：根据价格位置判定 NORMAL/BREAKOUT/BREAKDOWN
@@ -558,15 +548,8 @@ class AscendingChannelRegression:
             state.channel_status = ChannelStatus.OTHER
             return state
         
-        # 2. 检查斜率是否达到最小阈值
+        # 2. 斜率为正，检查通道质量
         config = self._get_config_dict()
-        slope_min = config.get('slope_min', 0.001)
-        if state.beta < slope_min:
-            # 斜率为正但小于最小阈值，标记为弱上升通道
-            state.channel_status = ChannelStatus.ASCENDING_WEAK
-            return state
-        
-        # 3. 斜率为正且达到最小阈值，检查通道质量
         quality_check_passed = self._check_channel_quality(state, r2, config)
         
         if not quality_check_passed:
@@ -574,7 +557,7 @@ class AscendingChannelRegression:
             state.channel_status = ChannelStatus.ASCENDING_WEAK
             return state
         
-        # 4. 质量检查通过，根据价格位置判定状态
+        # 3. 质量检查通过，根据价格位置判定状态
         if current_close > state.upper_today:
             # 股价在通道上沿以上
             state.channel_status = ChannelStatus.BREAKOUT
@@ -654,27 +637,21 @@ class AscendingChannelRegression:
             # 斜率为负，标记为OTHER
             self.state.channel_status = ChannelStatus.OTHER
         else:
-            # 斜率为正，检查斜率是否达到最小阈值
+            # 斜率为正，检查通道质量
             config = self._get_config_dict()
-            slope_min = config.get('slope_min', 0.001)
-            if self.state.beta < slope_min:
-                # 斜率为正但小于最小阈值，标记为弱上升通道
+            quality_check_passed = self._check_channel_quality(self.state, r2, config)
+            
+            if not quality_check_passed:
+                # 质量检查不通过，标记为弱上升通道
                 self.state.channel_status = ChannelStatus.ASCENDING_WEAK
             else:
-                # 斜率为正且达到最小阈值，检查通道质量
-                quality_check_passed = self._check_channel_quality(self.state, r2, config)
-                
-                if not quality_check_passed:
-                    # 质量检查不通过，标记为弱上升通道
-                    self.state.channel_status = ChannelStatus.ASCENDING_WEAK
+                # 质量检查通过，根据价格位置判定状态
+                if bar['close'] > self.state.upper_today:
+                    self.state.channel_status = ChannelStatus.BREAKOUT
+                elif bar['close'] < self.state.lower_today:
+                    self.state.channel_status = ChannelStatus.BREAKDOWN
                 else:
-                    # 质量检查通过，根据价格位置判定状态
-                    if bar['close'] > self.state.upper_today:
-                        self.state.channel_status = ChannelStatus.BREAKOUT
-                    elif bar['close'] < self.state.lower_today:
-                        self.state.channel_status = ChannelStatus.BREAKDOWN
-                    else:
-                        self.state.channel_status = ChannelStatus.NORMAL
+                    self.state.channel_status = ChannelStatus.NORMAL
 
         if self._should_reanchor():
             self._reanchor()

@@ -107,7 +107,6 @@ class RisingChannelStrategy(BaseStrategy):
         ('L_max', 120),  # 最大回看天数
         ('delta_cut', 5),  # 切割参数
         ('pivot_m', 3),  # 枢轴参数
-        ('slope_min', 0.001),  # 最小斜率阈值（新增）
         ('R2_min', 0.35),  # 最小R²值（用于通道有效性判定）
         ('R2_max', 0.95),  # 最大R²值上限（仅用于选股过滤）
         ('R2_range', None),  # 参数优化时可传入 [R2_min, R2_max]，两者均可为 None
@@ -933,7 +932,6 @@ class RisingChannelStrategy(BaseStrategy):
             "delta_cut": self.params.delta_cut,
             "pivot_m": self.params.pivot_m,
             "min_data_points": self.params.min_data_points,
-            "slope_min": self.params.slope_min,
             "width_pct_min": self.params.width_pct_min,
             "width_pct_max": self.params.width_pct_max
         }
