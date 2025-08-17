@@ -42,6 +42,7 @@ class RisingChannelStrategy(BaseStrategy):
     4. R²值在有效范围内（R2_min <= R² <= R2_max）
     5. 通道宽度在合理范围内（width_pct_min <= 宽度 <= width_pct_max）
     6. 股价在中轴到下沿中间位置下方（几何位置判断）
+    7. 股价距离通道下沿百分比距离 <= max_distance_to_lower（默认3%）
     
     根据股价距离通道下沿百分比距离从小到大排序，选出max_position只股票。
     
@@ -49,8 +50,9 @@ class RisingChannelStrategy(BaseStrategy):
     1. 依然是上升通道为NORMAL状态的股票
     2. 几何位置要求：股价在中轴到下沿中间位置的下方
     3. close > open的股票
-    4. 当日交易量大于过去五日平均交易量的1.2倍（可配置）
-    5. 根据当日交易量对比过去五日平均交易量的增长比来从大到小排序
+    4. 当日涨幅 >= min_daily_gain（默认0.5%）
+    5. 当日交易量大于过去五日平均交易量的1.2倍（可配置）
+    6. 根据当日交易量对比过去五日平均交易量的增长比来从大到小排序
     
     依次买入挑选出来的股票直到满仓或无满足条件的股票
     
@@ -130,6 +132,12 @@ class RisingChannelStrategy(BaseStrategy):
         
         # 成交量过滤参数
         ('min_volume_ratio', 1.2),  # 最小成交量比（当日成交量/5日平均成交量）
+        
+        # T日预筛选参数
+        ('max_distance_to_lower', 3.0),  # T日预筛选时股价距离通道下沿的最大百分比距离
+        
+        # T+1日买入参数
+        ('min_daily_gain', 0.5),  # T+1日买入时的最小当日涨幅要求（%）
     )
 
     def __init__(self, stock_data_dict: Dict[str, pd.DataFrame] = None, cache_adapter=None, **kwargs):
@@ -369,6 +377,14 @@ class RisingChannelStrategy(BaseStrategy):
                 current_price, channel_state
             )
 
+            # 检查股价距离通道下沿是否在允许范围内
+            if distance_to_lower > self.params.max_distance_to_lower:
+                if self.params.enable_logging:
+                    self.logger.debug(
+                        f"T日预筛选 - 股票 {stock_code} 距离下沿 {distance_to_lower:.2f}% > {self.params.max_distance_to_lower}%，跳过"
+                    )
+                continue
+
             # 记录符合条件的股票
             qualified_stocks.append({
                 'stock_code': stock_code,
@@ -462,6 +478,15 @@ class RisingChannelStrategy(BaseStrategy):
                     self.logger.debug(f"T+1日买入 - 股票 {stock_code} 收盘价 {current_price:.2f} <= 开盘价 {current_open:.2f}，跳过")
                 continue
 
+            # 计算当日涨幅
+            daily_gain = ((current_price - current_open) / current_open) * 100
+            
+            # 检查当日涨幅是否满足要求
+            if daily_gain < self.params.min_daily_gain:
+                if self.params.enable_logging:
+                    self.logger.debug(f"T+1日买入 - 股票 {stock_code} 当日涨幅 {daily_gain:.2f}% < {self.params.min_daily_gain}%，跳过")
+                continue
+
             # 检查几何位置要求：股价在中轴到下沿中间位置的下方
             mid_price = getattr(channel_state, 'mid_today', None)
             lower_price = getattr(channel_state, 'lower_today', None)
@@ -507,7 +532,8 @@ class RisingChannelStrategy(BaseStrategy):
                 'score': stock_info['score'],
                 'current_volume': current_volume,
                 'avg_volume': avg_volume,
-                'volume_ratio': volume_ratio
+                'volume_ratio': volume_ratio,
+                'daily_gain': daily_gain
             })
 
         if not qualified_stocks:
@@ -522,7 +548,8 @@ class RisingChannelStrategy(BaseStrategy):
             self.logger.info(f"T+1日买入：找到 {len(qualified_stocks)} 只满足条件的股票，按成交量增长比排序:")
             for i, stock in enumerate(qualified_stocks[:5]):  # 只显示前5只
                 self.logger.info(f"  {i + 1}. {stock['stock_code']}: 成交量比 {stock['volume_ratio']:.2f}, "
-                                 f"当日成交量 {stock['current_volume']:.0f}, 5日平均 {stock['avg_volume']:.0f}")
+                                 f"当日成交量 {stock['current_volume']:.0f}, 5日平均 {stock['avg_volume']:.0f}, "
+                                 f"当日涨幅 {stock['daily_gain']:.2f}%")
 
         # 计算需要买入的数量
         if available_slots is None:
@@ -553,10 +580,12 @@ class RisingChannelStrategy(BaseStrategy):
                     'current_volume': stock_info['current_volume'],
                     'avg_volume': stock_info['avg_volume'],
                     'volume_ratio': stock_info['volume_ratio'],
+                    'daily_gain': stock_info['daily_gain'],
                     # 添加中文字段名，确保与报告生成兼容
                     '当日成交量': stock_info['current_volume'],
                     '5日平均成交量': stock_info['avg_volume'],
-                    '成交量比': stock_info['volume_ratio']
+                    '成交量比': stock_info['volume_ratio'],
+                    '当日涨幅': stock_info['daily_gain']
                 })
 
                 # 计算买入数量
@@ -580,7 +609,7 @@ class RisingChannelStrategy(BaseStrategy):
                     stock_info['current_price'],
                     f"T+1日买入: 成交量比{stock_info['volume_ratio']:.2f}, "
                     f"当日成交量{stock_info['current_volume']:.0f}, 5日平均{stock_info['avg_volume']:.0f}, "
-                    f"评分{stock_info['score']:.1f}",
+                    f"当日涨幅{stock_info['daily_gain']:.2f}%, 评分{stock_info['score']:.1f}",
                     stock_info['score'] / 100.0,
                     extra=extras
                 )
@@ -1123,6 +1152,8 @@ class RisingChannelStrategy(BaseStrategy):
             "width_pct_max": config_params.get('width_pct_max', self.params.width_pct_max),
             "adjust": config_params.get('adjust', self.params.adjust),  # 复权类型参数，通道缓存需要包含
             "min_volume_ratio": config_params.get('min_volume_ratio', self.params.min_volume_ratio),  # 最小成交量比参数
+            "max_distance_to_lower": config_params.get('max_distance_to_lower', self.params.max_distance_to_lower),  # T日预筛选距离参数
+            "min_daily_gain": config_params.get('min_daily_gain', self.params.min_daily_gain),  # T+1日买入涨幅参数
         }
 
         # 添加策略层面的质量筛选参数
