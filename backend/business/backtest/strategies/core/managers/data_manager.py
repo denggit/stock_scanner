@@ -299,6 +299,105 @@ class DataManager:
         # 当日无数据：严格返回0，避免使用未来价格导致穿越
         return 0.0
 
+    def get_stock_volume(self, stock_code: str, date: datetime) -> float:
+        """
+        获取指定股票在指定日期的成交量
+        
+        Args:
+            stock_code: 股票代码
+            date: 日期
+            
+        Returns:
+            股票成交量，获取失败返回0.0
+        """
+        if stock_code not in self.stock_data:
+            return 0.0
+
+        stock_df = self.stock_data[stock_code]
+
+        # 确保date是datetime类型
+        if isinstance(date, datetime):
+            target_date = date
+        elif isinstance(date, pd.Timestamp):
+            target_date = date.to_pydatetime()
+        else:
+            target_date = pd.to_datetime(date).to_pydatetime()
+
+        # 统一为日期比较对象
+        try:
+            from pandas.api import types as ptypes
+            # 若列为datetime64，转为日期再比较；否则直接比较date
+            if ptypes.is_datetime64_any_dtype(stock_df['trade_date']):
+                trade_dates = pd.to_datetime(stock_df['trade_date']).dt.date
+            else:
+                trade_dates = stock_df['trade_date']
+        except Exception:
+            trade_dates = pd.to_datetime(stock_df['trade_date'], errors='coerce').dt.date
+
+        # 仅精确匹配"当日"成交量；若当日无该股票记录（如停牌/未上市），则不回退到未来数据，返回0.0
+        mask_exact = trade_dates == target_date.date()
+        if mask_exact.any():
+            # 取当日第一条（正常应唯一）
+            row_idx = stock_df.index[mask_exact][0]
+            try:
+                return float(stock_df.loc[row_idx, 'volume'])
+            except Exception:
+                pass
+
+        # 当日无数据：严格返回0，避免使用未来价格导致穿越
+        return 0.0
+
+    def get_stock_avg_volume(self, stock_code: str, date: datetime, days: int = 5) -> float:
+        """
+        获取指定股票在指定日期前N天的平均成交量
+        
+        Args:
+            stock_code: 股票代码
+            date: 日期
+            days: 计算平均的天数，默认5天
+            
+        Returns:
+            平均成交量，获取失败返回0.0
+        """
+        if stock_code not in self.stock_data:
+            return 0.0
+
+        stock_df = self.stock_data[stock_code]
+
+        # 确保date是datetime类型
+        if isinstance(date, datetime):
+            target_date = date
+        elif isinstance(date, pd.Timestamp):
+            target_date = date.to_pydatetime()
+        else:
+            target_date = pd.to_datetime(date).to_pydatetime()
+
+        # 获取指定日期前的数据
+        try:
+            from pandas.api import types as ptypes
+            if ptypes.is_datetime64_any_dtype(stock_df['trade_date']):
+                cutoff = pd.to_datetime(target_date)
+                filtered_df = stock_df[stock_df['trade_date'] < cutoff]
+            else:
+                filtered_df = stock_df[stock_df['trade_date'] < target_date.date()]
+        except Exception:
+            cutoff = pd.to_datetime(target_date)
+            try:
+                filtered_df = stock_df[stock_df['trade_date'] < cutoff]
+            except Exception:
+                filtered_df = stock_df[stock_df['trade_date'] < cutoff.date()]
+
+        # 取最近N天的数据
+        if len(filtered_df) >= days:
+            recent_df = filtered_df.tail(days)
+            try:
+                volumes = recent_df['volume'].astype(float)
+                return float(volumes.mean())
+            except Exception:
+                pass
+
+        return 0.0
+
     def get_stock_data_until(self, stock_code: str, date: datetime,
                              min_data_points: int = 60) -> Optional[pd.DataFrame]:
         """

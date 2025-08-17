@@ -33,15 +33,26 @@ class RisingChannelStrategy(BaseStrategy):
     4. 交易执行阶段：执行买入和卖出操作
     5. 日志记录阶段：记录交易详情和分析结果
     
-    买入条件（同时满足）：
+    买入策略（T日预筛选 + T+1日买入）：
+    
+    T日预筛选条件（同时满足）：
     1. 股票通道状态为NORMAL（正常上升通道）
     2. 通道评分 >= min_channel_score（默认60分）
     3. 当前价格位于通道内（>下沿 且 ≤上沿）
-    4. 股价在中轴到下沿中间位置下方（几何位置判断）
-    5. 当前持仓数量 < max_positions
-    6. R²值在有效范围内（R2_min <= R² <= R2_max）
-    7. 通道宽度在合理范围内（width_pct_min <= 宽度 <= width_pct_max）
-    8. 收盘价 > 开盘价（当日上涨）
+    4. R²值在有效范围内（R2_min <= R² <= R2_max）
+    5. 通道宽度在合理范围内（width_pct_min <= 宽度 <= width_pct_max）
+    6. 股价在中轴到下沿中间位置下方（几何位置判断）
+    
+    根据股价距离通道下沿百分比距离从小到大排序，选出max_position只股票。
+    
+    T+1日买入条件（同时满足）：
+    1. 依然是上升通道为NORMAL状态的股票
+    2. 几何位置要求：股价在中轴到下沿中间位置的下方
+    3. close > open的股票
+    4. 当日交易量大于过去五日平均交易量
+    5. 根据当日交易量对比过去五日平均交易量的增长比来从大到小排序
+    
+    依次买入挑选出来的股票直到满仓或无满足条件的股票
     
      卖出条件（满足任一）：
      1. 上升通道状态不为 NORMAL
@@ -153,6 +164,9 @@ class RisingChannelStrategy(BaseStrategy):
 
         # 记录个股是否曾进入过 BREAKOUT 状态，用于“回归 NORMAL 后卖出”的规则
         self._breakout_flag: dict[str, bool] = {}
+        
+        # T日预筛选的股票池，用于T+1日买入
+        self._preselected_stocks: List[str] = []
 
     def on_delayed_init(self):
         """
@@ -200,6 +214,10 @@ class RisingChannelStrategy(BaseStrategy):
         """
         生成交易信号
         
+        策略逻辑：
+        1. T日：完成当日买卖后，如果不满仓，进行预筛选
+        2. T+1日：从预筛选股票中买入
+        
         Returns:
             交易信号列表
         """
@@ -209,12 +227,16 @@ class RisingChannelStrategy(BaseStrategy):
         sell_signals = self._generate_sell_signals()
         signals.extend(sell_signals)
 
-        # 2. 需要买入时再生成买入信号
+        # 2. 计算执行卖出后的预期持仓数量
         current_positions = self.position_manager.get_position_count()
-        # 计算执行卖出后的预期持仓数量（去重统计待卖股票）
         sell_codes = {s.get('stock_code') for s in sell_signals if s.get('stock_code')}
         projected_positions = max(0, current_positions - len(sell_codes))
+        
+        # 3. 如果不满仓，进行T日预筛选
         if projected_positions < self.params.max_positions:
+            self._preselect_stocks_t_day()
+            
+            # 4. 生成买入信号（T+1日买入）
             available_slots = self.params.max_positions - projected_positions
             buy_signals = self._generate_buy_signals(available_slots=available_slots)
             signals.extend(buy_signals)
@@ -265,24 +287,20 @@ class RisingChannelStrategy(BaseStrategy):
 
         return sell_signals
 
-    def _generate_buy_signals(self, available_slots: Optional[int] = None) -> List[Dict[str, Any]]:
+    def _preselect_stocks_t_day(self) -> None:
         """
-        生成买入信号 - 重新设计的智能买入策略
+        T日预筛选股票 - 根据通道状态和价格位置筛选候选股票
         
-        策略逻辑：
-        1. 查看该股是否为上升通道（NORMAL状态）
-        2. 如果是上升通道，计算当前通道中轴到下沿中间的位置
-        3. 如果股价在中轴到下沿中间位置的下方，记录该股票
-        4. 横截面对比，按股价到下沿位置的百分比从小到大排序依次买入
+        筛选条件：
+        1. 通道状态要求：股票通道状态为NORMAL（正常上升通道）
+        2. 通道评分要求：通道评分 >= min_channel_score（默认60分）
+        3. 价格位置要求：当前价格位于通道内（>下沿 且 ≤上沿）
+        4. R²质量要求：R²值在有效范围内（R2_min <= R² <= R2_max）
+        5. 通道宽度要求：通道宽度在合理范围内（width_pct_min <= 宽度 <= width_pct_max）
+        6. 几何位置要求：股价在中轴到下沿中间位置的下方
         
-        Args:
-            available_slots: 可用买入槽位数
-            
-        Returns:
-            买入信号列表
+        根据股价距离通道下沿百分比距离从小到大排序，选出max_position只股票
         """
-        buy_signals = []
-
         # 批量分析所有股票的通道状态
         self._update_channel_analysis()
 
@@ -296,9 +314,12 @@ class RisingChannelStrategy(BaseStrategy):
         )
 
         if not normal_stocks:
-            return buy_signals
+            self._preselected_stocks = []
+            if self.params.enable_logging:
+                self.logger.info("T日预筛选：没有找到符合条件的股票")
+            return
 
-        # 记录符合条件的股票（股价在中轴到下沿中间位置下方）
+        # 记录符合条件的股票
         qualified_stocks = []
 
         for stock_info in normal_stocks:
@@ -309,25 +330,13 @@ class RisingChannelStrategy(BaseStrategy):
             if not self._is_channel_width_valid(channel_state):
                 if self.params.enable_logging:
                     self.logger.debug(
-                        f"股票 {stock_code} 通道宽度超出范围，跳过 (min={self.params.width_pct_min}, max={self.params.width_pct_max})"
+                        f"T日预筛选 - 股票 {stock_code} 通道宽度超出范围，跳过"
                     )
                 continue
 
             # 获取当前价格
             current_price = self.data_manager.get_stock_price(stock_code, self.current_date)
             if current_price <= 0:
-                continue
-
-            # 新增买入过滤条件：收盘价 > 开盘价
-            current_open = self.data_manager.get_stock_open_price(stock_code, self.current_date)
-            if current_open <= 0:
-                if self.params.enable_logging:
-                    self.logger.debug(f"股票 {stock_code} 开盘价无效，跳过")
-                continue
-            
-            if current_price <= current_open:
-                if self.params.enable_logging:
-                    self.logger.debug(f"股票 {stock_code} 收盘价 {current_price:.2f} <= 开盘价 {current_open:.2f}，跳过")
                 continue
 
             # 检查价格是否在通道内
@@ -348,7 +357,7 @@ class RisingChannelStrategy(BaseStrategy):
             if current_price > mid_to_lower_midpoint:
                 if self.params.enable_logging:
                     self.logger.debug(
-                        f"股票 {stock_code} 股价 {current_price:.2f} 在中轴到下沿中间位置 {mid_to_lower_midpoint:.2f} 上方，跳过"
+                        f"T日预筛选 - 股票 {stock_code} 股价在中轴到下沿中间位置上方，跳过"
                     )
                 continue
 
@@ -363,20 +372,152 @@ class RisingChannelStrategy(BaseStrategy):
                 'current_price': current_price,
                 'distance_to_lower': distance_to_lower,
                 'channel_state': channel_state,
-                'score': stock_info['score'],
-                'mid_to_lower_midpoint': mid_to_lower_midpoint,
-                'channel_width_pct': (getattr(channel_state, 'upper_today',
-                                              0) - lower_price) / mid_price * 100 if mid_price > 0 else 0
+                'score': stock_info['score']
             })
 
-        # 按距离下沿百分比从小到大排序（横截面排序）
+        # 按距离下沿百分比从小到大排序，选出max_position只股票
         qualified_stocks.sort(key=lambda x: x['distance_to_lower'])
+        self._preselected_stocks = [stock['stock_code'] for stock in qualified_stocks[:self.params.max_positions]]
 
-        if self.params.enable_logging and qualified_stocks:
-            self.logger.info(f"找到 {len(qualified_stocks)} 只符合条件的股票，按距离下沿排序:")
+        if self.params.enable_logging:
+            self.logger.info(f"T日预筛选完成：从{len(qualified_stocks)}只股票中选出{len(self._preselected_stocks)}只候选股票")
+            for i, stock_code in enumerate(self._preselected_stocks[:5]):  # 只显示前5只
+                stock_info = next(s for s in qualified_stocks if s['stock_code'] == stock_code)
+                self.logger.info(f"  {i + 1}. {stock_code}: 距离下沿 {stock_info['distance_to_lower']:.2f}%, 评分 {stock_info['score']:.1f}")
+
+    def _generate_buy_signals(self, available_slots: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        生成买入信号 - T+1日从预筛选股票中买入
+        
+        T+1日筛选条件：
+        1. 依然是上升通道为NORMAL状态的股票
+        2. 几何位置要求：股价在中轴到下沿中间位置的下方
+        3. close > open的股票
+        4. 当日交易量大于过去五日平均交易量
+        5. 根据当日交易量对比过去五日平均交易量的增长比来从大到小排序
+        
+        依次买入挑选出来的股票直到满仓或无满足条件的股票
+        
+        Args:
+            available_slots: 可用买入槽位数
+            
+        Returns:
+            买入信号列表
+        """
+        buy_signals = []
+
+        # 检查是否有预筛选的股票
+        if not self._preselected_stocks:
+            if self.params.enable_logging:
+                self.logger.info("T+1日买入：没有预筛选的股票，跳过买入")
+            return buy_signals
+
+        # 批量分析所有股票的通道状态
+        self._update_channel_analysis()
+
+        # 筛选NORMAL状态的股票
+        r2_min, r2_max = self._get_effective_r2_bounds()
+        normal_stocks = self.channel_manager.filter_normal_channels(
+            self.current_analysis_results,
+            self.params.min_channel_score,
+            r2_min=r2_min,
+            r2_max=r2_max
+        )
+
+        if not normal_stocks:
+            if self.params.enable_logging:
+                self.logger.info("T+1日买入：没有NORMAL状态的股票，跳过买入")
+            return buy_signals
+
+        # 从预筛选股票中筛选符合条件的股票
+        qualified_stocks = []
+
+        for stock_code in self._preselected_stocks:
+            # 检查是否在NORMAL状态股票中
+            stock_info = next((s for s in normal_stocks if s['stock_code'] == stock_code), None)
+            if not stock_info:
+                if self.params.enable_logging:
+                    self.logger.debug(f"T+1日买入 - 股票 {stock_code} 不再是NORMAL状态，跳过")
+                continue
+
+            channel_state = stock_info['channel_state']
+
+            # 获取当前价格
+            current_price = self.data_manager.get_stock_price(stock_code, self.current_date)
+            if current_price <= 0:
+                continue
+
+            # 检查收盘价 > 开盘价
+            current_open = self.data_manager.get_stock_open_price(stock_code, self.current_date)
+            if current_open <= 0:
+                if self.params.enable_logging:
+                    self.logger.debug(f"T+1日买入 - 股票 {stock_code} 开盘价无效，跳过")
+                continue
+            
+            if current_price <= current_open:
+                if self.params.enable_logging:
+                    self.logger.debug(f"T+1日买入 - 股票 {stock_code} 收盘价 {current_price:.2f} <= 开盘价 {current_open:.2f}，跳过")
+                continue
+
+            # 检查几何位置要求：股价在中轴到下沿中间位置的下方
+            mid_price = getattr(channel_state, 'mid_today', None)
+            lower_price = getattr(channel_state, 'lower_today', None)
+
+            if mid_price is None or lower_price is None:
+                continue
+
+            # 计算中轴到下沿的中间位置
+            mid_to_lower_midpoint = (mid_price + lower_price) / 2.0
+
+            # 检查股价是否在中轴到下沿中间位置的下方
+            if current_price > mid_to_lower_midpoint:
+                if self.params.enable_logging:
+                    self.logger.debug(
+                        f"T+1日买入 - 股票 {stock_code} 股价在中轴到下沿中间位置上方，跳过"
+                    )
+                continue
+
+            # 检查成交量要求：当日交易量大于过去五日平均交易量
+            current_volume = self.data_manager.get_stock_volume(stock_code, self.current_date)
+            avg_volume = self.data_manager.get_stock_avg_volume(stock_code, self.current_date, days=5)
+            
+            if current_volume <= 0 or avg_volume <= 0:
+                if self.params.enable_logging:
+                    self.logger.debug(f"T+1日买入 - 股票 {stock_code} 成交量数据无效，跳过")
+                continue
+            
+            if current_volume <= avg_volume:
+                if self.params.enable_logging:
+                    self.logger.debug(f"T+1日买入 - 股票 {stock_code} 当日成交量 {current_volume:.0f} <= 5日平均 {avg_volume:.0f}，跳过")
+                continue
+
+            # 计算成交量增长比
+            volume_ratio = current_volume / avg_volume
+
+            # 记录符合条件的股票
+            qualified_stocks.append({
+                'stock_code': stock_code,
+                'current_price': current_price,
+                'channel_state': channel_state,
+                'score': stock_info['score'],
+                'current_volume': current_volume,
+                'avg_volume': avg_volume,
+                'volume_ratio': volume_ratio
+            })
+
+        if not qualified_stocks:
+            if self.params.enable_logging:
+                self.logger.info("T+1日买入：没有满足所有条件的股票，跳过买入")
+            return buy_signals
+
+        # 根据成交量增长比从大到小排序
+        qualified_stocks.sort(key=lambda x: x['volume_ratio'], reverse=True)
+
+        if self.params.enable_logging:
+            self.logger.info(f"T+1日买入：找到 {len(qualified_stocks)} 只满足条件的股票，按成交量增长比排序:")
             for i, stock in enumerate(qualified_stocks[:5]):  # 只显示前5只
-                self.logger.info(f"  {i + 1}. {stock['stock_code']}: 距离下沿 {stock['distance_to_lower']:.2f}%, "
-                                 f"通道宽度 {stock['channel_width_pct']:.1f}%, 评分 {stock['score']:.1f}")
+                self.logger.info(f"  {i + 1}. {stock['stock_code']}: 成交量比 {stock['volume_ratio']:.2f}, "
+                                 f"当日成交量 {stock['current_volume']:.0f}, 5日平均 {stock['avg_volume']:.0f}")
 
         # 计算需要买入的数量
         if available_slots is None:
@@ -399,19 +540,17 @@ class RisingChannelStrategy(BaseStrategy):
                 extras = self._format_channel_extras(
                     chs,
                     stock_info['current_price'],
-                    score=stock_info.get('score'),
-                    distance_to_lower=stock_info.get('distance_to_lower')
+                    score=stock_info.get('score')
                 )
 
-                # 添加额外的通道几何信息
+                # 添加成交量信息
                 extras.update({
-                    'mid_to_lower_midpoint': stock_info['mid_to_lower_midpoint'],
-                    'channel_width_pct': stock_info['channel_width_pct'],
-                    'buy_position_ratio': stock_info['distance_to_lower'] / stock_info['channel_width_pct'] if
-                    stock_info['channel_width_pct'] > 0 else 0
+                    'current_volume': stock_info['current_volume'],
+                    'avg_volume': stock_info['avg_volume'],
+                    'volume_ratio': stock_info['volume_ratio']
                 })
 
-                # 计算买入数量，避免前视偏差
+                # 计算买入数量
                 per_trade_cash = self.get_per_trade_cash(self.params.max_positions)
                 current_price = stock_info['current_price']
 
@@ -424,14 +563,15 @@ class RisingChannelStrategy(BaseStrategy):
                 # 如果调整后数量为0，跳过这只股票
                 if adjusted_size <= 0:
                     if self.params.enable_logging:
-                        self.logger.debug(f"股票 {stock_code} 调整后买入数量为0，跳过")
+                        self.logger.debug(f"T+1日买入 - 股票 {stock_code} 调整后买入数量为0，跳过")
                     continue
 
                 signal = self._create_buy_signal(
                     stock_code,
                     stock_info['current_price'],
-                    f"智能买入: 股价在中轴到下沿中间位置下方，距离下沿{stock_info['distance_to_lower']:.2f}% "
-                    f"(通道宽度{stock_info['channel_width_pct']:.1f}%)，评分{stock_info['score']:.1f}",
+                    f"T+1日买入: 成交量比{stock_info['volume_ratio']:.2f}, "
+                    f"当日成交量{stock_info['current_volume']:.0f}, 5日平均{stock_info['avg_volume']:.0f}, "
+                    f"评分{stock_info['score']:.1f}",
                     stock_info['score'] / 100.0,
                     extra=extras
                 )
