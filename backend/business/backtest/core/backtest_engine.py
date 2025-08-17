@@ -93,7 +93,7 @@ class BacktestEngine:
             name = getattr(data, 'name', name)
 
         self.cerebro.adddata(data_feed)
-        self.logger.info(f"数据已添加: {name}")
+        self.logger.debug(f"数据已添加: {name}")
 
     def add_strategy(self, strategy_class: Type[BaseStrategy], **kwargs) -> None:
         """

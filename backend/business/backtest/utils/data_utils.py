@@ -322,7 +322,7 @@ class DataUtils:
 
                 # 检查数据天数
                 if len(stock_data) < min_data_days:
-                    logger.warning(f"股票 {stock_code} 数据天数不足: {len(stock_data)} < {min_data_days}")
+                    logger.debug(f"股票 {stock_code} 数据天数不足: {len(stock_data)} < {min_data_days}")
                     failed_count += 1
                     continue
 
