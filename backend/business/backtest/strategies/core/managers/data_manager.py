@@ -251,6 +251,54 @@ class DataManager:
         # 当日无数据：严格返回0，避免使用未来价格导致穿越
         return 0.0
 
+    def get_stock_open_price(self, stock_code: str, date: datetime) -> float:
+        """
+        获取指定股票在指定日期的开盘价
+        
+        Args:
+            stock_code: 股票代码
+            date: 日期
+            
+        Returns:
+            股票开盘价，获取失败返回0.0
+        """
+        if stock_code not in self.stock_data:
+            return 0.0
+
+        stock_df = self.stock_data[stock_code]
+
+        # 确保date是datetime类型
+        if isinstance(date, datetime):
+            target_date = date
+        elif isinstance(date, pd.Timestamp):
+            target_date = date.to_pydatetime()
+        else:
+            target_date = pd.to_datetime(date).to_pydatetime()
+
+        # 统一为日期比较对象
+        try:
+            from pandas.api import types as ptypes
+            # 若列为datetime64，转为日期再比较；否则直接比较date
+            if ptypes.is_datetime64_any_dtype(stock_df['trade_date']):
+                trade_dates = pd.to_datetime(stock_df['trade_date']).dt.date
+            else:
+                trade_dates = stock_df['trade_date']
+        except Exception:
+            trade_dates = pd.to_datetime(stock_df['trade_date'], errors='coerce').dt.date
+
+        # 仅精确匹配"当日"开盘价；若当日无该股票记录（如停牌/未上市），则不回退到未来数据，返回0.0
+        mask_exact = trade_dates == target_date.date()
+        if mask_exact.any():
+            # 取当日第一条（正常应唯一）
+            row_idx = stock_df.index[mask_exact][0]
+            try:
+                return float(stock_df.loc[row_idx, 'open'])
+            except Exception:
+                pass
+
+        # 当日无数据：严格返回0，避免使用未来价格导致穿越
+        return 0.0
+
     def get_stock_data_until(self, stock_code: str, date: datetime,
                              min_data_points: int = 60) -> Optional[pd.DataFrame]:
         """

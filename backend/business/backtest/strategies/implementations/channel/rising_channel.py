@@ -41,6 +41,7 @@ class RisingChannelStrategy(BaseStrategy):
     5. 当前持仓数量 < max_positions
     6. R²值在有效范围内（R2_min <= R² <= R2_max）
     7. 通道宽度在合理范围内（width_pct_min <= 宽度 <= width_pct_max）
+    8. 收盘价 > 开盘价（当日上涨）
     
      卖出条件（满足任一）：
      1. 上升通道状态不为 NORMAL
@@ -315,6 +316,18 @@ class RisingChannelStrategy(BaseStrategy):
             # 获取当前价格
             current_price = self.data_manager.get_stock_price(stock_code, self.current_date)
             if current_price <= 0:
+                continue
+
+            # 新增买入过滤条件：收盘价 > 开盘价
+            current_open = self.data_manager.get_stock_open_price(stock_code, self.current_date)
+            if current_open <= 0:
+                if self.params.enable_logging:
+                    self.logger.debug(f"股票 {stock_code} 开盘价无效，跳过")
+                continue
+            
+            if current_price <= current_open:
+                if self.params.enable_logging:
+                    self.logger.debug(f"股票 {stock_code} 收盘价 {current_price:.2f} <= 开盘价 {current_open:.2f}，跳过")
                 continue
 
             # 检查价格是否在通道内
