@@ -126,8 +126,17 @@ class RisingChannelStrategy(BaseStrategy):
             cache_adapter: 缓存适配器实例
             **kwargs: backtrader 策略参数（通过params定义的参数）
         """
-        # 调用父类初始化
-        super().__init__(stock_data_dict, **kwargs)
+        # 获取配置文件中的策略参数
+        from backend.business.backtest.configs.rising_channel_config import RisingChannelConfig
+        config = RisingChannelConfig()
+        config_params = config.get_strategy_params()
+        
+        # 合并配置参数和传入的kwargs，kwargs优先级更高
+        merged_params = config_params.copy()
+        merged_params.update(kwargs)
+        
+        # 调用父类初始化，使用合并后的参数
+        super().__init__(stock_data_dict, **merged_params)
 
         # 缓存适配器
         self.cache_adapter = cache_adapter
@@ -789,7 +798,7 @@ class RisingChannelStrategy(BaseStrategy):
                 'delta_cut': 5,
                 'pivot_m': 3,
                 'min_data_points': 60,
-                'R2_min': 0.20,
+                'R2_min': 0.6,
                 'width_pct_min': 0.04,
                 'width_pct_max': 0.12,
                 'adjust': getattr(self.params, 'adjust', 1)  # 添加adjust参数（用于缓存键生成）
@@ -936,25 +945,35 @@ class RisingChannelStrategy(BaseStrategy):
 
     def _get_channel_params(self) -> Dict[str, Any]:
         """获取通道分析器参数"""
-        # 注意：若用户将 R2_min 设为 None，我们不传入该键，让底层分析器使用其默认值（避免回归有效性检查出错）
+        # 优先使用配置文件中的参数
+        from backend.business.backtest.configs.rising_channel_config import RisingChannelConfig
+        config = RisingChannelConfig()
+        config_params = config.get_strategy_params()
+        
+        # 构建通道分析器参数
         params = {
-            "k": self.params.k,
-            "L_max": self.params.L_max,
-            "delta_cut": self.params.delta_cut,
-            "pivot_m": self.params.pivot_m,
-            "min_data_points": self.params.min_data_points,
-            "width_pct_min": self.params.width_pct_min,
-            "width_pct_max": self.params.width_pct_max,
-            "adjust": self.params.adjust,  # 复权类型参数，通道缓存需要包含
+            "k": config_params.get('k', self.params.k),
+            "L_max": config_params.get('L_max', self.params.L_max),
+            "delta_cut": config_params.get('delta_cut', self.params.delta_cut),
+            "pivot_m": config_params.get('pivot_m', self.params.pivot_m),
+            "min_data_points": config_params.get('min_data_points', self.params.min_data_points),
+            "width_pct_min": config_params.get('width_pct_min', self.params.width_pct_min),
+            "width_pct_max": config_params.get('width_pct_max', self.params.width_pct_max),
+            "adjust": config_params.get('adjust', self.params.adjust),  # 复权类型参数，通道缓存需要包含
         }
 
         # 添加策略层面的质量筛选参数
-        if self.params.R2_min is not None:
-            params["R2_min"] = self.params.R2_min
-        if self.params.R2_max is not None:
-            params["R2_max"] = self.params.R2_max
-        if hasattr(self.params, 'min_channel_score'):
-            params["min_channel_score"] = self.params.min_channel_score
+        r2_min = config_params.get('R2_min', self.params.R2_min)
+        r2_max = config_params.get('R2_max', self.params.R2_max)
+        
+        if r2_min is not None:
+            params["R2_min"] = r2_min
+        if r2_max is not None:
+            params["R2_max"] = r2_max
+            
+        min_channel_score = config_params.get('min_channel_score', getattr(self.params, 'min_channel_score', None))
+        if min_channel_score is not None:
+            params["min_channel_score"] = min_channel_score
 
         return params
 

@@ -369,7 +369,7 @@ class HistoryCalculationTemplate:
             bool: 质量检查是否通过
         """
         # 检查R²
-        r2_min = config.get('R2_min', 0.20)
+        r2_min = config.get('R2_min', 0.6)
         r2_max = config.get('R2_max', 0.95)
         if r2 is None or r2 < r2_min or r2 > r2_max:
             return False
@@ -425,7 +425,7 @@ class AscendingChannelRegression:
         self.delta_cut = params.get('delta_cut', config_section['delta_cut'])
         self.pivot_m = params.get('pivot_m', config_section['pivot_m'])
         self.min_data_points = params.get('min_data_points', config_section['min_data_points'])
-        self.R2_min = params.get('R2_min', config_section.get('R2_min', 0.20))
+        self.R2_min = params.get('R2_min', config_section.get('R2_min', 0.35))
         self.width_pct_min = params.get('width_pct_min', config_section.get('width_pct_min', 0.04))
         self.width_pct_max = params.get('width_pct_max', config_section.get('width_pct_max', 0.12))
 
@@ -465,7 +465,7 @@ class AscendingChannelRegression:
                 'delta_cut': 5,
                 'pivot_m': 3,
                 'min_data_points': 60,
-                'R2_min': 0.20,
+                'R2_min': 0.6,
                 'width_pct_min': 0.04,
                 'width_pct_max': 0.15
             }
@@ -586,7 +586,7 @@ class AscendingChannelRegression:
             bool: 质量检查是否通过
         """
         # 检查R²
-        r2_min = config.get('R2_min', 0.20)
+        r2_min = config.get('R2_min', 0.6)
         r2_max = config.get('R2_max', 0.95)
         if r2 is None or r2 < r2_min or r2 > r2_max:
             return False

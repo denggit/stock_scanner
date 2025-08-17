@@ -18,7 +18,7 @@ ascending_channel:
   min_data_points: 60
   
   # 最小回归拟合优度R²阈值，低于此视为无效通道
-  R2_min: 0.20
+  R2_min: 0.35
   # 通道宽度下限 (上沿-下沿)/mid_today，小于此视为过窄
   width_pct_min: 0.04
   # 通道宽度上限，超过此视为过宽

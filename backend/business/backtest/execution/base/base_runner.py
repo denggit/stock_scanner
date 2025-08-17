@@ -153,7 +153,7 @@ class BaseBacktestRunner:
                 'delta_cut': 5,
                 'pivot_m': 3,
                 'min_data_points': 60,
-                'R2_min': 0.20,
+                'R2_min': 0.6,
                 'width_pct_min': 0.04,
                 'width_pct_max': 0.12,
                 'adjust': strategy_params.get('adjust', 1)  # 添加adjust参数（用于缓存键生成）
