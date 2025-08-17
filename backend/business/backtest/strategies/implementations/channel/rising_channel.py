@@ -289,10 +289,13 @@ class RisingChannelStrategy(BaseStrategy):
 
             # 若符合卖出条件，生成卖出信号
             if self._should_sell_stock(stock_code, channel_state, stock_data):
-                reason = f"通道状态变化: {channel_state.channel_status.value if channel_state else 'None'}"
+                # 获取具体的卖出原因
+                sell_reason = self._get_sell_reason(stock_code, channel_state, stock_data)
                 current_price = self.data_manager.get_stock_price(stock_code, self.current_date)
                 extras = self._format_channel_extras(channel_state, current_price)
-                signal = self._create_sell_signal(stock_code, reason, extra=extras)
+                # 在extras中添加卖出原因
+                extras['卖出原因'] = sell_reason
+                signal = self._create_sell_signal(stock_code, sell_reason, extra=extras)
                 if signal:
                     sell_signals.append(signal)
 
@@ -994,6 +997,59 @@ class RisingChannelStrategy(BaseStrategy):
                 'width_pct_max': 0.12,
                 'adjust': getattr(self.params, 'adjust', 1)  # 添加adjust参数（用于缓存键生成）
             }
+
+    def _get_sell_reason(self, stock_code: str, channel_state, stock_data: Optional[pd.DataFrame] = None) -> str:
+        """
+        获取卖出原因
+        
+        Args:
+            stock_code: 股票代码
+            channel_state: 通道状态对象
+            stock_data: 股票数据
+            
+        Returns:
+            卖出原因字符串
+        """
+        try:
+            # 1. 检查通道状态
+            if channel_state is None:
+                return "通道状态为空"
+            
+            if not hasattr(channel_state, 'channel_status'):
+                return "通道状态字段缺失"
+            
+            if channel_state.channel_status != ChannelStatus.NORMAL:
+                return f"通道状态异常: {channel_state.channel_status.value}"
+            
+            # 2. 检查价格突破通道上沿
+            sell_on_close = getattr(self.p, 'sell_on_close_breakout', True)
+            
+            # 获取当日价格
+            day_price = None
+            if stock_data is not None and len(stock_data) >= 1:
+                try:
+                    if sell_on_close:
+                        day_price = float(stock_data.iloc[-1]['close'])
+                    else:
+                        day_price = float(stock_data.iloc[-1]['high'])
+                except Exception:
+                    day_price = None
+            
+            # 获取通道上沿
+            upper_today = getattr(channel_state, 'upper_today', None)
+            if day_price is not None and upper_today is not None:
+                try:
+                    if float(day_price) > float(upper_today):
+                        price_type = "收盘价" if sell_on_close else "最高价"
+                        return f"{price_type}突破通道上沿: {day_price:.2f} > {upper_today:.2f}"
+                except Exception:
+                    pass
+            
+            # 3. 其他情况
+            return "其他卖出条件"
+            
+        except Exception as e:
+            return f"卖出原因分析异常: {str(e)}"
 
     def _should_sell_stock(self, stock_code: str, channel_state, stock_data: Optional[pd.DataFrame] = None) -> bool:
         """

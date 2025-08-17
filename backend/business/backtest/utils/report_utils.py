@@ -867,6 +867,7 @@ class ReportUtils:
                 '当日成交量',
                 '5日平均成交量',
                 '当日涨幅',
+                '卖出原因',
             ]
 
             # 收集存在于原df中的通道字段
@@ -1210,6 +1211,9 @@ class ReportUtils:
                     
                     # 提取当日涨幅数据（从买入交易）
                     daily_gain = buy_trade.get('daily_gain', buy_trade.get('当日涨幅', None))
+                    
+                    # 提取卖出原因（从卖出交易）
+                    sell_reason = sell_trade.get('卖出原因', '')
 
                     record = {
                         '买入日期': buy_date,
@@ -1233,6 +1237,7 @@ class ReportUtils:
                         '买入日成交量': round(current_volume, 0) if current_volume is not None else '',
                         '买入日5日平均成交量': round(avg_volume, 0) if avg_volume is not None else '',
                         '买入日涨幅': round(daily_gain, 2) if daily_gain is not None else '',
+                        '卖出原因': sell_reason,
                     }
 
                     analysis_records.append(record)
