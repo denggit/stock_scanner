@@ -98,26 +98,27 @@ class RisingChannelConfig:
 
         # 卖出规则参数
         'sell_on_close_breakout': True,  # 是否使用收盘价突破通道上沿作为卖出条件（True=收盘价，False=最高价）
+        'breakout_pullback_threshold': 3.0,  # BREAKOUT状态回撤阈值（%）
 
         # 通道分析参数
         'k': 2.0,  # 通道斜率参数
         'L_max': 120,  # 最大回看天数
         'delta_cut': 5,  # 切割参数
         'pivot_m': 3,  # 枢轴参数
-        'R2_min': 0.45,  # 最小R²值（用于通道有效性判定）；根据回测分析，R²>=0.6的交易表现明显更好
-        'R2_max': 0.95,  # 最大R²值上限（保持较宽范围，避免过早卖出）
+        'R2_min': 0.5,  # 最小R²值（用于通道有效性判定）；根据回测分析，R²>=0.6的交易表现明显更好
+        'R2_max': 0.9,  # 最大R²值上限（保持较宽范围，避免过早卖出）
         'R2_range': None,  # 参数优化时可传入 [R2_min, R2_max]，两者均可为 None
-        'width_pct_min': 0.04,  # 最小通道宽度
-        'width_pct_max': 0.10,  # 最大通道宽度
+        'width_pct_min': 0.05,  # 最小通道宽度
+        'width_pct_max': 0.12,  # 最大通道宽度
         
         # 成交量过滤参数
         'min_volume_ratio': 1.1,  # 最小成交量比（当日成交量/5日平均成交量）
         
         # T日预筛选参数
-        'max_distance_to_lower': 2.5,  # T日预筛选时股价距离通道下沿的最大百分比距离
+        'max_distance_to_lower': 2.0,  # T日预筛选时股价距离通道下沿的最大百分比距离
         
         # T+1日买入参数
-        'min_daily_gain': 0.3,  # T+1日买入时的最小当日涨幅要求（%）
+        'min_daily_gain': 0.5,  # T+1日买入时的最小当日涨幅要求（%）
     }
 
     # ==================== 参数优化范围 ====================

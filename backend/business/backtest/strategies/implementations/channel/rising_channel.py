@@ -118,6 +118,7 @@ class RisingChannelStrategy(BaseStrategy):
 
         # 卖出规则参数
         ('sell_on_close_breakout', True),  # 是否使用收盘价突破通道上沿作为卖出条件
+        ('breakout_pullback_threshold', 3.0),  # BREAKOUT状态回撤阈值（%）
 
         # 通道分析参数
         ('k', 2.0),  # 通道斜率参数
@@ -175,6 +176,9 @@ class RisingChannelStrategy(BaseStrategy):
 
         # 记录个股是否曾进入过 BREAKOUT 状态，用于“回归 NORMAL 后卖出”的规则
         self._breakout_flag: dict[str, bool] = {}
+        
+        # 记录BREAKOUT状态的最高价，用于回撤策略
+        self._breakout_high_prices: dict[str, float] = {}
         
         # T日预筛选的股票池，用于T+1日买入
         self._preselected_stocks: List[str] = []
@@ -1018,11 +1022,41 @@ class RisingChannelStrategy(BaseStrategy):
             if not hasattr(channel_state, 'channel_status'):
                 return "通道状态字段缺失"
             
-            if channel_state.channel_status != ChannelStatus.NORMAL:
-                return f"通道状态异常: {channel_state.channel_status.value}"
+            current_status = channel_state.channel_status
             
-            # 2. 检查价格突破通道上沿
-            sell_on_close = getattr(self.p, 'sell_on_close_breakout', True)
+            # 2. BREAKOUT状态特殊处理
+            if current_status == ChannelStatus.BREAKOUT:
+                sell_on_close = getattr(self.params, 'sell_on_close_breakout', True)
+                
+                if sell_on_close and stock_code in self._breakout_high_prices:
+                    # 获取当前价格
+                    current_price = None
+                    if stock_data is not None and len(stock_data) >= 1:
+                        try:
+                            current_price = float(stock_data.iloc[-1]['close'])
+                        except Exception:
+                            current_price = None
+                    
+                    if current_price is not None:
+                        high_price = self._breakout_high_prices[stock_code]
+                        pullback_threshold = getattr(self.params, 'breakout_pullback_threshold', 3.0)
+                        
+                        if high_price > 0:
+                            pullback_pct = ((high_price - current_price) / high_price) * 100
+                            
+                            # 如果回撤超过阈值，返回回撤卖出原因
+                            if pullback_pct >= pullback_threshold:
+                                return f"BREAKOUT回撤卖出: 最高价{high_price:.2f}, 当前价{current_price:.2f}, 回撤{pullback_pct:.2f}%"
+                
+                # 如果不是回撤卖出，返回一般BREAKOUT原因
+                return f"通道状态异常: {current_status.value}"
+            
+            # 3. 其他非NORMAL状态
+            if current_status != ChannelStatus.NORMAL:
+                return f"通道状态异常: {current_status.value}"
+            
+            # 4. NORMAL状态：检查价格突破通道上沿
+            sell_on_close = getattr(self.params, 'sell_on_close_breakout', True)
             
             # 获取当日价格
             day_price = None
@@ -1045,7 +1079,7 @@ class RisingChannelStrategy(BaseStrategy):
                 except Exception:
                     pass
             
-            # 3. 其他情况
+            # 5. 其他情况
             return "其他卖出条件"
             
         except Exception as e:
@@ -1056,8 +1090,9 @@ class RisingChannelStrategy(BaseStrategy):
         判断是否应该卖出股票（优化后的规则）
 
         卖出规则（满足任一条件即卖出）：
-        1) 上升通道状态不为 NORMAL
+        1) 上升通道状态不为 NORMAL（除了BREAKOUT状态的特殊处理）
         2) 价格突破通道上沿（根据 sell_on_close_breakout 参数决定使用收盘价还是最高价）
+        3) BREAKOUT状态：如果sell_on_close_breakout=True，则从最高点回撤3%再卖出
 
         Args:
             stock_code: 股票代码
@@ -1067,15 +1102,60 @@ class RisingChannelStrategy(BaseStrategy):
             是否应该卖出
         """
         try:
-            # 1) 通道状态非 NORMAL：直接卖出
+            # 1) 通道状态检查
             if (channel_state is None) or (not hasattr(channel_state, 'channel_status')):
                 return True
-            if channel_state.channel_status != ChannelStatus.NORMAL:
+            
+            current_status = channel_state.channel_status
+            
+            # 获取当前价格
+            current_price = None
+            if stock_data is not None and len(stock_data) >= 1:
+                try:
+                    current_price = float(stock_data.iloc[-1]['close'])
+                except Exception:
+                    current_price = None
+            
+            # 2) BREAKOUT状态特殊处理
+            if current_status == ChannelStatus.BREAKOUT:
+                sell_on_close = getattr(self.params, 'sell_on_close_breakout', True)
+                
+                if sell_on_close and current_price is not None:
+                    # 记录或更新BREAKOUT状态的最高价
+                    if stock_code not in self._breakout_high_prices:
+                        self._breakout_high_prices[stock_code] = current_price
+                    else:
+                        self._breakout_high_prices[stock_code] = max(
+                            self._breakout_high_prices[stock_code], 
+                            current_price
+                        )
+                    
+                    # 计算回撤百分比
+                    high_price = self._breakout_high_prices[stock_code]
+                    pullback_threshold = getattr(self.params, 'breakout_pullback_threshold', 3.0)
+                    
+                    if high_price > 0:
+                        pullback_pct = ((high_price - current_price) / high_price) * 100
+                        
+                        # 如果回撤超过阈值，则卖出
+                        if pullback_pct >= pullback_threshold:
+                            if self.params.enable_logging:
+                                self.logger.info(f"BREAKOUT回撤卖出: {stock_code}, 最高价: {high_price:.2f}, "
+                                                f"当前价: {current_price:.2f}, 回撤: {pullback_pct:.2f}%")
+                            return True
+                    
+                    # 未达到回撤阈值，继续持有
+                    return False
+                else:
+                    # sell_on_close=False 或无法获取价格，按原逻辑处理
+                    return True
+            
+            # 3) 其他非NORMAL状态：直接卖出
+            if current_status != ChannelStatus.NORMAL:
                 return True
 
-            # 2) 价格突破通道上沿：卖出
-            # 根据参数决定使用收盘价还是最高价
-            sell_on_close = getattr(self.p, 'sell_on_close_breakout', True)
+            # 4) NORMAL状态：检查价格突破通道上沿
+            sell_on_close = getattr(self.params, 'sell_on_close_breakout', True)
 
             # 获取当日价格
             day_price = None
@@ -1117,11 +1197,12 @@ class RisingChannelStrategy(BaseStrategy):
         # 先执行父类逻辑（包含跌停禁卖、清仓、记录等）
         super()._execute_sell_signal(signal)
 
-        # 若卖出成功（不再持仓），清理 BREAKOUT 标记
+        # 若卖出成功（不再持仓），清理 BREAKOUT 标记和最高价记录
         try:
             stock_code = signal.get('stock_code')
             if stock_code and (not self.position_manager.has_position(stock_code)):
                 self._breakout_flag.pop(stock_code, None)
+                self._breakout_high_prices.pop(stock_code, None)
         except Exception:
             pass
 
