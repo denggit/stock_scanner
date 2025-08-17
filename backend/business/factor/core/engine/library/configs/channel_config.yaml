@@ -17,6 +17,9 @@ ascending_channel:
   # 最小数据要求
   min_data_points: 60
   
+  # 最小斜率阈值，低于此视为弱上升通道
+  slope_min: 0.001
+  
   # 最小回归拟合优度R²阈值，低于此视为无效通道
   R2_min: 0.20
   # 通道宽度下限 (上沿-下沿)/mid_today，小于此视为过窄

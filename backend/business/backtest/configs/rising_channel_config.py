@@ -90,14 +90,15 @@ class RisingChannelConfig:
         'enable_logging': True,  # 是否启用日志
 
         # 卖出规则参数
-        'sell_on_close_breakout': True,  # 是否使用收盘价突破通道上沿作为卖出条件（True=收盘价，False=最高价）
+        'sell_on_close_breakout': False,  # 是否使用收盘价突破通道上沿作为卖出条件（True=收盘价，False=最高价）
 
         # 通道分析参数
         'k': 2.0,  # 通道斜率参数
         'L_max': 120,  # 最大回看天数
         'delta_cut': 5,  # 切割参数
         'pivot_m': 3,  # 枢轴参数
-        'R2_min': 0.2,  # 最小R²值（用于通道有效性判定）；若在选股阶段想取消下限，可将选股用的 R2_min 设为 None
+        'slope_min': 0.001,  # 最小斜率阈值（新增）
+        'R2_min': 0.6,  # 最小R²值（用于通道有效性判定）；若在选股阶段想取消下限，可将选股用的 R2_min 设为 None
         'R2_max': 0.90,  # 最大R²值上限（仅用于选股过滤；None 表示不设上限）
         'R2_range': None,  # 参数优化时可传入 [R2_min, R2_max]，两者均可为 None
         'width_pct_min': 0.05,  # 最小通道宽度
@@ -109,6 +110,7 @@ class RisingChannelConfig:
         # 'max_positions': [20],  # 持仓数量范围
         # 'min_channel_score': [60.0],  # 通道评分范围
         # # 'k': [1.5, 2.0, 2.5],  # 通道斜率范围
+        'slope_min': [0.0005, 0.001, 0.002, 0.005],  # 最小斜率阈值范围（新增）
         'R2_min': [0.1, 0.2, 0.4, 0.6, 0.8],  # 最小R²值范围（用于通道有效性判定）
         'width_pct_min': [0.04, 0.05],  # 最小通道宽度范围
         'width_pct_max': [0.12, 0.15, 0.2, 0.3],  # 最大通道宽度范围
@@ -123,6 +125,7 @@ class RisingChannelConfig:
                 'max_positions': 30,  # 较少持仓
                 'min_channel_score': 70.0,  # 更高评分要求
                 'k': 1.5,  # 较低斜率
+                'slope_min': 0.002,  # 更高斜率要求（新增）
                 # （已移除 gain_trigger）
                 'R2_min': 0.25,  # 更高R²要求
                 'width_pct_min': 0.05,  # 更宽通道要求
@@ -136,6 +139,7 @@ class RisingChannelConfig:
                 'max_positions': 70,  # 更多持仓
                 'min_channel_score': 50.0,  # 较低评分要求
                 'k': 2.5,  # 较高斜率
+                'slope_min': 0.0005,  # 较低斜率要求（新增）
                 # （已移除 gain_trigger）
                 'R2_min': 0.15,  # 较低R²要求
                 'width_pct_min': 0.03,  # 较窄通道要求

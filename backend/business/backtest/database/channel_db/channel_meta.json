@@ -15,6 +15,22 @@
       "readable_key": "L_max_120_R2_min_0.200_delta_cut_5_k_2.000_min_data_points_60_pivot_m_3_width_pct_max_0.120_width_pct_min_0.050",
       "created_at": "2025-08-17T12:51:10.013962",
       "schema_version": "narrow_v1"
+    },
+    "d690210b21759ca5": {
+      "table": "channel_rcn_d690210b21759ca5",
+      "params": {
+        "k": 2.0,
+        "L_max": 120,
+        "delta_cut": 5,
+        "pivot_m": 3,
+        "min_data_points": 60,
+        "R2_min": 0.6,
+        "width_pct_min": 0.05,
+        "width_pct_max": 0.12
+      },
+      "readable_key": "L_max_120_R2_min_0.600_delta_cut_5_k_2.000_min_data_points_60_pivot_m_3_width_pct_max_0.120_width_pct_min_0.050",
+      "created_at": "2025-08-17T13:51:12.007363",
+      "schema_version": "narrow_v1"
     }
   }
 }
