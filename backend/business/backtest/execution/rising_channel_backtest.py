@@ -232,7 +232,7 @@ def main():
     _print_header()
 
     # 可以修改这里来测试不同环境
-    environment = 'optimization'
+    environment = 'development'
 
     try:
         runner = RisingChannelBacktestRunner(log_level=logging.INFO, environment=environment)

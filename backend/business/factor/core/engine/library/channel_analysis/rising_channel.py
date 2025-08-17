@@ -102,8 +102,8 @@ class StandardChannelStrategy(ChannelCalculationStrategy):
         # 4. 回归计算
         beta, sigma, r2 = self._calculate_regression(window_df, anchor_date)
 
-        # 5. 回归有效性检查（移除斜率为负的丢弃逻辑）
-        if beta is None or r2 < config['R2_min']:
+        # 5. 回归有效性检查（包括斜率为负的检查）
+        if beta is None or beta <= 0 or r2 < config['R2_min']:
             return ChannelCalculationResult(
                 is_valid=False, anchor_date=anchor_date, anchor_price=anchor_price,
                 window_df=window_df, beta=beta, sigma=sigma, r2=r2, state=None,
@@ -119,13 +119,18 @@ class StandardChannelStrategy(ChannelCalculationStrategy):
         )
         state.update_channel_boundaries(beta, sigma, config['k'])
 
-        # 基于当日价格的三态判定
-        if current_close > state.upper_today:
-            state.channel_status = ChannelStatus.BREAKOUT
-        elif current_close < state.lower_today:
-            state.channel_status = ChannelStatus.BREAKDOWN
+        # 基于斜率和价格位置的状态判定
+        if beta <= 0:
+            # 斜率为负，标记为OTHER
+            state.channel_status = ChannelStatus.OTHER
         else:
-            state.channel_status = ChannelStatus.NORMAL
+            # 斜率为正，根据价格位置判定状态
+            if current_close > state.upper_today:
+                state.channel_status = ChannelStatus.BREAKOUT
+            elif current_close < state.lower_today:
+                state.channel_status = ChannelStatus.BREAKDOWN
+            else:
+                state.channel_status = ChannelStatus.NORMAL
 
         # 7. 通道宽度检查（保持：宽度无效则记为无效，但带回已计算状态与边界）
         width_pct = (state.upper_today - state.lower_today) / state.mid_today if state.mid_today else None
@@ -290,19 +295,8 @@ class HistoryCalculationTemplate:
                     if result.sigma and result.state.mid_today and result.state.mid_today > 0:
                         base_record['volatility'] = result.sigma / result.state.mid_today
                 
-                # 状态判定：根据是否有state和break_reason来确定状态
-                if result.state is not None:
-                    # 有state但质量检查不通过，需要进一步判断
-                    if result.break_reason in ["invalid_width", "invalid_regression"]:
-                        # 检查斜率方向
-                        if result.beta is not None and result.beta > 0:
-                            base_record['channel_status'] = ChannelStatus.ASCENDING_WEAK.value
-                        else:
-                            base_record['channel_status'] = ChannelStatus.OTHER.value
-                    else:
-                        base_record['channel_status'] = ChannelStatus.OTHER.value
-                else:
-                    base_record['channel_status'] = ChannelStatus.OTHER.value
+                # 状态判定：无效通道统一标记为OTHER
+                base_record['channel_status'] = ChannelStatus.OTHER.value
         else:
             # 有效通道
             state = result.state
@@ -332,15 +326,66 @@ class HistoryCalculationTemplate:
                 'volatility': result.sigma / state.mid_today if result.sigma and state.mid_today and state.mid_today > 0 else None
             })
             
-            # 根据斜率方向确定状态
+            # 根据斜率方向和质量检查确定状态
             if result.beta is not None and result.beta > 0:
-                # 斜率为正，使用原有的状态判定逻辑
-                base_record['channel_status'] = state.channel_status.value
+                # 斜率为正，检查通道质量
+                config = self.config
+                quality_check_passed = self._check_channel_quality_for_history(state, result.r2, config)
+                
+                if not quality_check_passed:
+                    # 质量检查不通过，标记为弱上升通道
+                    base_record['channel_status'] = ChannelStatus.ASCENDING_WEAK.value
+                else:
+                    # 质量检查通过，根据价格位置判定状态
+                    close_val = current_close
+                    upper_val = state.upper_today
+                    lower_val = state.lower_today
+                    
+                    if close_val > upper_val:
+                        # 股价在通道上沿以上
+                        base_record['channel_status'] = ChannelStatus.BREAKOUT.value
+                    elif close_val < lower_val:
+                        # 股价在通道下沿以下
+                        base_record['channel_status'] = ChannelStatus.BREAKDOWN.value
+                    else:
+                        # 股价在通道内
+                        base_record['channel_status'] = ChannelStatus.NORMAL.value
             else:
-                # 斜率不为正，标记为OTHER
+                # 斜率为负，标记为OTHER
                 base_record['channel_status'] = ChannelStatus.OTHER.value
 
         return base_record
+
+    def _check_channel_quality_for_history(self, state, r2: Optional[float], config: Dict[str, Any]) -> bool:
+        """
+        检查通道质量（历史计算专用）
+        
+        Args:
+            state: 通道状态对象
+            r2: 回归拟合优度
+            config: 配置参数
+            
+        Returns:
+            bool: 质量检查是否通过
+        """
+        # 检查R²
+        r2_min = config.get('R2_min', 0.20)
+        r2_max = config.get('R2_max', 0.95)
+        if r2 is None or r2 < r2_min or r2 > r2_max:
+            return False
+            
+        # 检查通道宽度
+        width_pct_min = config.get('width_pct_min', 0.04)
+        width_pct_max = config.get('width_pct_max', 0.12)
+        
+        if state.mid_today and state.mid_today > 0:
+            width_pct = (state.upper_today - state.lower_today) / state.mid_today
+            if width_pct < width_pct_min or width_pct > width_pct_max:
+                return False
+        else:
+            return False
+            
+        return True
 
     def _postprocess_results(self, history_data: List[Dict[str, Any]]) -> pd.DataFrame:
         """后处理结果"""
@@ -481,10 +526,12 @@ class AscendingChannelRegression:
         """
         确定通道状态
         
-        根据通道质量和当前价格位置，确定最终的通道状态：
-        - 如果斜率不为正：OTHER
-        - 如果质量检查不通过但趋势向上：ASCENDING_WEAK
-        - 如果质量检查通过：根据价格位置判定 NORMAL/BREAKOUT/BREAKDOWN
+        按照优先级顺序确定通道状态：
+        1. 如果斜率为负：OTHER（不是上升通道）
+        2. 如果斜率为正：
+           a) 检查通道质量（宽度和R²）
+           b) 如果质量不达标：ASCENDING_WEAK
+           c) 如果质量达标：根据价格位置判定 NORMAL/BREAKOUT/BREAKDOWN
         
         Args:
             state (ChannelState): 通道状态对象
@@ -495,28 +542,30 @@ class AscendingChannelRegression:
         Returns:
             ChannelState: 更新后的通道状态对象
         """
-        config = self._get_config_dict()
-        
-        # 首先检查斜率方向
+        # 1. 首先判断斜率方向
         if state.beta is None or state.beta <= 0:
-            # 斜率不为正，标记为OTHER状态
+            # 斜率为负，标记为OTHER状态
             state.channel_status = ChannelStatus.OTHER
             return state
         
-        # 质量检查：检查R²和通道宽度
+        # 2. 斜率为正，检查通道质量
+        config = self._get_config_dict()
         quality_check_passed = self._check_channel_quality(state, r2, config)
         
         if not quality_check_passed:
-            # 质量检查不通过，但趋势向上，标记为弱上升通道
+            # 质量检查不通过，标记为弱上升通道
             state.channel_status = ChannelStatus.ASCENDING_WEAK
             return state
         
-        # 质量检查通过，根据价格位置判定状态
+        # 3. 质量检查通过，根据价格位置判定状态
         if current_close > state.upper_today:
+            # 股价在通道上沿以上
             state.channel_status = ChannelStatus.BREAKOUT
         elif current_close < state.lower_today:
+            # 股价在通道下沿以下
             state.channel_status = ChannelStatus.BREAKDOWN
         else:
+            # 股价在通道内
             state.channel_status = ChannelStatus.NORMAL
             
         return state
@@ -537,13 +586,18 @@ class AscendingChannelRegression:
             bool: 质量检查是否通过
         """
         # 检查R²
-        if r2 is None or r2 < config['R2_min']:
+        r2_min = config.get('R2_min', 0.20)
+        r2_max = config.get('R2_max', 0.95)
+        if r2 is None or r2 < r2_min or r2 > r2_max:
             return False
             
         # 检查通道宽度
+        width_pct_min = config.get('width_pct_min', 0.04)
+        width_pct_max = config.get('width_pct_max', 0.12)
+        
         if state.mid_today and state.mid_today > 0:
             width_pct = (state.upper_today - state.lower_today) / state.mid_today
-            if width_pct < config['width_pct_min'] or width_pct > config['width_pct_max']:
+            if width_pct < width_pct_min or width_pct > width_pct_max:
                 return False
         else:
             return False
@@ -578,13 +632,26 @@ class AscendingChannelRegression:
         self.state.r2 = r2  # 更新r2字段
         self.state.cumulative_gain = (bar['close'] - self.state.anchor_price) / self.state.anchor_price
 
-        # 基于当日价格的三态判定（即时）
-        if bar['close'] > self.state.upper_today:
-            self.state.channel_status = ChannelStatus.BREAKOUT
-        elif bar['close'] < self.state.lower_today:
-            self.state.channel_status = ChannelStatus.BREAKDOWN
+        # 基于斜率和质量检查的状态判定（即时）
+        if self.state.beta <= 0:
+            # 斜率为负，标记为OTHER
+            self.state.channel_status = ChannelStatus.OTHER
         else:
-            self.state.channel_status = ChannelStatus.NORMAL
+            # 斜率为正，检查通道质量
+            config = self._get_config_dict()
+            quality_check_passed = self._check_channel_quality(self.state, r2, config)
+            
+            if not quality_check_passed:
+                # 质量检查不通过，标记为弱上升通道
+                self.state.channel_status = ChannelStatus.ASCENDING_WEAK
+            else:
+                # 质量检查通过，根据价格位置判定状态
+                if bar['close'] > self.state.upper_today:
+                    self.state.channel_status = ChannelStatus.BREAKOUT
+                elif bar['close'] < self.state.lower_today:
+                    self.state.channel_status = ChannelStatus.BREAKDOWN
+                else:
+                    self.state.channel_status = ChannelStatus.NORMAL
 
         if self._should_reanchor():
             self._reanchor()
@@ -641,24 +708,17 @@ class AscendingChannelRegression:
         self.state.reanchor_fail_up = 0
         self.state.reanchor_fail_down = 0
 
-        if self.state.channel_status == ChannelStatus.BREAKDOWN:
-            self.state.channel_status = ChannelStatus.NORMAL
-            logger.info("通道状态从 BREAKDOWN 重置为 NORMAL")
+        # 重锚后重新判定状态（基于新的斜率和价格位置）
+        # 注意：这里需要当前价格，但重锚时可能没有，所以暂时保持原有逻辑
+        # 实际使用时会在下一次update时重新判定状态
 
         logger.info(
             f"重锚成功: 新锚点 {new_anchor_date} @ {new_anchor_price:.2f}, 窗口大小: {len(self.state.window_df)}")
 
     def _check_extreme_states(self) -> None:
-        """检查并更新极端状态"""
-        if self.state.reanchor_fail_up >= self.reanchor_fail_max:
-            self.state.channel_status = ChannelStatus.BREAKOUT
-            logger.debug(f"进入加速突破状态: 连续重锚失败 {self.state.reanchor_fail_up} 次")
-        elif self.state.reanchor_fail_down >= self.reanchor_fail_max:
-            self.state.channel_status = ChannelStatus.BREAKDOWN
-            logger.debug(f"进入跌破状态: 连续重锚失败 {self.state.reanchor_fail_down} 次")
-        elif (self.state.break_cnt_down >= self.break_days):
-            self.state.channel_status = ChannelStatus.BREAKDOWN
-            logger.debug("通道失效: 连续跌破下沿 → 标记为 BREAKDOWN")
+        """检查并更新极端状态（已废弃，使用新的状态判定逻辑）"""
+        # 此方法已废弃，状态判定现在统一在_determine_channel_status中进行
+        pass
 
     # 向后兼容方法
     def force_reanchor(self, state: ChannelState) -> ChannelState:

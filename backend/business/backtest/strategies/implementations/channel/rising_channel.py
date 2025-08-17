@@ -5,20 +5,12 @@
 基于技术分析的量化交易策略
 """
 
-import logging
-from datetime import datetime
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional
 
 import pandas as pd
 
-from backend.business.backtest.core.base_strategy import BaseStrategy
-from backend.business.backtest.core.trading_rules import AShareTradingRules
-from backend.business.backtest.strategies.core.managers.data_manager import DataManager
-from backend.business.backtest.strategies.core.managers.position_manager import PositionManager
-from backend.business.backtest.strategies.core.managers.trade_logger import TradeLogger
-from backend.business.backtest.strategies.core.managers.trade_manager import TradeManager
-from backend.business.backtest.strategies.analyzers.channel.manager import ChannelAnalyzerManager
 from backend.business.backtest.configs.rising_channel_config import RisingChannelConfig
+from backend.business.backtest.core.trading_rules import AShareTradingRules
 from backend.business.factor.core.engine.library.channel_analysis.channel_state import ChannelStatus
 from ...analyzers.channel import ChannelAnalyzerManager, ChannelAnalysisUtils, parse_r2_bounds
 from ...core import BaseStrategy, SignalUtils, ParameterUtils
@@ -320,7 +312,7 @@ class RisingChannelStrategy(BaseStrategy):
             # 计算通道几何结构
             mid_price = getattr(channel_state, 'mid_today', None)
             lower_price = getattr(channel_state, 'lower_today', None)
-            
+
             if mid_price is None or lower_price is None:
                 continue
 
@@ -348,7 +340,8 @@ class RisingChannelStrategy(BaseStrategy):
                 'channel_state': channel_state,
                 'score': stock_info['score'],
                 'mid_to_lower_midpoint': mid_to_lower_midpoint,
-                'channel_width_pct': (getattr(channel_state, 'upper_today', 0) - lower_price) / mid_price * 100 if mid_price > 0 else 0
+                'channel_width_pct': (getattr(channel_state, 'upper_today',
+                                              0) - lower_price) / mid_price * 100 if mid_price > 0 else 0
             })
 
         # 按距离下沿百分比从小到大排序（横截面排序）
@@ -357,8 +350,8 @@ class RisingChannelStrategy(BaseStrategy):
         if self.params.enable_logging and qualified_stocks:
             self.logger.info(f"找到 {len(qualified_stocks)} 只符合条件的股票，按距离下沿排序:")
             for i, stock in enumerate(qualified_stocks[:5]):  # 只显示前5只
-                self.logger.info(f"  {i+1}. {stock['stock_code']}: 距离下沿 {stock['distance_to_lower']:.2f}%, "
-                               f"通道宽度 {stock['channel_width_pct']:.1f}%, 评分 {stock['score']:.1f}")
+                self.logger.info(f"  {i + 1}. {stock['stock_code']}: 距离下沿 {stock['distance_to_lower']:.2f}%, "
+                                 f"通道宽度 {stock['channel_width_pct']:.1f}%, 评分 {stock['score']:.1f}")
 
         # 计算需要买入的数量
         if available_slots is None:
@@ -384,30 +377,31 @@ class RisingChannelStrategy(BaseStrategy):
                     score=stock_info.get('score'),
                     distance_to_lower=stock_info.get('distance_to_lower')
                 )
-                
+
                 # 添加额外的通道几何信息
                 extras.update({
                     'mid_to_lower_midpoint': stock_info['mid_to_lower_midpoint'],
                     'channel_width_pct': stock_info['channel_width_pct'],
-                    'buy_position_ratio': stock_info['distance_to_lower'] / stock_info['channel_width_pct'] if stock_info['channel_width_pct'] > 0 else 0
+                    'buy_position_ratio': stock_info['distance_to_lower'] / stock_info['channel_width_pct'] if
+                    stock_info['channel_width_pct'] > 0 else 0
                 })
-                
+
                 # 计算买入数量，避免前视偏差
                 per_trade_cash = self.get_per_trade_cash(self.params.max_positions)
                 current_price = stock_info['current_price']
-                
+
                 # 计算理论买入数量
                 theoretical_size = int(per_trade_cash / current_price)
-                
+
                 # 使用A股交易规则调整数量为100的整数倍
                 adjusted_size = AShareTradingRules.adjust_trade_quantity(theoretical_size)
-                
+
                 # 如果调整后数量为0，跳过这只股票
                 if adjusted_size <= 0:
                     if self.params.enable_logging:
                         self.logger.debug(f"股票 {stock_code} 调整后买入数量为0，跳过")
                     continue
-                
+
                 signal = self._create_buy_signal(
                     stock_code,
                     stock_info['current_price'],
@@ -416,10 +410,10 @@ class RisingChannelStrategy(BaseStrategy):
                     stock_info['score'] / 100.0,
                     extra=extras
                 )
-                
+
                 # 将计算好的买入数量添加到信号中
                 signal['size'] = adjusted_size
-                
+
                 buy_signals.append(signal)
 
         return buy_signals
@@ -539,15 +533,14 @@ class RisingChannelStrategy(BaseStrategy):
         # 性能优化：预筛选股票，减少通道分析的计算量
         from backend.business.backtest.configs.rising_channel_config import RisingChannelConfig
         prefilter_config = RisingChannelConfig.get_prefilter_config()
-        
-        if (prefilter_config['enable_prefilter'] and 
-            len(stock_data_dict) > prefilter_config['min_stocks_for_prefilter']):
-            
+
+        if (prefilter_config['enable_prefilter'] and
+                len(stock_data_dict) > prefilter_config['min_stocks_for_prefilter']):
             self.logger.info(f"开始预筛选股票，原始数量: {len(stock_data_dict)}")
-            
+
             # 导入预筛选工具
             from backend.business.backtest.utils.data_utils import DataUtils
-            
+
             # 预筛选参数
             prefilter_params = {
                 'min_data_points': self.params.min_data_points,
@@ -557,22 +550,22 @@ class RisingChannelStrategy(BaseStrategy):
                 'min_conditions_met': prefilter_config['min_conditions_met'],
                 'enable_volume_check': prefilter_config['enable_volume_check']
             }
-            
+
             # 执行预筛选
             filtered_stock_codes = DataUtils.prefilter_stocks(
                 stock_data_dict, **prefilter_params
             )
-            
+
             # 构建筛选后的股票数据字典
             filtered_stock_data_dict = {
-                code: stock_data_dict[code] 
-                for code in filtered_stock_codes 
+                code: stock_data_dict[code]
+                for code in filtered_stock_codes
                 if code in stock_data_dict
             }
-            
+
             self.logger.info(f"预筛选完成，筛选后数量: {len(filtered_stock_data_dict)} "
-                           f"(筛选率: {len(filtered_stock_data_dict)/len(stock_data_dict)*100:.1f}%)")
-            
+                             f"(筛选率: {len(filtered_stock_data_dict) / len(stock_data_dict) * 100:.1f}%)")
+
             # 使用筛选后的数据进行通道分析
             stock_data_dict = filtered_stock_data_dict
 
@@ -587,12 +580,13 @@ class RisingChannelStrategy(BaseStrategy):
             self.current_analysis_results[stock_code]['is_cached'] = False
 
     def _build_channel_state_from_cache(self, cache_data: pd.Series):
-        """从缓存数据构建通道状态对象"""
+        """从缓存数据构建通道状态对象 - 完全使用数据库字段，不重新计算"""
         from backend.business.factor.core.engine.library.channel_analysis.channel_state import ChannelStatus
 
-            # 创建一个简化的通道状态对象，只包含必要的字段
+        # 创建一个简化的通道状态对象，直接使用数据库中的所有字段
         class CachedChannelState:
             def __init__(self, cache_data):
+                # 直接使用数据库中的所有字段，不重新计算
                 self.anchor_date = pd.to_datetime(cache_data.get('anchor_date'))
                 self.anchor_price = cache_data.get('anchor_price')
                 self.beta = cache_data.get('beta')
@@ -606,22 +600,30 @@ class RisingChannelStrategy(BaseStrategy):
                 self.lower_tomorrow = cache_data.get('lower_tomorrow')
                 self.cumulative_gain = cache_data.get('cumulative_gain')
 
-                # 通道状态：严格基于当日价格与上下沿即时判定（不做任何旧值兼容映射）
+                # 其他数据库字段
+                self.break_cnt_up = cache_data.get('break_cnt_up', 0)
+                self.break_cnt_down = cache_data.get('break_cnt_down', 0)
+                self.reanchor_fail_up = cache_data.get('reanchor_fail_up', 0)
+                self.reanchor_fail_down = cache_data.get('reanchor_fail_down', 0)
+                self.window_size = cache_data.get('window_size', 0)
+                self.days_since_anchor = cache_data.get('days_since_anchor', 0)
+                self.break_reason = cache_data.get('break_reason', None)
+                self.width_pct = cache_data.get('width_pct', None)
+                self.slope_deg = cache_data.get('slope_deg', None)
+                self.volatility = cache_data.get('volatility', None)
+
+                # 通道状态：直接使用数据库中的状态，不重新计算
                 try:
-                    close_val = cache_data.get('close', None)
-                    upper_val = self.upper_today
-                    lower_val = self.lower_today
-                    if close_val is not None and upper_val is not None and lower_val is not None:
-                        if float(close_val) > float(upper_val):
-                            self.channel_status = ChannelStatus.BREAKOUT
-                        elif float(close_val) < float(lower_val):
-                            self.channel_status = ChannelStatus.BREAKDOWN
-                        else:
-                            self.channel_status = ChannelStatus.NORMAL
+                    db_status = cache_data.get('channel_status', None)
+                    if db_status is not None:
+                        # 数据库中有状态，直接使用
+                        self.channel_status = ChannelStatus(db_status)
                     else:
-                        self.channel_status = ChannelStatus.NORMAL
+                        # 数据库中没有状态，使用默认值
+                        self.channel_status = ChannelStatus.OTHER
                 except Exception:
-                    self.channel_status = ChannelStatus.NORMAL
+                    # 异常情况下使用默认值
+                    self.channel_status = ChannelStatus.OTHER
 
         return CachedChannelState(cache_data)
 
@@ -655,9 +657,9 @@ class RisingChannelStrategy(BaseStrategy):
 
     def _is_channel_width_valid(self, channel_state) -> bool:
         """
-        通道宽度有效性校验
+        通道宽度有效性校验 - 直接使用数据库中的width_pct字段
 
-        以 (upper_today - lower_today) / mid_today 作为宽度百分比，
+        优先使用数据库中的width_pct字段，避免重新计算，
         要求 width_pct_min <= 宽度 <= width_pct_max。
 
         Args:
@@ -668,6 +670,15 @@ class RisingChannelStrategy(BaseStrategy):
         try:
             if channel_state is None:
                 return False
+
+            # 优先使用数据库中的width_pct字段
+            width_pct = getattr(channel_state, 'width_pct', None)
+            if width_pct is not None:
+                # 数据库中有宽度数据，直接使用
+                return (width_pct >= float(self.params.width_pct_min)) and (
+                            width_pct <= float(self.params.width_pct_max))
+
+            # 数据库中没有宽度数据，回退到重新计算
             upper = getattr(channel_state, 'upper_today', None)
             lower = getattr(channel_state, 'lower_today', None)
             mid = getattr(channel_state, 'mid_today', None)
@@ -722,11 +733,16 @@ class RisingChannelStrategy(BaseStrategy):
             calculated_distance = self._calculate_distance_to_lower(current_price, channel_state)
             extras['距下沿(%)'] = round(calculated_distance, 2)
 
-        # 计算通道宽度
-        upper = getattr(channel_state, 'upper_today', None) if channel_state else None
-        lower = getattr(channel_state, 'lower_today', None) if channel_state else None
-        if upper is not None and lower is not None:
-            extras['通道宽度'] = upper - lower
+        # 直接使用数据库中的通道宽度字段
+        width_pct = getattr(channel_state, 'width_pct', None) if channel_state else None
+        if width_pct is not None:
+            extras['通道宽度(%)'] = round(float(width_pct) * 100, 2)
+        else:
+            # 回退到重新计算
+            upper = getattr(channel_state, 'upper_today', None) if channel_state else None
+            lower = getattr(channel_state, 'lower_today', None) if channel_state else None
+            if upper is not None and lower is not None:
+                extras['通道宽度'] = upper - lower
 
         return extras
 
@@ -793,7 +809,7 @@ class RisingChannelStrategy(BaseStrategy):
             # 2) 价格突破通道上沿：卖出
             # 根据参数决定使用收盘价还是最高价
             sell_on_close = getattr(self.p, 'sell_on_close_breakout', True)
-            
+
             # 获取当日价格
             day_price = None
             if stock_data is not None and len(stock_data) >= 1:
@@ -919,7 +935,7 @@ class RisingChannelStrategy(BaseStrategy):
             "width_pct_min": self.params.width_pct_min,
             "width_pct_max": self.params.width_pct_max
         }
-        
+
         # 添加策略层面的质量筛选参数
         if self.params.R2_min is not None:
             params["R2_min"] = self.params.R2_min
@@ -927,7 +943,7 @@ class RisingChannelStrategy(BaseStrategy):
             params["R2_max"] = self.params.R2_max
         if hasattr(self.params, 'min_channel_score'):
             params["min_channel_score"] = self.params.min_channel_score
-            
+
         return params
 
     def _get_parameters(self) -> Dict[str, Any]:
