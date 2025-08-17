@@ -866,6 +866,7 @@ class ReportUtils:
                 '成交量比',
                 '当日成交量',
                 '5日平均成交量',
+                '当日涨幅',
             ]
 
             # 收集存在于原df中的通道字段
@@ -890,7 +891,7 @@ class ReportUtils:
             # 对通道数值列进行格式化
             numeric_channel_fields = [
                 '通道评分', '斜率β', 'R²', '今日中轴', '今日上沿', '今日下沿', '通道宽度', '距下沿(%)',
-                '成交量比', '当日成交量', '5日平均成交量'
+                '成交量比', '当日成交量', '5日平均成交量', '当日涨幅'
             ]
             for f in available_channel_fields:
                 if f in numeric_channel_fields:
@@ -1206,6 +1207,9 @@ class ReportUtils:
                     volume_ratio = buy_trade.get('volume_ratio', buy_trade.get('成交量比', None))
                     current_volume = buy_trade.get('current_volume', buy_trade.get('当日成交量', None))
                     avg_volume = buy_trade.get('avg_volume', buy_trade.get('5日平均成交量', None))
+                    
+                    # 提取当日涨幅数据（从买入交易）
+                    daily_gain = buy_trade.get('daily_gain', buy_trade.get('当日涨幅', None))
 
                     record = {
                         '买入日期': buy_date,
@@ -1228,6 +1232,7 @@ class ReportUtils:
                         '买入日成交量比': round(volume_ratio, 2) if volume_ratio is not None else '',
                         '买入日成交量': round(current_volume, 0) if current_volume is not None else '',
                         '买入日5日平均成交量': round(avg_volume, 0) if avg_volume is not None else '',
+                        '买入日涨幅': round(daily_gain, 2) if daily_gain is not None else '',
                     }
 
                     analysis_records.append(record)

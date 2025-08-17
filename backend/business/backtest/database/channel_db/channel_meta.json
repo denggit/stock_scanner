@@ -101,6 +101,23 @@
       "readable_key": "L_max_120_R2_min_0.500_adjust_1_delta_cut_5_k_2.000_min_data_points_60_pivot_m_3_width_pct_max_0.100_width_pct_min_0.040",
       "created_at": "2025-08-17T18:26:49.513176",
       "schema_version": "narrow_v1"
+    },
+    "b21f8c34919c59d7": {
+      "table": "channel_rcn_b21f8c34919c59d7",
+      "params": {
+        "k": 2.0,
+        "L_max": 120,
+        "delta_cut": 5,
+        "pivot_m": 3,
+        "min_data_points": 60,
+        "R2_min": 0.45,
+        "width_pct_min": 0.04,
+        "width_pct_max": 0.1,
+        "adjust": 1
+      },
+      "readable_key": "L_max_120_R2_min_0.450_adjust_1_delta_cut_5_k_2.000_min_data_points_60_pivot_m_3_width_pct_max_0.100_width_pct_min_0.040",
+      "created_at": "2025-08-17T19:01:09.160957",
+      "schema_version": "narrow_v1"
     }
   }
 }
