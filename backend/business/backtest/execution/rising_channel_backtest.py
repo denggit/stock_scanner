@@ -88,6 +88,7 @@ class RisingChannelBacktestRunner(BaseBacktestRunner):
         # 记录详细的策略参数
         self.logger.info("=" * 60)
         self.logger.info("📊 策略参数配置:")
+        self.logger.info(f"  复权类型: {self.strategy_params.get('adjust')} (1-后复权, 2-前复权, 3-不复权)")
         self.logger.info(f"  最大持仓数量: {self.strategy_params.get('max_positions')}")
         self.logger.info(f"  最小通道评分: {self.strategy_params.get('min_channel_score')}")
         self.logger.info(f"  最小数据点数: {self.strategy_params.get('min_data_points')}")

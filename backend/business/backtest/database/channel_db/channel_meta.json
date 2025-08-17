@@ -10,10 +10,28 @@
         "min_data_points": 60,
         "R2_min": 0.2,
         "width_pct_min": 0.05,
-        "width_pct_max": 0.12
+        "width_pct_max": 0.12,
+        "adjust": 3
       },
-      "readable_key": "L_max_120_R2_min_0.200_delta_cut_5_k_2.000_min_data_points_60_pivot_m_3_width_pct_max_0.120_width_pct_min_0.050",
+      "readable_key": "L_max_120_R2_min_0.200_adjust_3_delta_cut_5_k_2.000_min_data_points_60_pivot_m_3_width_pct_max_0.120_width_pct_min_0.050",
       "created_at": "2025-08-17T12:51:10.013962",
+      "schema_version": "narrow_v1"
+    },
+    "57278c84b5534cb2": {
+      "table": "channel_rcn_57278c84b5534cb2",
+      "params": {
+        "k": 2.0,
+        "L_max": 120,
+        "delta_cut": 5,
+        "pivot_m": 3,
+        "min_data_points": 60,
+        "R2_min": 0.2,
+        "width_pct_min": 0.05,
+        "width_pct_max": 0.12,
+        "adjust": 1
+      },
+      "readable_key": "L_max_120_R2_min_0.200_adjust_1_delta_cut_5_k_2.000_min_data_points_60_pivot_m_3_width_pct_max_0.120_width_pct_min_0.050",
+      "created_at": "2025-08-17T15:05:05.830861",
       "schema_version": "narrow_v1"
     }
   }

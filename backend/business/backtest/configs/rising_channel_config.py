@@ -48,6 +48,7 @@ class RisingChannelConfig:
             "strategy_overrides": {
                 "max_positions": 20,  # 覆盖策略默认值
                 "min_channel_score": 60.0,  # 覆盖策略默认值
+                "adjust": 1,  # 后复权
             }
         },
         "optimization": {
@@ -61,6 +62,7 @@ class RisingChannelConfig:
             "strategy_overrides": {
                 "max_positions": 20,
                 "min_channel_score": 60.0,
+                "adjust": 1,  # 后复权
             }
         },
         "production": {
@@ -69,6 +71,7 @@ class RisingChannelConfig:
             "strategy_overrides": {
                 "max_positions": 20,  # 生产环境默认值
                 "min_channel_score": 60.0,
+                "adjust": 1,  # 后复权
             }
         },
         "full_backtest": {
@@ -77,6 +80,7 @@ class RisingChannelConfig:
             "strategy_overrides": {
                 "max_positions": 20,
                 "min_channel_score": 60.0,
+                "adjust": 1,  # 后复权
             }
         }
     }
@@ -88,6 +92,9 @@ class RisingChannelConfig:
         'min_data_points': 60,  # 最小数据点数
         'min_channel_score': 60.0,  # 最小通道评分（默认值，可被环境配置覆盖）
         'enable_logging': True,  # 是否启用日志
+
+        # 数据预处理参数
+        'adjust': 1,  # 复权类型：1-后复权，2-前复权，3-不复权
 
         # 卖出规则参数
         'sell_on_close_breakout': True,  # 是否使用收盘价突破通道上沿作为卖出条件（True=收盘价，False=最高价）
@@ -128,6 +135,7 @@ class RisingChannelConfig:
                 'width_pct_min': 0.05,  # 更宽通道要求
                 'width_pct_max': 0.18,  # 最大通道宽度
                 'sell_on_close_breakout': True,  # 保守策略使用收盘价突破，避免盘中波动
+                'adjust': 1,  # 后复权
             }
         },
         'aggressive': {
@@ -141,6 +149,7 @@ class RisingChannelConfig:
                 'width_pct_min': 0.03,  # 较窄通道要求
                 'width_pct_max': 0.25,  # 最大通道宽度
                 'sell_on_close_breakout': False,  # 激进策略使用最高价突破，快速响应
+                'adjust': 1,  # 后复权
             }
         }
     }

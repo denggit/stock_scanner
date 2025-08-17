@@ -120,10 +120,10 @@ class BaseBacktestRunner:
         获取AscendingChannelRegression的纯算法参数
         
         这些参数决定了通道计算的结果，应该作为缓存的键
-        不包含策略层面的参数（如min_channel_score等）
+        包含adjust参数，因为不同复权类型会产生不同的通道计算结果
         
         Args:
-            strategy_params: 策略参数（实际不使用，从算法默认配置获取）
+            strategy_params: 策略参数
             
         Returns:
             Dict: 通道算法参数
@@ -136,6 +136,9 @@ class BaseBacktestRunner:
             # 创建一个临时实例来获取默认配置
             temp_analyzer = AscendingChannelRegression()
             algorithm_params = temp_analyzer._get_config_dict()
+            
+            # 添加adjust参数，因为不同复权类型会产生不同的通道计算结果
+            algorithm_params['adjust'] = strategy_params.get('adjust', 1)
 
             self.logger.info(f"从AscendingChannelRegression获取算法参数: {algorithm_params}")
             return algorithm_params
@@ -152,7 +155,8 @@ class BaseBacktestRunner:
                 'min_data_points': 60,
                 'R2_min': 0.20,
                 'width_pct_min': 0.04,
-                'width_pct_max': 0.12
+                'width_pct_max': 0.12,
+                'adjust': strategy_params.get('adjust', 1)  # 添加adjust参数（用于缓存键生成）
             }
 
     # ------------------------ 对外主流程 ------------------------
@@ -170,6 +174,7 @@ class BaseBacktestRunner:
                 stock_pool=self.config['stock_pool'],
                 start_date=extended_start,
                 end_date=self.config['end_date'],
+                adjust=str(self.strategy_params.get('adjust', 1)),  # 使用策略参数中的adjust
                 max_stocks=self.config['max_stocks'],
                 min_data_days=self.config['min_data_days']
             )
@@ -201,6 +206,7 @@ class BaseBacktestRunner:
                 stock_pool=self.config['stock_pool'],
                 start_date=extended_start,
                 end_date=self.config['end_date'],
+                adjust=str(self.strategy_params.get('adjust', 1)),  # 使用策略参数中的adjust
                 max_stocks=opt_cfg['max_stocks_for_optimization'],
                 min_data_days=self.config['min_data_days']
             )
@@ -228,6 +234,7 @@ class BaseBacktestRunner:
                 stock_pool=self.config['stock_pool'],
                 start_date=extended_start,
                 end_date=self.config['end_date'],
+                adjust=str(self.strategy_params.get('adjust', 1)),  # 使用策略参数中的adjust
                 max_stocks=self.config.get('max_stocks', 50) or 50,
                 min_data_days=self.config['min_data_days']
             )

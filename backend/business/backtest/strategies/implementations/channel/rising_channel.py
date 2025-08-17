@@ -99,6 +99,9 @@ class RisingChannelStrategy(BaseStrategy):
         ('min_channel_score', 60.0),  # 最小通道评分（开发环境默认值）
         ('enable_logging', True),  # 是否启用日志
 
+        # 数据预处理参数
+        ('adjust', 1),  # 复权类型：1-后复权，2-前复权，3-不复权
+
         # 卖出规则参数
         ('sell_on_close_breakout', True),  # 是否使用收盘价突破通道上沿作为卖出条件
 
@@ -751,6 +754,7 @@ class RisingChannelStrategy(BaseStrategy):
         提取通道算法参数（用于缓存键生成）
         
         只包含影响通道计算结果的算法参数，不包含策略层面的参数
+        包含adjust参数，因为不同复权类型会产生不同的通道计算结果
         
         Returns:
             通道算法参数字典
@@ -761,13 +765,19 @@ class RisingChannelStrategy(BaseStrategy):
                 analyzer = self.channel_manager.get_analyzer()
                 if hasattr(analyzer, '_analyzer') and analyzer._analyzer is not None:
                     # 从真实的AscendingChannelRegression实例获取参数
-                    return analyzer._analyzer._get_config_dict()
+                    params = analyzer._analyzer._get_config_dict()
+                    # 确保包含adjust参数（用于缓存键生成）
+                    params['adjust'] = getattr(self.params, 'adjust', 1)
+                    return params
 
             # 如果无法从管理器获取，直接创建AscendingChannelRegression实例
             from backend.business.factor.core.engine.library.channel_analysis.rising_channel import \
                 AscendingChannelRegression
             temp_analyzer = AscendingChannelRegression()
-            return temp_analyzer._get_config_dict()
+            params = temp_analyzer._get_config_dict()
+            # 确保包含adjust参数（用于缓存键生成）
+            params['adjust'] = getattr(self.params, 'adjust', 1)
+            return params
 
         except Exception as e:
             self.logger.warning(f"无法获取通道算法参数，使用默认值: {e}")
@@ -781,7 +791,8 @@ class RisingChannelStrategy(BaseStrategy):
                 'min_data_points': 60,
                 'R2_min': 0.20,
                 'width_pct_min': 0.04,
-                'width_pct_max': 0.12
+                'width_pct_max': 0.12,
+                'adjust': getattr(self.params, 'adjust', 1)  # 添加adjust参数（用于缓存键生成）
             }
 
     def _should_sell_stock(self, stock_code: str, channel_state, stock_data: Optional[pd.DataFrame] = None) -> bool:
@@ -933,7 +944,8 @@ class RisingChannelStrategy(BaseStrategy):
             "pivot_m": self.params.pivot_m,
             "min_data_points": self.params.min_data_points,
             "width_pct_min": self.params.width_pct_min,
-            "width_pct_max": self.params.width_pct_max
+            "width_pct_max": self.params.width_pct_max,
+            "adjust": self.params.adjust,  # 复权类型参数，通道缓存需要包含
         }
 
         # 添加策略层面的质量筛选参数
