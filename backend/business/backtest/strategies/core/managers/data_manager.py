@@ -207,12 +207,17 @@ class DataManager:
         """
         获取指定股票在指定日期的价格
         
+        修改说明：
+        - 支持NaN数据：当股票在指定日期未上市时，返回0.0
+        - 兼容前向填充：正确处理前向填充产生的NaN数据
+        - 保持健壮性：确保方法不会因为NaN数据而失败
+        
         Args:
             stock_code: 股票代码
             date: 日期
             
         Returns:
-            股票价格，获取失败返回0.0
+            股票价格，获取失败或股票未上市返回0.0
         """
         if stock_code not in self.stock_data:
             return 0.0
@@ -238,13 +243,17 @@ class DataManager:
         except Exception:
             trade_dates = pd.to_datetime(stock_df['trade_date'], errors='coerce').dt.date
 
-        # 仅精确匹配“当日”价格；若当日无该股票记录（如停牌/未上市），则不回退到未来数据，返回0.0
+        # 仅精确匹配"当日"价格；若当日无该股票记录（如停牌/未上市），则不回退到未来数据，返回0.0
         mask_exact = trade_dates == target_date.date()
         if mask_exact.any():
             # 取当日第一条（正常应唯一）
             row_idx = stock_df.index[mask_exact][0]
             try:
-                return float(stock_df.loc[row_idx, 'close'])
+                close_price = stock_df.loc[row_idx, 'close']
+                # 检查是否为NaN（表示股票未上市）
+                if pd.isna(close_price):
+                    return 0.0
+                return float(close_price)
             except Exception:
                 pass
 
@@ -255,12 +264,16 @@ class DataManager:
         """
         获取指定股票在指定日期的开盘价
         
+        修改说明：
+        - 支持NaN数据：当股票在指定日期未上市时，返回0.0
+        - 兼容前向填充：正确处理前向填充产生的NaN数据
+        
         Args:
             stock_code: 股票代码
             date: 日期
             
         Returns:
-            股票开盘价，获取失败返回0.0
+            股票开盘价，获取失败或股票未上市返回0.0
         """
         if stock_code not in self.stock_data:
             return 0.0
@@ -292,7 +305,11 @@ class DataManager:
             # 取当日第一条（正常应唯一）
             row_idx = stock_df.index[mask_exact][0]
             try:
-                return float(stock_df.loc[row_idx, 'open'])
+                open_price = stock_df.loc[row_idx, 'open']
+                # 检查是否为NaN（表示股票未上市）
+                if pd.isna(open_price):
+                    return 0.0
+                return float(open_price)
             except Exception:
                 pass
 
@@ -303,12 +320,16 @@ class DataManager:
         """
         获取指定股票在指定日期的成交量
         
+        修改说明：
+        - 支持NaN数据：当股票在指定日期未上市时，返回0.0
+        - 兼容前向填充：正确处理前向填充产生的NaN数据
+        
         Args:
             stock_code: 股票代码
             date: 日期
             
         Returns:
-            股票成交量，获取失败返回0.0
+            股票成交量，获取失败或股票未上市返回0.0
         """
         if stock_code not in self.stock_data:
             return 0.0
@@ -340,16 +361,24 @@ class DataManager:
             # 取当日第一条（正常应唯一）
             row_idx = stock_df.index[mask_exact][0]
             try:
-                return float(stock_df.loc[row_idx, 'volume'])
+                volume = stock_df.loc[row_idx, 'volume']
+                # 检查是否为NaN（表示股票未上市）
+                if pd.isna(volume):
+                    return 0.0
+                return float(volume)
             except Exception:
                 pass
 
-        # 当日无数据：严格返回0，避免使用未来价格导致穿越
+        # 当日无数据：严格返回0，避免使用未来数据导致穿越
         return 0.0
 
     def get_stock_avg_volume(self, stock_code: str, date: datetime, days: int = 5) -> float:
         """
         获取指定股票在指定日期前N天的平均成交量
+        
+        修改说明：
+        - 支持NaN数据：正确处理前向填充产生的NaN数据
+        - 过滤NaN值：在计算平均值时排除NaN值
         
         Args:
             stock_code: 股票代码
@@ -357,7 +386,7 @@ class DataManager:
             days: 计算平均的天数，默认5天
             
         Returns:
-            平均成交量，获取失败返回0.0
+            平均成交量，获取失败或数据不足返回0.0
         """
         if stock_code not in self.stock_data:
             return 0.0
@@ -387,12 +416,14 @@ class DataManager:
             except Exception:
                 filtered_df = stock_df[stock_df['trade_date'] < cutoff.date()]
 
-        # 取最近N天的数据
+        # 取最近N天的数据，并过滤掉NaN值
         if len(filtered_df) >= days:
             recent_df = filtered_df.tail(days)
             try:
-                volumes = recent_df['volume'].astype(float)
-                return float(volumes.mean())
+                # 过滤掉NaN值，只计算有效数据的平均值
+                volumes = recent_df['volume'].dropna().astype(float)
+                if len(volumes) > 0:
+                    return float(volumes.mean())
             except Exception:
                 pass
 
@@ -403,10 +434,15 @@ class DataManager:
         """
         获取指定股票截至指定日期的历史数据
         
+        修改说明：
+        - 支持NaN数据：正确处理前向填充产生的NaN数据
+        - 有效数据计数：在计算数据点数时排除NaN值
+        - 保持健壮性：确保方法不会因为NaN数据而失败
+        
         Args:
             stock_code: 股票代码
             date: 截止日期
-            min_data_points: 最小数据点数
+            min_data_points: 最小数据点数（有效数据点）
             
         Returns:
             历史数据DataFrame，数据不足返回None
@@ -439,8 +475,11 @@ class DataManager:
             except Exception:
                 filtered_df = stock_df[stock_df['trade_date'] <= cutoff.date()]
 
-        if len(filtered_df) < min_data_points:
-            self.logger.debug(f"股票 {stock_code} 数据不足: {len(filtered_df)} < {min_data_points}")
+        # 计算有效数据点数（排除NaN值）
+        valid_data_count = filtered_df[['open', 'high', 'low', 'close', 'volume']].dropna().shape[0]
+        
+        if valid_data_count < min_data_points:
+            self.logger.debug(f"股票 {stock_code} 有效数据不足: {valid_data_count} < {min_data_points}")
             return None
 
         return filtered_df
@@ -449,15 +488,20 @@ class DataManager:
         """
         获取所有股票在指定日期的价格
         
+        修改说明：
+        - 支持NaN数据：正确处理前向填充产生的NaN数据
+        - 过滤无效价格：只返回有效的股票价格（>0）
+        
         Args:
             date: 日期
             
         Returns:
-            股票价格字典 {股票代码: 价格}
+            股票价格字典 {股票代码: 价格}，只包含有效价格的股票
         """
         prices = {}
         for stock_code in self.stock_codes:
             price = self.get_stock_price(stock_code, date)
+            # 只包含有效价格的股票（价格>0表示股票已上市且有交易）
             if price > 0:
                 prices[stock_code] = price
 
@@ -505,7 +549,14 @@ class DataManager:
         return self.cache.get_data(stock_code, days)
 
     def _validate_and_preprocess_data(self):
-        """验证和预处理数据"""
+        """
+        验证和预处理数据
+        
+        修改说明：
+        - 保留NaN数据：不自动填充NaN值，保留NaN值用于表示股票未上市期间
+        - 支持前向填充：正确处理前向填充产生的NaN数据
+        - 保持健壮性：确保验证逻辑不会因为NaN数据而失败
+        """
         invalid_stocks = []
 
         for stock_code, data in self.stock_data.items():
@@ -527,12 +578,12 @@ class DataManager:
                         else:
                             data[col] = data.get('close', 0)  # 使用收盘价填充
 
-                # 检查数据质量
+                # 检查数据质量 - 修改为支持NaN数据
                 null_counts = data[required_columns].isnull().sum()
                 if null_counts.any():
-                    self.logger.warning(f"股票 {stock_code} 存在空值: {null_counts.to_dict()}")
-                    # 前向填充空值（使用更兼容的方法）
-                    data[required_columns] = data[required_columns].fillna(method='ffill').fillna(method='bfill')
+                    # 记录NaN数据统计，但不自动填充
+                    self.logger.debug(f"股票 {stock_code} NaN数据统计: {null_counts.to_dict()}")
+                    # 注意：不再自动填充NaN值，保留NaN值用于表示股票未上市期间
 
                 # 统一 trade_date 类型，避免后续重复转换开销
                 try:
@@ -559,27 +610,32 @@ class DataManager:
                     # 若裁剪失败，不中断流程
                     pass
 
-                # 检查价格数据合理性
-                price_columns = ['open', 'high', 'low', 'close']
-                for col in price_columns:
-                    if (data[col] <= 0).any():
-                        self.logger.warning(f"股票 {stock_code} 存在非正价格数据")
-                        # 移除非正价格的行
-                        data = data[data[col] > 0]
-
-                # 更新处理后的数据
-                self.stock_data[stock_code] = data
+                # 检查价格数据合理性 - 只检查非NaN数据
+                non_null_data = data[['open', 'high', 'low', 'close']].dropna()
+                if len(non_null_data) > 0:
+                    invalid_prices = (
+                            (non_null_data['high'] < non_null_data['low']) |
+                            (non_null_data['open'] > non_null_data['high']) |
+                            (non_null_data['close'] > non_null_data['high']) |
+                            (non_null_data['open'] < non_null_data['low']) |
+                            (non_null_data['close'] < non_null_data['low'])
+                    )
+                    if invalid_prices.any():
+                        invalid_count = invalid_prices.sum()
+                        self.logger.warning(f"股票 {stock_code} 发现 {invalid_count} 条价格逻辑错误的数据")
 
             except Exception as e:
-                self.logger.error(f"处理股票 {stock_code} 数据失败: {e}")
+                self.logger.error(f"预处理股票 {stock_code} 数据时发生错误: {e}")
                 invalid_stocks.append(stock_code)
 
         # 移除无效股票
         for stock_code in invalid_stocks:
-            del self.stock_data[stock_code]
-            if stock_code in self.stock_codes:
-                self.stock_codes.remove(stock_code)
-            self.data_stats['invalid_data_count'] += 1
+            if stock_code in self.stock_data:
+                del self.stock_data[stock_code]
+                self.logger.warning(f"移除无效股票: {stock_code}")
+
+        # 更新股票代码列表
+        self.stock_codes = list(self.stock_data.keys())
 
     def _update_data_statistics(self):
         """更新数据统计信息"""

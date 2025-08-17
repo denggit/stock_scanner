@@ -276,6 +276,9 @@ class BaseBacktestRunner:
         if strategy_params is None:
             strategy_params = self.strategy_params
 
+        # 数据前向填充：确保所有股票数据对齐到配置的日期范围
+        aligned_stock_data_dict = self._align_stock_data_to_config_dates(stock_data_dict)
+        
         engine = BacktestEngine(
             initial_cash=self.config['initial_cash'],
             commission=self.config['commission']
@@ -283,24 +286,24 @@ class BaseBacktestRunner:
 
         # 修复：将所有股票数据都添加到backtrader中，而不仅仅是主数据源
         # 这样可以确保策略在买入任何股票时都能找到对应的数据源
-        for stock_code, stock_data in stock_data_dict.items():
+        for stock_code, stock_data in aligned_stock_data_dict.items():
             engine.add_data(stock_data, name=stock_code)
-            self.logger.info(f"添加数据源: {stock_code}")
+            self.logger.debug(f"添加数据源: {stock_code}")
 
         # 选择数据最长的股票作为主数据源（用于时间轴）
-        main_code = self._select_main_stock(stock_data_dict)
+        main_code = self._select_main_stock(aligned_stock_data_dict)
         self.logger.info(f"选择主数据源: {main_code}")
 
         engine.add_strategy(
             self.strategy_class,
-            stock_data_dict=stock_data_dict,
+            stock_data_dict=aligned_stock_data_dict,
             cache_adapter=self.cache_adapter,
             effective_start_date=self.config['start_date'],
             **strategy_params
         )
 
         # 释放大对象引用，降低峰值内存占用（不影响功能/配置）
-        stock_data_dict = None  # hint GC
+        aligned_stock_data_dict = None  # hint GC
 
         self.logger.info("开始运行回测...")
         results = engine.run(f"多股票_{self.strategy_class.__name__}")
@@ -322,6 +325,120 @@ class BaseBacktestRunner:
                 self.logger.warning(f"附加策略信息失败: {e}")
 
         return results
+
+    def _align_stock_data_to_config_dates(self, stock_data_dict: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
+        """
+        数据前向填充：将所有股票数据对齐到配置的日期范围
+        
+        实现逻辑：
+        1. 根据配置文件中的start_date和end_date生成完整的回测日期序列
+        2. 对于每只股票，如果其上市日期晚于start_date，则向前填充NaN数据
+        3. 确保所有股票数据都从start_date开始，到end_date结束
+        
+        Args:
+            stock_data_dict: 原始股票数据字典
+            
+        Returns:
+            对齐后的股票数据字典
+        """
+        from datetime import datetime, timedelta
+        import pandas as pd
+        
+        # 获取配置的日期范围
+        start_date = self.config['start_date']
+        end_date = self.config['end_date']
+        
+        # 生成完整的回测日期序列（仅交易日）
+        full_date_range = self._generate_trading_date_range(start_date, end_date)
+        
+        self.logger.info(f"数据对齐：回测日期范围 {start_date} 到 {end_date}，共 {len(full_date_range)} 个交易日")
+        
+        aligned_data_dict = {}
+        
+        for stock_code, stock_df in stock_data_dict.items():
+            try:
+                # 确保数据有trade_date列
+                if 'trade_date' not in stock_df.columns:
+                    self.logger.warning(f"股票 {stock_code} 缺少trade_date列，跳过对齐")
+                    aligned_data_dict[stock_code] = stock_df
+                    continue
+                
+                # 获取股票的实际上市日期（第一个有效数据点）
+                stock_df_copy = stock_df.copy()
+                stock_df_copy['trade_date'] = pd.to_datetime(stock_df_copy['trade_date'])
+                stock_df_copy = stock_df_copy.sort_values('trade_date')
+                
+                # 获取股票的实际数据范围
+                stock_start_date = stock_df_copy['trade_date'].min()
+                stock_end_date = stock_df_copy['trade_date'].max()
+                
+                # 创建完整的日期索引
+                full_range_df = pd.DataFrame(index=full_date_range)
+                full_range_df.index.name = 'trade_date'
+                
+                # 将原始数据按日期对齐
+                stock_df_copy.set_index('trade_date', inplace=True)
+                
+                # 合并数据，缺失值自动填充为NaN
+                aligned_df = full_range_df.join(stock_df_copy, how='left')
+                
+                # 重置索引，确保trade_date作为列
+                aligned_df.reset_index(inplace=True)
+                aligned_df['trade_date'] = aligned_df['trade_date'].dt.strftime('%Y-%m-%d')
+                
+                # 记录填充统计
+                original_length = len(stock_df)
+                aligned_length = len(aligned_df)
+                filled_days = aligned_df[['open', 'high', 'low', 'close', 'volume']].isnull().sum().iloc[0]
+                
+                if stock_start_date > pd.to_datetime(start_date):
+                    # 需要前向填充：股票上市日期晚于配置开始日期
+                    self.logger.debug(f"股票 {stock_code} 上市日期 {stock_start_date.date()} 晚于配置开始日期 {start_date}，进行前向填充")
+                    self.logger.debug(f"股票 {stock_code} 前向填充完成：原始 {original_length} 天 -> 对齐后 {aligned_length} 天，填充 {filled_days} 天")
+                else:
+                    # 不需要前向填充：股票上市日期早于或等于配置开始日期
+                    self.logger.debug(f"股票 {stock_code} 上市日期 {stock_start_date.date()} 早于或等于配置开始日期 {start_date}，无需前向填充")
+                    if filled_days > 0:
+                        self.logger.debug(f"股票 {stock_code} 对齐完成：原始 {original_length} 天 -> 对齐后 {aligned_length} 天，截断 {filled_days} 天")
+                
+                aligned_data_dict[stock_code] = aligned_df
+                
+            except Exception as e:
+                self.logger.error(f"对齐股票 {stock_code} 数据时发生错误: {e}")
+                # 出错时保持原始数据
+                aligned_data_dict[stock_code] = stock_df
+        
+        return aligned_data_dict
+
+    def _generate_trading_date_range(self, start_date: str, end_date: str) -> pd.DatetimeIndex:
+        """
+        生成交易日序列
+        
+        Args:
+            start_date: 开始日期 (YYYY-MM-DD)
+            end_date: 结束日期 (YYYY-MM-DD)
+            
+        Returns:
+            交易日序列
+        """
+        from datetime import datetime, timedelta
+        import pandas as pd
+        
+        # 生成完整的日期范围
+        start_dt = pd.to_datetime(start_date)
+        end_dt = pd.to_datetime(end_date)
+        
+        # 生成所有日期
+        all_dates = pd.date_range(start=start_dt, end=end_dt, freq='D')
+        
+        # 过滤出工作日（周一到周五）
+        trading_dates = all_dates[all_dates.weekday < 5]
+        
+        # 注意：这里简化处理，只过滤周末
+        # 实际应用中可能需要考虑节假日，但为了简化，我们假设所有工作日都是交易日
+        # 如果需要更精确的交易日历，可以集成tushare或其他数据源的交易日历
+        
+        return trading_dates
 
     def _select_main_stock(self, stock_data_dict: Dict[str, pd.DataFrame]) -> str:
         """选择数据最长的股票作为主数据源"""
