@@ -12,35 +12,14 @@
 """
 
 # 核心组件
-from .core import BaseStrategy
-from .core.managers import DataManager, PositionManager, TradeManager, TradeLogger
-from .core.utils import SignalUtils, ParameterUtils, PriceUtils, DataUtils
-
-# 策略工厂 (暂时注释掉，factory 模块尚未实现)
-# from .factory import StrategyFactory, create_strategy, list_strategies, register_strategy
+from .base import BaseStrategy
 
 # 具体策略实现
-from .implementations.channel import RisingChannelStrategy
+from .implementations.rising_channel_strategy import RisingChannelStrategy
 
 __all__ = [
     # 核心基础
     'BaseStrategy',
-    'DataManager',
-    'PositionManager',
-    'TradeManager',
-    'TradeLogger',
-
-    # 通用工具
-    'SignalUtils',
-    'ParameterUtils',
-    'PriceUtils',
-    'DataUtils',
-
-    # 策略工厂 (暂时注释掉)
-    # 'StrategyFactory',
-    # 'create_strategy',
-    # 'list_strategies',
-    # 'register_strategy',
 
     # 策略实现
     'RisingChannelStrategy'
