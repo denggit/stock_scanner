@@ -8,8 +8,9 @@
 """
 # backend/business/backtest/core/data_provider.py
 
-import pandas as pd
 from typing import List, Dict
+
+import pandas as pd
 
 # 最终修正：导入专用于数据获取的 StockDataFetcher，实现最小权限和最佳实践
 from backend.business.data.data_fetcher import StockDataFetcher
@@ -59,7 +60,8 @@ class DataProvider:
 
         for code in self.stock_codes:
             # 调用 get_stock_daily 方法
-            stock_df = fetcher.fetch_stock_data(code=code, start_date=self.start_date, end_date=self.end_date, adjust=self.adjust)
+            stock_df = fetcher.fetch_stock_data(code=code, start_date=self.start_date, end_date=self.end_date,
+                                                adjust=self.adjust)
             if not stock_df.empty:
                 # 确保 trade_date 是 datetime 类型，并设为索引
                 stock_df['date'] = pd.to_datetime(stock_df['trade_date'])
@@ -97,13 +99,38 @@ class DataProvider:
         except KeyError:
             return pd.DataFrame()
 
-    # --- 扩展方法 (待实现) ---
-    def get_history_data(self, stock_code: str, end_date: pd.Timestamp, lookback_days: int) -> pd.DataFrame:
-        """获取单个股票到指定日期为止的一段历史行情数据。"""
-        # (待实现)
-        pass
-
     def get_factor_values(self, factor_name: str, date: pd.Timestamp) -> pd.Series:
         """获取指定日期的指定因子在所有股票上的截面值。"""
         # (待实现)
         pass
+
+        # 请将此方法添加到 DataProvider 类的内部
+
+    def get_history_data(self, stock_code: str, end_date: pd.Timestamp, lookback_days: int) -> pd.DataFrame:
+        """
+        获取单个股票到指定日期为止的一段历史行情数据。
+
+        Args:
+            stock_code (str): 股票代码。
+            end_date (pd.Timestamp): 历史数据的结束日期 (包含此日期)。
+            lookback_days (int): 回溯的天数。
+
+        Returns:
+            pd.DataFrame: 包含历史行情数据的DataFrame，按日期升序排列。
+        """
+        try:
+            # 高效地从大的MultiIndex DataFrame中切片出单个股票的所有历史数据
+            stock_df = self.market_data.loc[(slice(None), stock_code), :]
+
+            # 重置索引，让 'date' 成为普通列，以便进行日期比较
+            stock_df = stock_df.reset_index(level='stock_code', drop=True)
+
+            # 再次切片，获取end_date之前lookback_days天的数据
+            end_loc = stock_df.index.get_loc(end_date)
+            start_loc = max(0, end_loc - lookback_days + 1)
+
+            return stock_df.iloc[start_loc: end_loc + 1]
+
+        except KeyError:
+            # 如果当天或该股票没有任何数据，返回空DataFrame
+            return pd.DataFrame()

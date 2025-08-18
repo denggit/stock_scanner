@@ -1,18 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-回测框架核心模块
+@Author     : Zijun Deng
+@Date       : 8/18/25 10:24 PM
+@File       : __init__.py
+@Description: 
 """
-
-from .backtest_engine import BacktestEngine, BacktestFactory
-from .base_strategy import BaseStrategy
-from .data_manager import DataManager
-from .result_analyzer import ResultAnalyzer
-
-__all__ = [
-    'BaseStrategy',
-    'BacktestEngine',
-    'BacktestFactory',
-    'DataManager',
-    'ResultAnalyzer'
-]

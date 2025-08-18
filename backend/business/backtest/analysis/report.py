@@ -6,6 +6,9 @@
 @File       : report.py
 @Description: 
 """
+import datetime
+import os
+
 # backend/business/backtest/analysis/report.py
 
 import pandas as pd
@@ -23,6 +26,8 @@ def generate_report(daily_net_values: List[Dict], output_filename: str = "backte
         output_filename (str, optional): 输出的HTML报告文件名。
                                          默认为 "backtest_report.html"。
     """
+    output_filename = output_filename.split(".")[0] + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + ".".join(output_filename.split(".")[1:])
+    output_filename = os.path.join("backtest_reports", output_filename)
     if not daily_net_values:
         print("无法生成报告：每日净值列表为空。")
         return
