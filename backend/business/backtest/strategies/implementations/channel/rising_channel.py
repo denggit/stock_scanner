@@ -727,14 +727,7 @@ class RisingChannelStrategy(BaseStrategy):
             return self._update_channel_analysis_traditional()
 
     def _update_channel_analysis_traditional(self):
-        """
-        传统方式更新通道分析结果（优化版本）
-        
-        修改说明：
-        - 数据净化：在数据进入预筛选模块之前，先执行.dropna()操作
-        - 数据验证：检查清理后的数据长度是否满足min_data_points要求
-        - 防止污染：确保预筛选和通道分析接收到的都是不含NaN值的干净数据
-        """
+        """传统方式更新通道分析结果（优化版本）"""
         # 获取所有股票数据
         stock_data_dict = {}
 
@@ -745,19 +738,7 @@ class RisingChannelStrategy(BaseStrategy):
                 self.params.min_data_points
             )
             if stock_data is not None:
-                # 数据净化：移除NaN值，确保数据干净
-                cleaned_data = stock_data.dropna(subset=['open', 'high', 'low', 'close', 'volume'])
-                
-                # 检查清理后的数据长度是否满足要求
-                if len(cleaned_data) >= self.params.min_data_points:
-                    stock_data_dict[stock_code] = cleaned_data
-                else:
-                    self.logger.debug(f"股票 {stock_code} 清理后数据不足: {len(cleaned_data)} < {self.params.min_data_points}")
-
-        if not stock_data_dict:
-            self.logger.warning("没有找到满足条件的股票数据")
-            self.current_analysis_results = {}
-            return
+                stock_data_dict[stock_code] = stock_data
 
         # 性能优化：预筛选股票，减少通道分析的计算量
         from backend.business.backtest.configs.rising_channel_config import RisingChannelConfig
@@ -780,7 +761,7 @@ class RisingChannelStrategy(BaseStrategy):
                 'enable_volume_check': prefilter_config['enable_volume_check']
             }
 
-            # 执行预筛选（现在接收到的都是干净的数据）
+            # 执行预筛选
             filtered_stock_codes = DataUtils.prefilter_stocks(
                 stock_data_dict, **prefilter_params
             )
@@ -798,7 +779,7 @@ class RisingChannelStrategy(BaseStrategy):
             # 使用筛选后的数据进行通道分析
             stock_data_dict = filtered_stock_data_dict
 
-        # 批量分析（现在接收到的都是干净的数据）
+        # 批量分析
         self.current_analysis_results = self.channel_manager.batch_analyze(
             stock_data_dict,
             self.current_date

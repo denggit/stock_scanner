@@ -332,8 +332,8 @@ class BaseBacktestRunner:
         
         实现逻辑：
         1. 根据配置文件中的start_date和end_date生成完整的回测日期序列
-        2. 对每只股票执行.reindex()操作，将其索引扩展至完整日期范围
-        3. 所有在股票实际上市日期之前的日期，其价格和成交量字段自动填充为NaN
+        2. 对于每只股票，如果其上市日期晚于start_date，则向前填充NaN数据
+        3. 确保所有股票数据都从start_date开始，到end_date结束
         
         Args:
             stock_data_dict: 原始股票数据字典
