@@ -28,6 +28,11 @@ def generate_report(daily_net_values: List[Dict], output_filename: str = "backte
     """
     output_filename = output_filename.split(".")[0] + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + ".".join(output_filename.split(".")[1:])
     output_filename = os.path.join("backtest_reports", output_filename)
+    # 获取目录部
+    dir_path = os.path.dirname(output_filename)
+    # 如果目录不存在就创建
+    os.makedirs(dir_path, exist_ok=True)
+
     if not daily_net_values:
         print("无法生成报告：每日净值列表为空。")
         return
