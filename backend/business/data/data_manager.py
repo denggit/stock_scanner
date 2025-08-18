@@ -29,6 +29,11 @@ class DatabaseManager:
         if hasattr(self, "conn"):
             self.conn.close()
 
+    def connect(self):
+        """创建数据库链接"""
+        if hasattr(self, "conn"):
+            self.conn = self._create_connection()
+
     def _create_connection(self):
         """创建数据库连接"""
         for attempt in range(self.config.MAX_RETRIES):

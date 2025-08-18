@@ -8,9 +8,10 @@
 """
 # backend/business/backtest/core/portfolio.py
 
-import pandas as pd
-from typing import Dict, List, Optional
 from dataclasses import dataclass, field
+from typing import Dict, List
+
+import pandas as pd
 
 from .context import Context
 from .data_provider import DataProvider
@@ -88,6 +89,44 @@ class PortfolioManager:
         self._open_orders.append(order)
         print(f"[{self.context.current_dt.date()}] Order created: {amount} shares of {stock_code}")
         return order
+
+    def order_value(self, stock_code: str, value: float):
+        """按价值下单。"""
+        # 通过context获取当天的数据
+        daily_bars = self.context.data_provider.get_daily_bars(self.context.current_dt)
+        if stock_code not in daily_bars.index:
+            print(
+                f"WARNING: No market data for {stock_code} on {self.context.current_dt.date()}. Cannot place order by value.")
+            return None
+
+        price = daily_bars.loc[stock_code]['close']
+        if price > 0:
+            # 计算可以购买的股数 (向下取整到100股的倍数，A股交易规则)
+            amount = int(value / price / 100) * 100
+            # 调用基础的 order 方法来创建订单
+            return self.order(stock_code, amount)
+        return None
+
+    def order_target(self, stock_code: str, amount: int):
+        """调整目标仓位到指定股数。"""
+        current_amount = self.positions.get(stock_code, Position(stock_code)).amount
+        delta_amount = amount - current_amount
+        return self.order(stock_code, delta_amount)
+
+    def order_target_value(self, stock_code: str, value: float):
+        """调整目标仓位到指定价值。"""
+        # 通过context获取当天的数据
+        daily_bars = self.context.data_provider.get_daily_bars(self.context.current_dt)
+        if stock_code not in daily_bars.index:
+            print(
+                f"WARNING: No market data for {stock_code} on {self.context.current_dt.date()}. Cannot place order by target value.")
+            return None
+
+        price = daily_bars.loc[stock_code]['close']
+        if price > 0:
+            target_amount = int(value / price / 100) * 100
+            return self.order_target(stock_code, target_amount)
+        return None
 
     # --- 引擎内部调用的核心方法 ---
     def process_orders(self, daily_bars: pd.DataFrame):

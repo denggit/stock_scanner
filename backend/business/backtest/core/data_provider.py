@@ -6,6 +6,7 @@
 @File       : data_provider.py
 @Description: 
 """
+# backend/business/backtest/core/data_provider.py
 
 import pandas as pd
 from typing import List, Dict
@@ -58,7 +59,7 @@ class DataProvider:
 
         for code in self.stock_codes:
             # 调用 get_stock_daily 方法
-            stock_df = fetcher.get_stock_daily(code, self.start_date, self.end_date, self.adjust)
+            stock_df = fetcher.fetch_stock_data(code=code, start_date=self.start_date, end_date=self.end_date, adjust=self.adjust)
             if not stock_df.empty:
                 # 确保 trade_date 是 datetime 类型，并设为索引
                 stock_df['date'] = pd.to_datetime(stock_df['trade_date'])

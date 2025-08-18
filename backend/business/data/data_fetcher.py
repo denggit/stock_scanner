@@ -133,3 +133,9 @@ class StockDataFetcher:
                     match_codes.append(code)
             stock_list = stock_list[stock_list['code'].isin(match_codes)]
         return stock_list
+
+    def close(self):
+        self.db.close()
+
+    def connect(self):
+        self.db.connect()
