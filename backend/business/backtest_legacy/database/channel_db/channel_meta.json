@@ -1,0 +1,140 @@
+{
+  "params_map": {
+    "00667c4c71573ad2": {
+      "table": "channel_rcn_00667c4c71573ad2",
+      "params": {
+        "k": 2.0,
+        "L_max": 120,
+        "delta_cut": 5,
+        "pivot_m": 3,
+        "min_data_points": 60,
+        "R2_min": 0.2,
+        "width_pct_min": 0.05,
+        "width_pct_max": 0.12,
+        "adjust": 3
+      },
+      "readable_key": "L_max_120_R2_min_0.200_adjust_3_delta_cut_5_k_2.000_min_data_points_60_pivot_m_3_width_pct_max_0.120_width_pct_min_0.050",
+      "created_at": "2025-08-17T12:51:10.013962",
+      "schema_version": "narrow_v1"
+    },
+    "57278c84b5534cb2": {
+      "table": "channel_rcn_57278c84b5534cb2",
+      "params": {
+        "k": 2.0,
+        "L_max": 120,
+        "delta_cut": 5,
+        "pivot_m": 3,
+        "min_data_points": 60,
+        "R2_min": 0.2,
+        "width_pct_min": 0.05,
+        "width_pct_max": 0.12,
+        "adjust": 1
+      },
+      "readable_key": "L_max_120_R2_min_0.200_adjust_1_delta_cut_5_k_2.000_min_data_points_60_pivot_m_3_width_pct_max_0.120_width_pct_min_0.050",
+      "created_at": "2025-08-17T15:05:05.830861",
+      "schema_version": "narrow_v1"
+    },
+    "f7b7d76929990439": {
+      "table": "channel_rcn_f7b7d76929990439",
+      "params": {
+        "k": 2.0,
+        "L_max": 120,
+        "delta_cut": 5,
+        "pivot_m": 3,
+        "min_data_points": 60,
+        "R2_min": 0.6,
+        "width_pct_min": 0.05,
+        "width_pct_max": 0.12,
+        "adjust": 1
+      },
+      "readable_key": "L_max_120_R2_min_0.600_adjust_1_delta_cut_5_k_2.000_min_data_points_60_pivot_m_3_width_pct_max_0.120_width_pct_min_0.050",
+      "created_at": "2025-08-17T15:52:16.743937",
+      "schema_version": "narrow_v1"
+    },
+    "c0d713d5e7009a14": {
+      "table": "channel_rcn_c0d713d5e7009a14",
+      "params": {
+        "k": 2.0,
+        "L_max": 120,
+        "delta_cut": 5,
+        "pivot_m": 3,
+        "min_data_points": 60,
+        "R2_min": 0.4,
+        "width_pct_min": 0.05,
+        "width_pct_max": 0.12,
+        "adjust": 1
+      },
+      "readable_key": "L_max_120_R2_min_0.400_adjust_1_delta_cut_5_k_2.000_min_data_points_60_pivot_m_3_width_pct_max_0.120_width_pct_min_0.050",
+      "created_at": "2025-08-17T16:07:46.567126",
+      "schema_version": "narrow_v1"
+    },
+    "cd6da5e841a018f5": {
+      "table": "channel_rcn_cd6da5e841a018f5",
+      "params": {
+        "k": 2.0,
+        "L_max": 120,
+        "delta_cut": 5,
+        "pivot_m": 3,
+        "min_data_points": 60,
+        "R2_min": 0.45,
+        "width_pct_min": 0.04,
+        "width_pct_max": 0.12,
+        "adjust": 1
+      },
+      "readable_key": "L_max_120_R2_min_0.450_adjust_1_delta_cut_5_k_2.000_min_data_points_60_pivot_m_3_width_pct_max_0.120_width_pct_min_0.040",
+      "created_at": "2025-08-17T17:48:54.814869",
+      "schema_version": "narrow_v1"
+    },
+    "f466f9080221e18b": {
+      "table": "channel_rcn_f466f9080221e18b",
+      "params": {
+        "k": 2.0,
+        "L_max": 120,
+        "delta_cut": 5,
+        "pivot_m": 3,
+        "min_data_points": 60,
+        "R2_min": 0.5,
+        "width_pct_min": 0.04,
+        "width_pct_max": 0.1,
+        "adjust": 1
+      },
+      "readable_key": "L_max_120_R2_min_0.500_adjust_1_delta_cut_5_k_2.000_min_data_points_60_pivot_m_3_width_pct_max_0.100_width_pct_min_0.040",
+      "created_at": "2025-08-17T18:26:49.513176",
+      "schema_version": "narrow_v1"
+    },
+    "b21f8c34919c59d7": {
+      "table": "channel_rcn_b21f8c34919c59d7",
+      "params": {
+        "k": 2.0,
+        "L_max": 120,
+        "delta_cut": 5,
+        "pivot_m": 3,
+        "min_data_points": 60,
+        "R2_min": 0.45,
+        "width_pct_min": 0.04,
+        "width_pct_max": 0.1,
+        "adjust": 1
+      },
+      "readable_key": "L_max_120_R2_min_0.450_adjust_1_delta_cut_5_k_2.000_min_data_points_60_pivot_m_3_width_pct_max_0.100_width_pct_min_0.040",
+      "created_at": "2025-08-17T19:01:09.160957",
+      "schema_version": "narrow_v1"
+    },
+    "d9cb9d65497091bb": {
+      "table": "channel_rcn_d9cb9d65497091bb",
+      "params": {
+        "k": 2.0,
+        "L_max": 120,
+        "delta_cut": 5,
+        "pivot_m": 3,
+        "min_data_points": 60,
+        "R2_min": 0.5,
+        "width_pct_min": 0.05,
+        "width_pct_max": 0.12,
+        "adjust": 1
+      },
+      "readable_key": "L_max_120_R2_min_0.500_adjust_1_delta_cut_5_k_2.000_min_data_points_60_pivot_m_3_width_pct_max_0.120_width_pct_min_0.050",
+      "created_at": "2025-08-17T20:03:22.239009",
+      "schema_version": "narrow_v1"
+    }
+  }
+}
