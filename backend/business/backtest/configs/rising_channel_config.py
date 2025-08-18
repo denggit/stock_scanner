@@ -34,7 +34,7 @@ class RisingChannelConfig:
         'initial_cash': 200000.0,  # 初始资金20万
         'commission': 0.0003,  # 手续费率
         'stock_pool': 'no_st',  # 股票池：非ST股票
-        'start_date': '2020-02-06',  # 开始日期（调整为数据库中实际可用的最早日期）
+        'start_date': '2024-01-01',  # 开始日期
         'end_date': datetime.today().strftime("%Y-%m-%d"),  # 结束日期
         'min_data_days': 120  # 最小数据天数
     }
@@ -108,14 +108,14 @@ class RisingChannelConfig:
         'R2_min': 0.5,  # 最小R²值（用于通道有效性判定）；根据回测分析，R²>=0.6的交易表现明显更好
         'R2_max': 0.9,  # 最大R²值上限（保持较宽范围，避免过早卖出）
         'R2_range': None,  # 参数优化时可传入 [R2_min, R2_max]，两者均可为 None
-        'width_pct_min': 0.04,  # 最小通道宽度
-        'width_pct_max': 0.10,  # 最大通道宽度
+        'width_pct_min': 0.05,  # 最小通道宽度
+        'width_pct_max': 0.12,  # 最大通道宽度
         
         # 成交量过滤参数
         'min_volume_ratio': 1.1,  # 最小成交量比（当日成交量/5日平均成交量）
         
         # T日预筛选参数
-        'max_distance_to_lower': 3.0,  # T日预筛选时股价距离通道下沿的最大百分比距离
+        'max_distance_to_lower': 2.0,  # T日预筛选时股价距离通道下沿的最大百分比距离
         
         # T+1日买入参数
         'min_daily_gain': 0.5,  # T+1日买入时的最小当日涨幅要求（%）

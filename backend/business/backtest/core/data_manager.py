@@ -62,17 +62,12 @@ class DataManager:
             'info': self._get_data_info(processed_data)
         }
 
-        self.logger.debug(f"数据加载成功: {name}, 数据条数: {len(processed_data)}")
+        self.logger.info(f"数据加载成功: {name}, 数据条数: {len(processed_data)}")
         return data_feed
 
     def _validate_data(self, data: pd.DataFrame) -> None:
         """
         验证数据格式
-        
-        修改说明：
-        - 支持NaN数据：允许数据中包含NaN值，这些NaN值代表股票未上市期间的数据
-        - 分段验证：只验证每只股票从其第一个有效数据点开始的数据
-        - 保持健壮性：确保验证逻辑不会因为NaN数据而失败
         
         Args:
             data: 待验证的数据
@@ -95,36 +90,23 @@ class DataManager:
             if not pd.api.types.is_numeric_dtype(data[col]):
                 raise ValueError(f"列 {col} 必须是数值类型")
 
-        # 检查数据完整性 - 修改为支持NaN数据
-        # 只检查非NaN数据的完整性
-        non_null_data = data[required_columns].dropna()
-        
-        if non_null_data.empty:
-            # 如果所有数据都是NaN，这是允许的（表示股票在整个期间都未上市）
-            return
-        
-        # 检查非NaN数据中的价格逻辑
+        # 检查数据完整性
+        null_counts = data[required_columns].isnull().sum()
+        if null_counts.any():
+            raise ValueError(f"数据包含空值: {null_counts[null_counts > 0].to_dict()}")
+
+        # 检查价格逻辑
         invalid_prices = (
-                (non_null_data['high'] < non_null_data['low']) |
-                (non_null_data['open'] > non_null_data['high']) |
-                (non_null_data['close'] > non_null_data['high']) |
-                (non_null_data['open'] < non_null_data['low']) |
-                (non_null_data['close'] < non_null_data['low'])
+                (data['high'] < data['low']) |
+                (data['open'] > data['high']) |
+                (data['close'] > data['high']) |
+                (data['open'] < data['low']) |
+                (data['close'] < data['low'])
         )
 
         if invalid_prices.any():
             invalid_count = invalid_prices.sum()
             raise ValueError(f"发现 {invalid_count} 条价格逻辑错误的数据")
-
-        # 记录数据统计信息
-        total_rows = len(data)
-        non_null_rows = len(non_null_data)
-        null_rows = total_rows - non_null_rows
-        
-        if null_rows > 0:
-            # 记录NaN数据统计，但不报错
-            null_percentage = (null_rows / total_rows) * 100
-            self.logger.debug(f"数据验证通过：总行数 {total_rows}，有效数据 {non_null_rows} 行，NaN数据 {null_rows} 行 ({null_percentage:.1f}%)")
 
     def _get_data_info(self, data: pd.DataFrame) -> Dict[str, Any]:
         """

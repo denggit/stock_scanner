@@ -1,1 +1,0 @@
-/Users/zijund/Code/stock_scanner/venv/bin/python /Users/zijund/Code/stock_scanner/backend/business/backtest/execution/rising_channel_backtest.py
