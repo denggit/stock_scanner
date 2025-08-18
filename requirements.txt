@@ -50,6 +50,7 @@ streamlit
 
 # backtest
 backtrader
+quantstats
 
 # 新增依赖 - 缓存和性能监控
 psutil>=5.9.0

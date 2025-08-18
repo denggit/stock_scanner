@@ -19,6 +19,7 @@ sys.path.insert(0, project_root)
 
 from backend.business.backtest.core.engine import BacktestEngine
 from backend.business.backtest.strategies.implementations.buy_and_hold import BuyAndHoldStrategy
+from backend.business.backtest.analysis.report import generate_report
 
 
 def main():
@@ -67,6 +68,8 @@ def main():
         print(f"\nInitial Value: {initial_value:,.2f}")
         print(f"Final Value:   {final_value:,.2f}")
         print(f"Total Return:  {total_return:.2f}%")
+
+    generate_report(results, "buy_and_hold_report.html")
 
 
 if __name__ == '__main__':
