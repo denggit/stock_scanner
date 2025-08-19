@@ -39,7 +39,7 @@ class Order:
     order_id: int = field(default_factory=lambda: id(object()))
     # 订单类型, 'market', 'limit' 等, 初期简化为市价单
     order_type: str = 'market'
-    status: str = 'open'  # 'open', 'filled', 'canceled'
+    status: str = 'open'  # 'open', 'filled', 'canceled', 'pending'
 
 
 @dataclass
@@ -178,9 +178,13 @@ class PortfolioManager:
                 )
                 self.trade_records.append(trade)
                 order.status = 'filled'
+            else:
+                # 处理订单股票不在当日数据中的情况（如停牌）
+                print(f"WARNING: Stock {order.stock_code} not available on {self.context.current_dt.date()}. Order kept for next day.")
+                order.status = 'pending'  # 保持订单状态为待处理
 
-        # 清空待处理订单列表
-        self._open_orders.clear()
+        # 只清空已成交的订单，保留待处理的订单
+        self._open_orders = [order for order in self._open_orders if order.status == 'pending']
 
     def update_portfolio_value(self, date: pd.Timestamp, daily_bars: pd.DataFrame):
         """在每日收盘后，更新组合总净值。"""

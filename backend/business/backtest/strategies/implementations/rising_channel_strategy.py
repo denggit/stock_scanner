@@ -975,3 +975,104 @@ def create_rising_channel_strategy(max_positions: int = 50,
     }
     
     return strategy_params
+
+
+def run_rising_channel_backtest(
+    environment: str = "development",
+    start_date: str = None,
+    end_date: str = None,
+    initial_cash: float = None,
+    stock_codes: Optional[List[str]] = None,
+    strategy_params: Optional[Dict[str, Any]] = None,
+    generate_report_flag: bool = True,
+    report_name: str = None
+) -> Optional[List[Dict]]:
+    """
+    运行上升通道策略回测
+    
+    Args:
+        environment: 运行环境 ('development', 'optimization', 'production', 'full_backtest')
+        start_date: 开始日期，None表示使用配置文件中的默认值
+        end_date: 结束日期，None表示使用配置文件中的默认值
+        initial_cash: 初始资金，None表示使用配置文件中的默认值
+        stock_codes: 股票代码列表，None表示自动获取
+        strategy_params: 策略参数，None表示使用环境配置的参数
+        generate_report_flag: 是否生成报告
+        report_name: 报告名称，None表示使用默认名称
+        
+    Returns:
+        回测结果列表，失败时返回None
+    """
+    from backend.business.backtest.run_backtest import run_backtest
+    
+    # 获取配置
+    config = RisingChannelConfig()
+    
+    # 设置默认值
+    if start_date is None:
+        start_date = config.BASE_CONFIG.get('start_date', '2024-01-01')
+    if end_date is None:
+        end_date = config.BASE_CONFIG.get('end_date', '2024-12-31')
+    if initial_cash is None:
+        initial_cash = config.BASE_CONFIG.get('initial_cash', 1000000.0)
+    if report_name is None:
+        report_name = f"rising_channel_{environment}_backtest"
+    
+    # 获取环境配置和策略参数
+    if environment in config.ENVIRONMENTS:
+        env_config = config.ENVIRONMENTS[environment]
+        if strategy_params is None:
+            # 获取基础策略参数
+            base_params = config.get_strategy_params()
+            # 合并环境特定的参数覆盖
+            env_overrides = env_config.get('strategy_overrides', {})
+            strategy_params = {**base_params, **env_overrides}
+    else:
+        # 默认使用开发环境
+        env_config = config.ENVIRONMENTS["development"]
+        if strategy_params is None:
+            strategy_params = config.get_strategy_params()
+    
+    # 获取股票数量限制
+    max_stocks = env_config.get('max_stocks')
+    
+    print(f"=== 上升通道策略回测 ({environment}) ===")
+    print(f"环境描述: {env_config.get('description', '')}")
+    print(f"回测期间: {start_date} 到 {end_date}")
+    print(f"初始资金: {initial_cash:,.2f}")
+    print(f"最大股票数: {max_stocks or '无限制'}")
+    
+    # 调用通用回测函数
+    return run_backtest(
+        strategy_class=RisingChannelStrategy,
+        start_date=start_date,
+        end_date=end_date,
+        initial_cash=initial_cash,
+        stock_codes=stock_codes,
+        strategy_params=strategy_params,
+        adjust=strategy_params.get('adjust', '1'),
+        generate_report_flag=generate_report_flag,
+        report_name=report_name
+    )
+
+
+def run_rising_channel_quick_test():
+    """
+    快速测试上升通道策略
+    使用开发环境配置进行快速验证
+    """
+    print("=== 上升通道策略快速测试 ===")
+    
+    return run_rising_channel_backtest(
+        environment="development",
+        start_date="2024-01-01",
+        end_date="2024-03-31",  # 3个月测试
+        stock_codes=["sh.600036", "sh.600519", "sz.000001", "sz.300750", "sh.601318", "sh.600000"],  # 测试股票
+        generate_report_flag=True,
+        report_name="rising_channel_quick_test"
+    )
+
+
+if __name__ == '__main__':
+    # 当直接运行此文件时，执行快速测试
+    run_rising_channel_quick_test()

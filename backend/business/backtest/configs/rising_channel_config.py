@@ -85,6 +85,8 @@ class RisingChannelConfig:
         }
     }
 
+
+
     # ==================== 策略参数（默认值） ====================
     STRATEGY_PARAMS = {
         # 策略基础参数
@@ -331,6 +333,8 @@ class RisingChannelConfig:
             预筛选配置字典
         """
         return cls.PREFILTER_CONFIG.copy()
+
+
 
     @classmethod
     def get_channel_analysis_config(cls) -> Dict[str, Any]:

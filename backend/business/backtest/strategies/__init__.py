@@ -15,12 +15,22 @@
 from .base import BaseStrategy
 
 # 具体策略实现
-from .implementations.rising_channel_strategy import RisingChannelStrategy
+from .implementations.rising_channel_strategy import (
+    RisingChannelStrategy,
+    run_rising_channel_backtest,
+    run_rising_channel_quick_test,
+    create_rising_channel_strategy
+)
 
 __all__ = [
     # 核心基础
     'BaseStrategy',
 
     # 策略实现
-    'RisingChannelStrategy'
+    'RisingChannelStrategy',
+    
+    # 上升通道策略相关函数
+    'run_rising_channel_backtest',
+    'run_rising_channel_quick_test',
+    'create_rising_channel_strategy'
 ]

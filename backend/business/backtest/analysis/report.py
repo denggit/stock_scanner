@@ -16,7 +16,7 @@ import quantstats as qs
 from typing import List, Dict
 
 
-def generate_report(daily_net_values: List[Dict], output_filename: str = "backtest_report.html"):
+def generate_report(daily_net_values: List[Dict], output_filename: str = "backtest_report"):
     """
     使用 quantstats 生成一份全面的回测分析报告。
 
@@ -26,7 +26,7 @@ def generate_report(daily_net_values: List[Dict], output_filename: str = "backte
         output_filename (str, optional): 输出的HTML报告文件名。
                                          默认为 "backtest_report.html"。
     """
-    output_filename = output_filename.split(".")[0] + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + ".".join(output_filename.split(".")[1:])
+    output_filename = output_filename + datetime.datetime.now().strftime("%Y%m%d%H%M%S") + ".html"
     output_filename = os.path.join("backtest_reports", output_filename)
     # 获取目录部
     dir_path = os.path.dirname(output_filename)

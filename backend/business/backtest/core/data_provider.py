@@ -44,6 +44,7 @@ class DataProvider:
         self.market_data: pd.DataFrame = self._load_market_data()
         self.trading_days: pd.DatetimeIndex = self._get_trading_days()
         self.factor_data: Dict[str, pd.DataFrame] = {}
+        
         print("DataProvider initialized: Market data loaded.")
 
     def _load_market_data(self) -> pd.DataFrame:
@@ -58,14 +59,40 @@ class DataProvider:
         fetcher = StockDataFetcher()
         all_data_dict = {}
 
+        # 定义必需的数据列
+        required_columns = ['trade_date', 'open', 'high', 'low', 'close', 'volume']
+
         for code in self.stock_codes:
-            # 调用 get_stock_daily 方法
-            stock_df = fetcher.fetch_stock_data(code=code, start_date=self.start_date, end_date=self.end_date,
-                                                adjust=self.adjust)
-            if not stock_df.empty:
-                # 确保 trade_date 是 datetime 类型，并设为索引
-                stock_df['date'] = pd.to_datetime(stock_df['trade_date'])
-                all_data_dict[code] = stock_df.set_index('date')
+            try:
+                # 调用 get_stock_daily 方法
+                stock_df = fetcher.fetch_stock_data(code=code, start_date=self.start_date, end_date=self.end_date,
+                                                    adjust=self.adjust)
+                
+                # 验证数据质量
+                if not stock_df.empty:
+                    # 检查必需列是否存在
+                    missing_columns = [col for col in required_columns if col not in stock_df.columns]
+                    if missing_columns:
+                        print(f"WARNING: Stock {code} missing required columns: {missing_columns}")
+                        continue
+                    
+                    # 检查是否有足够的数据
+                    if len(stock_df) < 10:  # 至少需要10天数据
+                        print(f"WARNING: Stock {code} has insufficient data: {len(stock_df)} days")
+                        continue
+                    
+                    # 检查是否有无效数据
+                    if stock_df[['open', 'high', 'low', 'close', 'volume']].isnull().any().any():
+                        print(f"WARNING: Stock {code} contains null values, skipping")
+                        continue
+                    
+                    # 确保 trade_date 是 datetime 类型，并设为索引
+                    stock_df['date'] = pd.to_datetime(stock_df['trade_date'])
+                    all_data_dict[code] = stock_df.set_index('date')
+                    
+            except Exception as e:
+                print(f"ERROR: Failed to load data for {code}: {e}")
+                continue
 
         fetcher.close()  # 完成查询后关闭连接
 
@@ -101,10 +128,14 @@ class DataProvider:
 
     def get_factor_values(self, factor_name: str, date: pd.Timestamp) -> pd.Series:
         """获取指定日期的指定因子在所有股票上的截面值。"""
-        # (待实现)
-        pass
-
-        # 请将此方法添加到 DataProvider 类的内部
+        try:
+            if factor_name in self.factor_data:
+                return self.factor_data[factor_name].loc[date]
+            else:
+                # 如果因子数据未加载，返回空Series
+                return pd.Series()
+        except KeyError:
+            return pd.Series()
 
     def get_history_data(self, stock_code: str, end_date: pd.Timestamp, lookback_days: int) -> pd.DataFrame:
         """

@@ -73,31 +73,37 @@ class BacktestEngine:
         # 3. --- 主事件循环 ---
         print("--- Starting main event loop ---")
         for current_date in data_provider.trading_days:
-            # 更新上下文中的当前日期
-            portfolio_manager.context.current_dt = current_date
+            try:
+                # 更新上下文中的当前日期
+                portfolio_manager.context.current_dt = current_date
 
-            # a. 开盘前事件
-            strategy.before_trading_start()
+                # a. 开盘前事件
+                strategy.before_trading_start()
 
-            # b. 获取当天数据并调用策略核心逻辑
-            daily_bars = data_provider.get_daily_bars(current_date)
+                # b. 获取当天数据并调用策略核心逻辑
+                daily_bars = data_provider.get_daily_bars(current_date)
 
-            # 只有当天有数据时才继续（处理停牌、或数据缺失的情况）
-            if not daily_bars.empty:
-                strategy.handle_data(daily_bars)
+                # 只有当天有数据时才继续（处理停牌、或数据缺失的情况）
+                if not daily_bars.empty:
+                    strategy.handle_data(daily_bars)
 
-            # c. 订单撮合与结算 (使用当天的数据)
-            portfolio_manager.process_orders(daily_bars)
+                # c. 订单撮合与结算 (使用当天的数据)
+                portfolio_manager.process_orders(daily_bars)
 
-            # d. 收盘后事件
-            strategy.after_trading_end()
+                # d. 收盘后事件
+                strategy.after_trading_end()
 
-            # e. 更新当日组合净值 (必须在所有交易完成后)
-            portfolio_manager.update_portfolio_value(current_date, daily_bars)
+                # e. 更新当日组合净值 (必须在所有交易完成后)
+                portfolio_manager.update_portfolio_value(current_date, daily_bars)
 
-            if (len(portfolio_manager.daily_net_values)) % 100 == 0:
-                print(
-                    f"  Processed {len(portfolio_manager.daily_net_values)} days... Current Date: {current_date.date()}")
+                if (len(portfolio_manager.daily_net_values)) % 100 == 0:
+                    print(
+                        f"  Processed {len(portfolio_manager.daily_net_values)} days... Current Date: {current_date.date()}")
+                        
+            except Exception as e:
+                print(f"ERROR: Failed to process date {current_date.date()}: {e}")
+                # 继续处理下一个交易日，不中断整个回测
+                continue
 
         # 4. 回测结束
         print("--- Backtest Finished ---")
