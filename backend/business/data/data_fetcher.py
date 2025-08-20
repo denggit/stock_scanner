@@ -133,3 +133,166 @@ class StockDataFetcher:
                     match_codes.append(code)
             stock_list = stock_list[stock_list['code'].isin(match_codes)]
         return stock_list
+
+    def fetch_financial_data(
+            self,
+            code: str,
+            data_type: str,
+            start_date: Optional[str] = None,
+            end_date: Optional[str] = None
+    ) -> pd.DataFrame:
+        """
+        获取财务数据
+        
+        Args:
+            code: 股票代码
+            data_type: 财务数据类型，可选值：
+                - 'profit': 利润表数据 (roeAvg, npMargin, gpMargin, epsTTM等)
+                - 'balance': 资产负债表数据 (currentRatio, liabilityToAsset等)
+                - 'cashflow': 现金流量表数据 (CFOToOR, CFOToNP等)
+                - 'growth': 成长能力数据 (YOYAsset, YOYNI等)
+                - 'operation': 营运能力数据 (AssetTurnRatio, INVTurnRatio等)
+                - 'dupont': 杜邦分析数据
+                - 'dividend': 分红数据
+            start_date: 开始日期，格式为YYYY-MM-DD，可选
+            end_date: 结束日期，格式为YYYY-MM-DD，可选
+            
+        Returns:
+            包含财务数据的DataFrame
+        """
+        df = self.db.get_financial_data(code, data_type, start_date, end_date)
+        
+        if df.empty:
+            logging.warning(f"No {data_type} data found for code: {code}")
+            return df
+        
+        # 数据清理：处理无穷大和NaN值
+        numeric_columns = df.select_dtypes(include=[np.number]).columns
+        for column in numeric_columns:
+            df[column] = df[column].astype(float)
+            # 替换无穷大值为NaN
+            df[column] = df[column].replace([np.inf, -np.inf], np.nan)
+        
+        return df
+
+    def fetch_profit_data(self, code: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
+        """
+        获取利润表数据
+        
+        Returns:
+            包含以下字段的DataFrame:
+            - roeAvg: 净资产收益率
+            - npMargin: 净利润率
+            - gpMargin: 毛利率
+            - epsTTM: 每股收益(TTM)
+            - netProfit: 净利润
+            - MBRevenue: 主营收入
+        """
+        return self.fetch_financial_data(code, 'profit', start_date, end_date)
+
+    def fetch_balance_data(self, code: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
+        """
+        获取资产负债表数据
+        
+        Returns:
+            包含以下字段的DataFrame:
+            - currentRatio: 流动比率
+            - liabilityToAsset: 资产负债率
+            - assetToEquity: 权益乘数
+            - quickRatio: 速动比率
+            - cashRatio: 现金比率
+        """
+        return self.fetch_financial_data(code, 'balance', start_date, end_date)
+
+    def fetch_cashflow_data(self, code: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
+        """
+        获取现金流量表数据
+        
+        Returns:
+            包含以下字段的DataFrame:
+            - CFOToOR: 经营现金流/营业收入
+            - CFOToNP: 经营现金流/净利润
+            - CFOToGr: 经营现金流/毛利润
+        """
+        return self.fetch_financial_data(code, 'cashflow', start_date, end_date)
+
+    def fetch_growth_data(self, code: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
+        """
+        获取成长能力数据
+        
+        Returns:
+            包含以下字段的DataFrame:
+            - YOYAsset: 资产同比增长率
+            - YOYNI: 净利润同比增长率
+            - YOYEquity: 净资产同比增长率
+            - YOYEPSBasic: 每股收益同比增长率
+        """
+        return self.fetch_financial_data(code, 'growth', start_date, end_date)
+
+    def fetch_operation_data(self, code: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
+        """
+        获取营运能力数据
+        
+        Returns:
+            包含以下字段的DataFrame:
+            - AssetTurnRatio: 总资产周转率
+            - INVTurnRatio: 存货周转率
+            - NRTurnRatio: 应收账款周转率
+            - CATurnRatio: 流动资产周转率
+        """
+        return self.fetch_financial_data(code, 'operation', start_date, end_date)
+
+    def fetch_dupont_data(self, code: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
+        """
+        获取杜邦分析数据
+        
+        Returns:
+            包含以下字段的DataFrame:
+            - dupontROE: 杜邦ROE
+            - dupontAssetStoEquity: 权益乘数
+            - dupontAssetTurn: 总资产周转率
+            - dupontPnitoni: 净利润/营业利润
+        """
+        return self.fetch_financial_data(code, 'dupont', start_date, end_date)
+
+    def fetch_dividend_data(self, code: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
+        """
+        获取分红数据
+        
+        Returns:
+            包含以下字段的DataFrame:
+            - dividCashPsBeforeTax: 税前每股现金分红
+            - dividCashPsAfterTax: 税后每股现金分红
+            - dividStocksPs: 每股股票分红
+        """
+        return self.fetch_financial_data(code, 'dividend', start_date, end_date)
+
+    def fetch_all_financial_data(
+            self,
+            code: str,
+            start_date: Optional[str] = None,
+            end_date: Optional[str] = None
+    ) -> dict:
+        """
+        获取所有财务数据
+        
+        Args:
+            code: 股票代码
+            start_date: 开始日期，格式为YYYY-MM-DD，可选
+            end_date: 结束日期，格式为YYYY-MM-DD，可选
+            
+        Returns:
+            包含所有财务数据的字典，键为数据类型，值为对应的DataFrame
+        """
+        data_types = ['profit', 'balance', 'cashflow', 'growth', 'operation', 'dupont', 'dividend']
+        result = {}
+        
+        for data_type in data_types:
+            try:
+                df = self.fetch_financial_data(code, data_type, start_date, end_date)
+                result[data_type] = df
+            except Exception as e:
+                logging.warning(f"Failed to fetch {data_type} data for {code}: {e}")
+                result[data_type] = pd.DataFrame()
+        
+        return result

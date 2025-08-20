@@ -13,8 +13,8 @@ import vectorbt as vbt
 from typing import Dict, List, Optional, Union, Tuple, Any
 import warnings
 from datetime import datetime, timedelta
-from backend.business.backtest_factor.core.factor_engine import FactorEngine
-from backend.business.backtest_factor.core.data_manager import FactorDataManager
+from backend.business.factor.core.factor.factor_engine import FactorEngine
+from backend.business.factor.core.data.data_manager import FactorDataManager
 from backend.utils.logger import setup_logger
 
 logger = setup_logger(__name__)

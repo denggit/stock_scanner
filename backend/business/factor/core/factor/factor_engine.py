@@ -13,8 +13,8 @@ from typing import Dict, List, Optional, Union, Callable, Any
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
-from backend.business.backtest_factor.core.base_factor import BaseFactor
-from backend.business.backtest_factor.core.data_manager import FactorDataManager
+from backend.business.factor.core.factor.base_factor import BaseFactor
+from backend.business.factor.core.data.data_manager import FactorDataManager
 from backend.utils.logger import setup_logger
 
 logger = setup_logger(__name__)

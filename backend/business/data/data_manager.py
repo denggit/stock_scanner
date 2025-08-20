@@ -686,6 +686,105 @@ class DatabaseManager:
             # 返回空DataFrame
             return pd.DataFrame()
 
+    def get_financial_data(self, code: str, data_type: str, start_date: str = None, end_date: str = None) -> pd.DataFrame:
+        """
+        获取财务数据
+        
+        Args:
+            code: 股票代码
+            data_type: 财务数据类型，可选值：
+                - 'profit': 利润表数据
+                - 'balance': 资产负债表数据
+                - 'cashflow': 现金流量表数据
+                - 'growth': 成长能力数据
+                - 'operation': 营运能力数据
+                - 'dupont': 杜邦分析数据
+                - 'dividend': 分红数据
+            start_date: 开始日期，格式为YYYY-MM-DD，可选
+            end_date: 结束日期，格式为YYYY-MM-DD，可选
+            
+        Returns:
+            包含财务数据的DataFrame
+        """
+        table_mapping = {
+            'profit': 'stock_profit',
+            'balance': 'stock_balance', 
+            'cashflow': 'stock_cashflow',
+            'growth': 'stock_growth',
+            'operation': 'stock_operation',
+            'dupont': 'stock_dupont',
+            'dividend': 'stock_dividend'
+        }
+        
+        if data_type not in table_mapping:
+            raise ValueError(f"Invalid data_type: {data_type}. Valid types: {list(table_mapping.keys())}")
+        
+        table_name = table_mapping[data_type]
+        
+        # 构建查询条件
+        where_conditions = ["code = %s"]
+        params = [code]
+        
+        # 分红表使用不同的日期字段
+        date_field = "dividOperateDate" if data_type == "dividend" else "statDate"
+        
+        if start_date and end_date:
+            where_conditions.append(f"{date_field} BETWEEN %s AND %s")
+            params.extend([start_date, end_date])
+        elif start_date:
+            where_conditions.append(f"{date_field} >= %s")
+            params.append(start_date)
+        elif end_date:
+            where_conditions.append(f"{date_field} <= %s")
+            params.append(end_date)
+        
+        where_clause = " AND ".join(where_conditions)
+        
+        query = f"SELECT * FROM {table_name} WHERE {where_clause} ORDER BY {date_field} DESC"
+        
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute(query, params)
+                result = cursor.fetchall()
+                
+                if result:
+                    df = pd.DataFrame(result, columns=[desc[0] for desc in cursor.description])
+                    return df
+                else:
+                    return pd.DataFrame()
+                    
+        except Exception as e:
+            logging.error(f"Failed to get {data_type} data for {code}: {e}")
+            return pd.DataFrame()
+
+    def get_profit_data(self, code: str, start_date: str = None, end_date: str = None) -> pd.DataFrame:
+        """获取利润表数据"""
+        return self.get_financial_data(code, 'profit', start_date, end_date)
+    
+    def get_balance_data(self, code: str, start_date: str = None, end_date: str = None) -> pd.DataFrame:
+        """获取资产负债表数据"""
+        return self.get_financial_data(code, 'balance', start_date, end_date)
+    
+    def get_cashflow_data(self, code: str, start_date: str = None, end_date: str = None) -> pd.DataFrame:
+        """获取现金流量表数据"""
+        return self.get_financial_data(code, 'cashflow', start_date, end_date)
+    
+    def get_growth_data(self, code: str, start_date: str = None, end_date: str = None) -> pd.DataFrame:
+        """获取成长能力数据"""
+        return self.get_financial_data(code, 'growth', start_date, end_date)
+    
+    def get_operation_data(self, code: str, start_date: str = None, end_date: str = None) -> pd.DataFrame:
+        """获取营运能力数据"""
+        return self.get_financial_data(code, 'operation', start_date, end_date)
+    
+    def get_dupont_data(self, code: str, start_date: str = None, end_date: str = None) -> pd.DataFrame:
+        """获取杜邦分析数据"""
+        return self.get_financial_data(code, 'dupont', start_date, end_date)
+    
+    def get_dividend_data(self, code: str, start_date: str = None, end_date: str = None) -> pd.DataFrame:
+        """获取分红数据"""
+        return self.get_financial_data(code, 'dividend', start_date, end_date)
+
     def _save_financial_data(self, df: pd.DataFrame, table_name: str, columns: list):
         """通用的财务数据保存方法"""
         if df.empty:

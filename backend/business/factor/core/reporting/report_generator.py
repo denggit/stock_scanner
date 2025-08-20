@@ -15,10 +15,10 @@ import seaborn as sns
 from datetime import datetime
 import os
 import quantstats as qs
-from backend.business.backtest_factor.core.factor_engine import FactorEngine
-from backend.business.backtest_factor.core.backtest_engine import FactorBacktestEngine
-from backend.business.backtest_factor.core.analyzer import FactorAnalyzer
-from backend.business.backtest_factor.core.data_manager import FactorDataManager
+from backend.business.factor.core.factor.factor_engine import FactorEngine
+from backend.business.factor.core.backtest.backtest_engine import FactorBacktestEngine
+from backend.business.factor.core.analysis.factor_analyzer import FactorAnalyzer
+from backend.business.factor.core.data.data_manager import FactorDataManager
 from backend.utils.logger import setup_logger
 
 logger = setup_logger(__name__)

@@ -131,7 +131,7 @@ class FactorDataManager:
                           stock_codes: Optional[List[str]] = None,
                           fields: Optional[List[str]] = None) -> pd.DataFrame:
         """
-        获取财务数据
+        获取财务数据（季度数据）
         
         Args:
             start_date: 开始日期
@@ -140,29 +140,159 @@ class FactorDataManager:
             fields: 需要的字段列表
             
         Returns:
-            财务数据DataFrame
+            财务数据DataFrame，包含季度财务指标
         """
         logger.info(f"开始获取财务数据: {start_date} 到 {end_date}")
         
-        if fields is None:
-            # 使用实际数据库中的财务字段
-            fields = ['code', 'trade_date', 'pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm', 'is_st']
-        
-        # 财务数据目前包含在市场数据中的财务指标
-        if self._market_data is not None:
-            # 检查哪些字段在数据中存在
-            available_fields = [field for field in fields if field in self._market_data.columns]
-            if available_fields:
-                financial_data = self._market_data[available_fields].copy()
-                self._financial_data = financial_data
-                logger.info(f"从市场数据中提取 {len(available_fields)} 个财务指标字段")
-                return financial_data
+        # 获取股票列表
+        if stock_codes is None:
+            if self._market_data is not None:
+                stock_codes = self._market_data['code'].unique().tolist()
             else:
-                logger.warning("市场数据中没有财务指标字段")
+                logger.warning("请先获取市场数据或提供股票代码列表")
                 return pd.DataFrame()
+        
+        # 扩展时间范围以获取足够的财务数据（财务数据按季度发布）
+        # 通常需要提前1-2年获取财务数据以确保有足够的历史数据
+        extended_start_date = self._extend_date_for_financial_data(start_date)
+        
+        financial_data_list = []
+        failed_count = 0
+        
+        for code in stock_codes:
+            try:
+                # 获取各种财务数据
+                all_financial_data = self.data_fetcher.fetch_all_financial_data(
+                    code, 
+                    start_date=extended_start_date, 
+                    end_date=end_date
+                )
+                
+                # 合并所有财务数据
+                code_financial_data = self._merge_financial_data_for_stock(code, all_financial_data)
+                
+                if not code_financial_data.empty:
+                    financial_data_list.append(code_financial_data)
+                else:
+                    failed_count += 1
+                    
+            except Exception as e:
+                logger.warning(f"获取股票 {code} 财务数据失败: {e}")
+                failed_count += 1
+        
+        if financial_data_list:
+            # 合并所有股票的财务数据
+            financial_data = pd.concat(financial_data_list, ignore_index=True)
+            
+            # 数据清洗和预处理
+            financial_data = self._clean_financial_data(financial_data)
+            
+            self._financial_data = financial_data
+            logger.info(f"成功获取 {len(financial_data)} 条财务数据，失败 {failed_count} 只股票")
+            
+            return financial_data
         else:
-            logger.warning("请先获取市场数据，财务指标包含在市场数据中")
+            logger.warning("没有获取到任何财务数据")
             return pd.DataFrame()
+    
+    def _extend_date_for_financial_data(self, start_date: str) -> str:
+        """
+        为财务数据扩展开始日期（财务数据按季度发布）
+        
+        Args:
+            start_date: 原始开始日期
+            
+        Returns:
+            扩展后的开始日期
+        """
+        start_dt = pd.to_datetime(start_date)
+        # 提前2年获取财务数据，确保有足够的历史数据用于因子计算
+        extended_dt = start_dt - pd.DateOffset(years=2)
+        return extended_dt.strftime('%Y-%m-%d')
+    
+    def _merge_financial_data_for_stock(self, code: str, all_financial_data: dict) -> pd.DataFrame:
+        """
+        合并单只股票的所有财务数据
+        
+        Args:
+            code: 股票代码
+            all_financial_data: 所有财务数据字典
+            
+        Returns:
+            合并后的财务数据DataFrame
+        """
+        merged_data = []
+        
+        # 获取所有财务数据的日期
+        all_dates = set()
+        for data_type, df in all_financial_data.items():
+            if not df.empty:
+                if 'statDate' in df.columns:
+                    all_dates.update(df['statDate'].tolist())
+        
+        # 按日期合并数据
+        for date in sorted(all_dates, reverse=True):  # 按日期倒序排列
+            row_data = {'code': code, 'statDate': date}
+            
+            # 合并各种财务数据
+            for data_type, df in all_financial_data.items():
+                if not df.empty and 'statDate' in df.columns:
+                    date_data = df[df['statDate'] == date]
+                    if not date_data.empty:
+                        # 添加财务指标（排除code和statDate字段）
+                        for col in date_data.columns:
+                            if col not in ['code', 'statDate', 'pubDate']:
+                                row_data[col] = date_data[col].iloc[0]
+            
+            merged_data.append(row_data)
+        
+        return pd.DataFrame(merged_data)
+    
+    def _clean_financial_data(self, financial_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        清洗财务数据
+        
+        Args:
+            financial_data: 原始财务数据
+            
+        Returns:
+            清洗后的财务数据
+        """
+        if financial_data.empty:
+            return financial_data
+        
+        # 确保日期格式正确
+        if 'statDate' in financial_data.columns:
+            financial_data['statDate'] = pd.to_datetime(financial_data['statDate'])
+        
+        # 处理decimal.Decimal类型的数据，转换为float
+        for col in financial_data.columns:
+            if col not in ['code', 'statDate']:
+                if financial_data[col].dtype == 'object':
+                    # 尝试转换为float，处理decimal.Decimal
+                    try:
+                        financial_data[col] = pd.to_numeric(financial_data[col], errors='coerce')
+                    except:
+                        pass
+        
+        # 处理数值字段的异常值
+        numeric_columns = financial_data.select_dtypes(include=[np.number]).columns
+        for col in numeric_columns:
+            if col not in ['code']:
+                # 替换无穷大值
+                financial_data[col] = financial_data[col].replace([np.inf, -np.inf], np.nan)
+                
+                # 处理异常大的值（可能是数据错误）
+                q99 = financial_data[col].quantile(0.99)
+                q01 = financial_data[col].quantile(0.01)
+                if pd.notna(q99) and pd.notna(q01):
+                    financial_data.loc[financial_data[col] > q99 * 10, col] = np.nan
+                    financial_data.loc[financial_data[col] < q01 / 10, col] = np.nan
+        
+        # 按股票代码和日期排序
+        financial_data = financial_data.sort_values(['code', 'statDate'], ascending=[True, False])
+        
+        return financial_data
     
     def prepare_factor_data(self,
                            start_date: str,
@@ -181,7 +311,7 @@ class FactorDataManager:
             **kwargs: 其他参数
             
         Returns:
-            处理后的数据DataFrame
+            处理后的数据DataFrame，包含市场数据和财务数据
         """
         logger.info(f"开始准备因子计算数据: {start_date} 到 {end_date}")
         
@@ -193,11 +323,15 @@ class FactorDataManager:
             stock_pool=stock_pool
         )
         
-        # 获取财务数据（包含在市场数据中）
+        if market_data.empty:
+            logger.error("无法获取市场数据")
+            return pd.DataFrame()
+        
+        # 获取财务数据（季度数据）
         financial_data = self.get_financial_data(start_date, end_date, stock_codes)
         
-        # 由于财务数据已经包含在市场数据中，直接使用市场数据
-        processed_data = market_data.copy()
+        # 合并市场数据和财务数据
+        processed_data = self._merge_market_and_financial_data(market_data, financial_data)
         
         # 数据预处理
         processed_data = self._preprocess_data(processed_data)
@@ -206,6 +340,75 @@ class FactorDataManager:
         logger.info(f"数据准备完成，共 {len(processed_data)} 条记录，包含 {processed_data['code'].nunique()} 只股票")
         
         return processed_data
+    
+    def _merge_market_and_financial_data(self, market_data: pd.DataFrame, financial_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        合并市场数据和财务数据
+        
+        Args:
+            market_data: 市场数据
+            financial_data: 财务数据
+            
+        Returns:
+            合并后的数据DataFrame
+        """
+        if financial_data.empty:
+            logger.info("没有财务数据，仅使用市场数据")
+            return market_data.copy()
+        
+        logger.info(f"开始合并市场数据({len(market_data)}条)和财务数据({len(financial_data)}条)")
+        
+        # 确保日期格式一致
+        market_data['trade_date'] = pd.to_datetime(market_data['trade_date'])
+        financial_data['statDate'] = pd.to_datetime(financial_data['statDate'])
+        
+        # 为每个交易日找到最近的财务数据
+        merged_data_list = []
+        
+        for code in market_data['code'].unique():
+            code_market_data = market_data[market_data['code'] == code].copy()
+            code_financial_data = financial_data[financial_data['code'] == code].copy()
+            
+            if code_financial_data.empty:
+                # 如果没有财务数据，使用市场数据
+                merged_data_list.append(code_market_data)
+                continue
+            
+            # 为每个交易日找到最近的财务数据
+            code_merged_data = []
+            for _, market_row in code_market_data.iterrows():
+                trade_date = market_row['trade_date']
+                
+                # 找到最近的财务数据（财务数据日期 <= 交易日期）
+                available_financial_data = code_financial_data[code_financial_data['statDate'] <= trade_date]
+                
+                if not available_financial_data.empty:
+                    # 选择最近的财务数据
+                    latest_financial_data = available_financial_data.iloc[0]  # 已经按日期倒序排列
+                    
+                    # 合并数据
+                    merged_row = market_row.copy()
+                    for col in latest_financial_data.index:
+                        if col not in ['code', 'statDate', 'pubDate']:
+                            merged_row[col] = latest_financial_data[col]
+                    
+                    code_merged_data.append(merged_row)
+                else:
+                    # 如果没有可用的财务数据，使用市场数据
+                    code_merged_data.append(market_row)
+            
+            # 合并该股票的所有数据
+            if code_merged_data:
+                code_result = pd.DataFrame(code_merged_data)
+                merged_data_list.append(code_result)
+        
+        if merged_data_list:
+            result = pd.concat(merged_data_list, ignore_index=True)
+            logger.info(f"数据合并完成，共 {len(result)} 条记录")
+            return result
+        else:
+            logger.warning("数据合并失败，返回市场数据")
+            return market_data.copy()
     
     def get_stock_pool(self, pool_name: str = "hs300", **kwargs) -> pd.DataFrame:
         """
