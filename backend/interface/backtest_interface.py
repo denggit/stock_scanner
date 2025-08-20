@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.services.backtest_service import BacktestService
 
-router = APIRouter(prefix="/api/backtest")
+router = APIRouter(prefix="/api/backtest_event")
 backtest_service = BacktestService()
 
 
@@ -49,7 +49,7 @@ async def run_backtest(
             params=params,
         )
         if result is None:
-            raise HTTPException(status_code=404, detail="No backtest backtest_results found")
+            raise HTTPException(status_code=404, detail="No backtest_event backtest_results found")
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -63,7 +63,7 @@ async def get_backtest_results(backtest_id: str):
     try:
         result = await backtest_service.get_backtest_results(backtest_id)
         if result is None:
-            raise HTTPException(status_code=404, detail=f"No backtest_results found for backtest ID: {backtest_id}")
+            raise HTTPException(status_code=404, detail=f"No backtest_results found for backtest_event ID: {backtest_id}")
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

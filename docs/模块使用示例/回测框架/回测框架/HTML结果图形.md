@@ -13,8 +13,9 @@
 ## 使用方式
 
 ### 1. 直接传入日期与收益率
+
 ```python
-from backend.business.backtest.utils.html_result_plotter import HtmlResultPlotter
+from backend.business.backtest_event.utils.html_result_plotter import HtmlResultPlotter
 
 plotter = HtmlResultPlotter()
 html_path = plotter.generate_performance_html(

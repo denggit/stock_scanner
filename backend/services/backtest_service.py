@@ -70,7 +70,7 @@ class BacktestService:
                     continue
 
             if not all_stock_data:
-                raise ValueError("No valid stock data available for backtest")
+                raise ValueError("No valid stock data available for backtest_event")
 
             # 运行回测
             results = backtest_func(

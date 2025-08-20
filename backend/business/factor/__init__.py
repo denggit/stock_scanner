@@ -35,7 +35,7 @@
 ├── monitoring/
 │   ├── anomaly_detector.py           # 异常检测升级
 │   └── performance_monitor.py
-└── backtest/
+└── backtest_event/
     ├── event_driven_engine.py        # 事件驱动回测
     └── risk_analyzer.py
 """

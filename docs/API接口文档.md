@@ -503,7 +503,7 @@ def scan_stocks(strategy, params):
 
 # 运行回测
 def run_backtest(strategy, start_date, end_date, init_params, params=None):
-    url = f"{BASE_URL}/api/backtest/run"
+    url = f"{BASE_URL}/api/backtest_event/run"
     request_params = {
         "strategy": strategy,
         "start_date": start_date,

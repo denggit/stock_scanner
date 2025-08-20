@@ -39,8 +39,8 @@ def main():
         #### 3. Backtest
         策略回测及性能分析
         """)
-        if st.button("进入回测系统", key="backtest"):
-            st.switch_page("pages/backtest.py")
+        if st.button("进入回测系统", key="backtest_event"):
+            st.switch_page("pages/backtest_event.py")
 
 
 if __name__ == "__main__":

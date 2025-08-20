@@ -31,7 +31,7 @@ app.add_middleware(
 # 注册路由
 app.include_router(stock_interface.router, tags=["stock"])
 app.include_router(strategy_interface.router, tags=["strategy"])
-app.include_router(backtest_interface.router, tags=["backtest"])
+app.include_router(backtest_interface.router, tags=["backtest_event"])
 
 
 @app.get("/")
