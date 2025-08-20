@@ -116,6 +116,7 @@ class FactorReportGenerator:
     def generate_comprehensive_report(self,
                                     factor_names: List[str],
                                     output_dir: str = "reports",
+                                    backtest_results: Optional[Dict[str, Any]] = None,
                                     **kwargs) -> str:
         """
         生成综合分析报告
@@ -123,6 +124,7 @@ class FactorReportGenerator:
         Args:
             factor_names: 因子名称列表
             output_dir: 输出目录
+            backtest_results: 回测结果字典
             **kwargs: 其他参数
             
         Returns:
@@ -137,6 +139,10 @@ class FactorReportGenerator:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         report_filename = f"comprehensive_report_{timestamp}.html"
         report_path = os.path.join(output_dir, report_filename)
+        
+        # 保存回测结果供后续使用
+        if backtest_results:
+            self._framework_results = {'backtest_results': backtest_results}
         
         # 生成汇总报告
         try:
@@ -366,17 +372,17 @@ class FactorReportGenerator:
             try:
                 # IC结果
                 ic_key = f'ic_{factor_name}_pearson'
-                ic_result = self.analyzer.get_ic_results(ic_key)
+                ic_result = self.analyzer.get_analysis_results(ic_key)
                 if ic_result is not None:
                     summary_data['ic_results'][factor_name] = {
-                        'pearson_ic': ic_result.get('ic_mean', 0),
-                        'ic_ir': ic_result.get('ic_ir', 0),
-                        'ic_win_rate': ic_result.get('ic_win_rate', 0)
+                        'pearson_ic': ic_result.get('ic_stats', {}).get('mean_ic', 0),
+                        'ic_ir': ic_result.get('ic_stats', {}).get('ir', 0),
+                        'ic_win_rate': ic_result.get('ic_stats', {}).get('win_rate', 0)
                     }
                 
                 # 有效性分析结果
                 effectiveness_key = f'effectiveness_{factor_name}'
-                effectiveness_result = self.analyzer.get_effectiveness_results(effectiveness_key)
+                effectiveness_result = self.analyzer.get_analysis_results(effectiveness_key)
                 if effectiveness_result is not None:
                     summary_data['effectiveness_results'][factor_name] = effectiveness_result
             except Exception as e:
@@ -794,16 +800,200 @@ class FactorReportGenerator:
         
         for factor_name, effectiveness_data in summary_data['effectiveness_results'].items():
             effectiveness_html += f'<h3>{factor_name} 有效性指标</h3>'
-            effectiveness_html += '<div class="info-box">'
-            for key, value in effectiveness_data.items():
-                if isinstance(value, (int, float)):
-                    if 'return' in key.lower() or 'profit' in key.lower():
-                        effectiveness_html += f'<p><strong>{key}:</strong> <span class="{"positive" if value > 0 else "negative"}">{value:.4f}</span></p>'
-                    else:
-                        effectiveness_html += f'<p><strong>{key}:</strong> {value:.4f}</p>'
-                else:
-                    effectiveness_html += f'<p><strong>{key}:</strong> {value}</p>'
-            effectiveness_html += '</div>'
+            
+            # 解析有效性数据
+            ic_analysis = effectiveness_data.get('ic_analysis', {})
+            rank_ic_analysis = effectiveness_data.get('rank_ic_analysis', {})
+            group_returns = effectiveness_data.get('group_returns', {})
+            stability_metrics = effectiveness_data.get('stability_metrics', {})
+            
+            # 1. IC分析表格
+            if ic_analysis and 'ic_stats' in ic_analysis:
+                ic_stats = ic_analysis['ic_stats']
+                effectiveness_html += '''
+                <h4>📊 IC分析 (Pearson相关系数)</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>指标</th>
+                            <th>数值</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                '''
+                
+                ic_metrics = [
+                    ('mean_ic', '平均IC', '因子预测能力'),
+                    ('std_ic', 'IC标准差', 'IC波动性'),
+                    ('ir', '信息比率', '风险调整后收益'),
+                    ('positive_ic_rate', '正IC比率', 'IC为正的比例'),
+                    ('abs_mean_ic', '绝对平均IC', '预测能力强度'),
+                    ('ic_skewness', 'IC偏度', 'IC分布偏斜程度'),
+                    ('ic_kurtosis', 'IC峰度', 'IC分布尖峭程度'),
+                    ('min_ic', '最小IC', 'IC最小值'),
+                    ('max_ic', '最大IC', 'IC最大值'),
+                    ('ic_count', 'IC样本数', '有效IC数量')
+                ]
+                
+                for key, name, desc in ic_metrics:
+                    if key in ic_stats:
+                        value = ic_stats[key]
+                        if key in ['positive_ic_rate']:
+                            formatted_value = f"{value:.2%}"
+                        elif key in ['mean_ic', 'std_ic', 'ir', 'abs_mean_ic', 'ic_skewness', 'ic_kurtosis', 'min_ic', 'max_ic']:
+                            formatted_value = f"{value:.4f}"
+                        else:
+                            formatted_value = str(value)
+                        
+                        effectiveness_html += f'''
+                        <tr>
+                            <td>{name}</td>
+                            <td class="{'positive' if key in ['mean_ic', 'ir', 'positive_ic_rate', 'abs_mean_ic'] and value > 0 else 'negative' if key in ['mean_ic', 'ir', 'positive_ic_rate'] and value < 0 else ''}">{formatted_value}</td>
+                            <td>{desc}</td>
+                        </tr>
+                        '''
+                
+                effectiveness_html += '</tbody></table>'
+            
+            # 2. Rank IC分析表格
+            if rank_ic_analysis and 'ic_stats' in rank_ic_analysis:
+                rank_ic_stats = rank_ic_analysis['ic_stats']
+                effectiveness_html += '''
+                <h4>📊 Rank IC分析 (Spearman秩相关系数)</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>指标</th>
+                            <th>数值</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                '''
+                
+                for key, name, desc in ic_metrics:
+                    if key in rank_ic_stats:
+                        value = rank_ic_stats[key]
+                        if key in ['positive_ic_rate']:
+                            formatted_value = f"{value:.2%}"
+                        elif key in ['mean_ic', 'std_ic', 'ir', 'abs_mean_ic', 'ic_skewness', 'ic_kurtosis', 'min_ic', 'max_ic']:
+                            formatted_value = f"{value:.4f}"
+                        else:
+                            formatted_value = str(value)
+                        
+                        effectiveness_html += f'''
+                        <tr>
+                            <td>{name}</td>
+                            <td class="{'positive' if key in ['mean_ic', 'ir', 'positive_ic_rate', 'abs_mean_ic'] and value > 0 else 'negative' if key in ['mean_ic', 'ir', 'positive_ic_rate'] and value < 0 else ''}">{formatted_value}</td>
+                            <td>{desc}</td>
+                        </tr>
+                        '''
+                
+                effectiveness_html += '</tbody></table>'
+            
+            # 3. 分组收益分析表格
+            if group_returns and 'group_stats' in group_returns:
+                group_stats = group_returns['group_stats']
+                effectiveness_html += '''
+                <h4>📈 分组收益分析</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>分组</th>
+                            <th>平均收益率</th>
+                            <th>收益率标准差</th>
+                            <th>夏普比率</th>
+                            <th>胜率</th>
+                            <th>样本数</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                '''
+                
+                for group_name in sorted(group_stats.keys()):
+                    stats = group_stats[group_name]
+                    effectiveness_html += f'''
+                    <tr>
+                        <td>{group_name}</td>
+                        <td class="{'positive' if stats.get('mean_return', 0) > 0 else 'negative'}">{stats.get('mean_return', 0):.4f}</td>
+                        <td>{stats.get('std_return', 0):.4f}</td>
+                        <td class="{'positive' if stats.get('sharpe_ratio', 0) > 0 else 'negative'}">{stats.get('sharpe_ratio', 0):.4f}</td>
+                        <td class="{'positive' if stats.get('win_rate', 0) > 0.5 else 'negative'}">{stats.get('win_rate', 0):.2%}</td>
+                        <td>{stats.get('count', 0)}</td>
+                    </tr>
+                    '''
+                
+                effectiveness_html += '</tbody></table>'
+            
+            # 4. 稳定性指标表格
+            if stability_metrics:
+                effectiveness_html += '''
+                <h4>🔒 稳定性指标</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>指标</th>
+                            <th>数值</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                '''
+                
+                stability_metric_names = [
+                    ('mean_change', '平均变化', '因子值平均变化幅度'),
+                    ('std_change', '变化标准差', '因子值变化波动性'),
+                    ('autocorr_1d', '1日自相关', '相邻日期因子值相关性'),
+                    ('autocorr_5d', '5日自相关', '5天间隔因子值相关性'),
+                    ('autocorr_20d', '20日自相关', '20天间隔因子值相关性')
+                ]
+                
+                for key, name, desc in stability_metric_names:
+                    if key in stability_metrics:
+                        value = stability_metrics[key]
+                        if pd.isna(value):
+                            formatted_value = "N/A"
+                        elif key.startswith('autocorr'):
+                            formatted_value = f"{value:.4f}"
+                        else:
+                            formatted_value = f"{value:.4f}"
+                        
+                        effectiveness_html += f'''
+                        <tr>
+                            <td>{name}</td>
+                            <td>{formatted_value}</td>
+                            <td>{desc}</td>
+                        </tr>
+                        '''
+                
+                effectiveness_html += '</tbody></table>'
+            
+            # 5. 参数信息
+            effectiveness_html += '''
+            <h4>⚙️ 分析参数</h4>
+            <table>
+                <thead>
+                    <tr>
+                        <th>参数</th>
+                        <th>数值</th>
+                    </tr>
+                </thead>
+                <tbody>
+            '''
+            
+            effectiveness_html += f'''
+            <tr>
+                <td>因子名称</td>
+                <td>{effectiveness_data.get('factor_name', 'N/A')}</td>
+            </tr>
+            <tr>
+                <td>预测期</td>
+                <td>{effectiveness_data.get('forward_period', 'N/A')}</td>
+            </tr>
+            '''
+            
+            effectiveness_html += '</tbody></table>'
         
         effectiveness_html += '</div>'
         return effectiveness_html

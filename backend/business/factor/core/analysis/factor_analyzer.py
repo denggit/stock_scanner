@@ -404,7 +404,7 @@ class FactorAnalyzer:
         factor_matrix = factor_data.pivot(index='trade_date', columns='code', values=factor_name)
         
         # 计算因子值变化
-        factor_changes = factor_matrix.pct_change()
+        factor_changes = factor_matrix.pct_change(fill_method=None)
         
         # 计算稳定性指标
         stability_metrics = {

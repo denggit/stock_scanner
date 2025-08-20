@@ -127,7 +127,7 @@ class FactorResearchFramework:
             # 6. 生成报告
             logger.info("步骤6: 生成报告")
             report_path = self.report_generator.generate_comprehensive_report(
-                factor_names, output_dir=self.output_dir
+                factor_names, output_dir=self.output_dir, backtest_results=backtest_results
             )
             
             # 7. 汇总结果

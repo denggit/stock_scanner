@@ -148,8 +148,8 @@ class FactorBacktestEngine:
             group_exits = group_signals[f'group_{group_id}_exits']
             
             # 确保信号矩阵与价格数据对齐
-            group_entries = group_entries.reindex_like(price_data).fillna(False)
-            group_exits = group_exits.reindex_like(price_data).fillna(True)
+            group_entries = group_entries.reindex_like(price_data).fillna(False).infer_objects(copy=False)
+            group_exits = group_exits.reindex_like(price_data).fillna(True).infer_objects(copy=False)
             
             portfolio = vbt.Portfolio.from_signals(
                 close=price_data,
@@ -400,9 +400,16 @@ class FactorBacktestEngine:
             统计指标字典
         """
         try:
+            # 尝试使用vectorbt的统计指标，但避免单位问题
+            total_return = portfolio.total_return()
+            
+            # 对于最大回撤，使用自定义计算避免单位问题
+            returns = portfolio.returns()
+            max_drawdown = self._calculate_simple_max_drawdown(returns) if returns is not None and not returns.empty else 0.0
+            
             stats = {
-                'total_return': portfolio.total_return(),
-                'max_drawdown': portfolio.max_drawdown(),
+                'total_return': total_return,
+                'max_drawdown': max_drawdown,
             }
         except Exception as e:
             logger.warning(f"计算portfolio统计指标失败: {e}，使用简化指标")

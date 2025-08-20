@@ -6,11 +6,16 @@
 @Author     : Zijun Deng
 @Date       : 2025-08-20
 """
-
+import datetime
 import os
 import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
+
+# 导入配置，设置环境
+from backend.business.factor.core.config import setup_environment
+
+setup_environment()
 
 from backend.business.factor import create_factor_research_framework
 from backend.utils.logger import setup_logger
@@ -165,16 +170,19 @@ def run_fundamental_factors():
     return results
 
 
-def run_single_factor(factor_name: str):
+def run_single_factor(factor_name: str, start_date: str = '2025-01-01', end_date: str = None):
     """运行单个因子"""
     logger.info(f"=== 运行单个因子: {factor_name} ===")
+
+    if end_date is None:
+        end_date = datetime.date.today().strftime("%Y-%m-%d")
 
     framework = create_factor_research_framework()
 
     results = framework.run_single_factor_analysis(
         factor_name=factor_name,
-        start_date='2025-08-15',
-        end_date='2025-08-19',
+        start_date=start_date,
+        end_date=end_date,
         stock_pool='sz50',
         top_n=10,
         n_groups=5
@@ -207,8 +215,8 @@ def run_all_factors():
         try:
             results = framework.run_factor_comparison(
                 factor_names=batch_factors,
-                start_date='2025-08-15',
-                end_date='2025-08-19',
+                start_date='2025-01-01',
+                end_date=datetime.date.today().strftime("%Y-%m-%d"),
                 stock_pool='sz50',
                 top_n=10,
                 n_groups=5
@@ -231,6 +239,10 @@ if __name__ == "__main__":
                         help='要运行的因子类型')
     parser.add_argument('--factor_name', type=str, default=None,
                         help='单个因子名称（当factor_type为single时使用）')
+    parser.add_argument('--start_date', type=str, default='2025-01-01',
+                        help='开始日期 (YYYY-MM-DD)')
+    parser.add_argument('--end_date', type=str, default=datetime.date.today().strftime("%Y-%m-%d"),
+                        help='结束日期 (YYYY-MM-DD)，默认为今天')
 
     args = parser.parse_args()
 
@@ -253,7 +265,7 @@ if __name__ == "__main__":
             if args.factor_name is None:
                 logger.error("运行单个因子时必须指定factor_name参数")
                 sys.exit(1)
-            run_single_factor(args.factor_name)
+            run_single_factor(args.factor_name, args.start_date, args.end_date)
         elif args.factor_type == 'all':
             run_all_factors()
         else:

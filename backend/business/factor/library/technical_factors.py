@@ -222,18 +222,18 @@ def volume_price_momentum(close: pd.Series, volume: pd.Series, window: int = 20,
     return price_momentum * volume_momentum
 
 @register_technical_factor(name='gap_strength', description='跳空强度因子')
-def gap_strength(open_price: pd.Series, preclose: pd.Series, **kwargs) -> pd.Series:
+def gap_strength(open: pd.Series, preclose: pd.Series, **kwargs) -> pd.Series:
     """
     跳空强度因子：开盘价相对前收盘价的跳空幅度
     
     Args:
-        open_price: 开盘价序列
+        open: 开盘价序列
         preclose: 前收盘价序列
         
     Returns:
         跳空强度因子值
     """
-    return (open_price - preclose) / preclose
+    return (open - preclose) / preclose
 
 @register_technical_factor(name='intraday_volatility', description='日内波动率因子')
 def intraday_volatility(high: pd.Series, low: pd.Series, close: pd.Series, window: int = 20, **kwargs) -> pd.Series:
