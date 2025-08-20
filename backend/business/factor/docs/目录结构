@@ -1,0 +1,19 @@
+factor/
+├── core/                          # 核心模块
+│   ├── factor/                    # 因子定义和计算
+│   │   ├── base_factor.py         # 基础因子类
+│   │   ├── factor_registry.py     # 因子注册管理
+│   │   └── factor_engine.py       # 因子计算引擎
+│   ├── data/                      # 数据管理
+│   ├── backtest/                  # 回测系统
+│   ├── analysis/                  # 因子分析
+│   └── reporting/                 # 报告生成
+├── library/                       # 因子库 (用户主要修改的地方)
+│   ├── technical_factors.py       # 技术因子
+│   ├── fundamental_factors.py     # 基本面因子
+│   ├── worldquant_factors.py      # WorldQuant Alpha因子
+│   ├── channel_factors.py         # 通道分析因子
+│   └── __init__.py
+├── main.py                        # 主入口文件
+├── run_factor.py                  # 简化的运行文件
+└── __init__.py
