@@ -89,6 +89,7 @@ python run_factor.py --factor_type single --factor_name my_new_factor
 ## 🎨 支持的因子类型
 
 ### 技术因子 (technical_factors.py)
+
 - 动量类：momentum_5d, momentum_20d, momentum_60d
 - 波动率类：volatility_20d, volatility_60d, intraday_volatility
 - 成交量类：volume_ratio_5d, volume_ratio_20d, volume_price_momentum
@@ -98,15 +99,18 @@ python run_factor.py --factor_type single --factor_name my_new_factor
 - 其他：gap_strength
 
 ### 基本面因子 (fundamental_factors.py)
+
 - 估值类：pe_ratio, pb_ratio, ps_ratio, pcf_ratio
 - 盈利能力：roe, roa
 - 成长性：revenue_growth, profit_growth
 - 财务健康：debt_to_equity, current_ratio
 
 ### WorldQuant Alpha因子 (worldquant_factors.py)
+
 - alpha_1 到 alpha_10
 
 ### 通道分析因子 (channel_factors.py)
+
 - channel_distance, channel_breakout, channel_width, channel_trend
 
 ## 💡 使用建议

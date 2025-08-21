@@ -160,18 +160,123 @@ class StockDataFetcher:
         Returns:
             包含财务数据的DataFrame
         """
+        # 首先尝试从数据库获取
         df = self.db.get_financial_data(code, data_type, start_date, end_date)
         
         if df.empty:
-            logging.warning(f"No {data_type} data found for code: {code}")
-            return df
+            logging.warning(f"No {data_type} data found for code: {code} in database, trying alternative sources...")
+            
+            # 如果数据库中没有数据，尝试从其他数据源获取
+            try:
+                # 尝试从数据源直接获取（绕过数据库）
+                from backend.business.data.source.baostock_src import BaostockSource
+                
+                # 创建BaostockSource实例
+                baostock_source = BaostockSource()
+                
+                # 根据数据类型调用相应的数据源方法
+                if data_type == 'profit':
+                    # 尝试获取最近几年的利润表数据
+                    current_year = datetime.date.today().year
+                    for year in range(current_year, current_year - 3, -1):
+                        try:
+                            df = baostock_source.get_profit_data(code, year)
+                            if not df.empty:
+                                logging.info(f"Successfully retrieved {data_type} data for {code} from Baostock for year {year}")
+                                break
+                        except Exception as e:
+                            logging.debug(f"Failed to get {data_type} data for {code} from Baostock for year {year}: {e}")
+                            continue
+                            
+                elif data_type == 'balance':
+                    current_year = datetime.date.today().year
+                    for year in range(current_year, current_year - 3, -1):
+                        try:
+                            df = baostock_source.get_balance_data(code, year)
+                            if not df.empty:
+                                logging.info(f"Successfully retrieved {data_type} data for {code} from Baostock for year {year}")
+                                break
+                        except Exception as e:
+                            logging.debug(f"Failed to get {data_type} data for {code} from Baostock for year {year}: {e}")
+                            continue
+                            
+                elif data_type == 'cashflow':
+                    current_year = datetime.date.today().year
+                    for year in range(current_year, current_year - 3, -1):
+                        try:
+                            df = baostock_source.get_cashflow_data(code, year)
+                            if not df.empty:
+                                logging.info(f"Successfully retrieved {data_type} data for {code} from Baostock for year {year}")
+                                break
+                        except Exception as e:
+                            logging.debug(f"Failed to get {data_type} data for {code} from Baostock for year {year}: {e}")
+                            continue
+                            
+                elif data_type == 'growth':
+                    current_year = datetime.date.today().year
+                    for year in range(current_year, current_year - 3, -1):
+                        try:
+                            df = baostock_source.get_growth_data(code, year)
+                            if not df.empty:
+                                logging.info(f"Successfully retrieved {data_type} data for {code} from Baostock for year {year}")
+                                break
+                        except Exception as e:
+                            logging.debug(f"Failed to get {data_type} data for {code} from Baostock for year {year}: {e}")
+                            continue
+                            
+                elif data_type == 'operation':
+                    current_year = datetime.date.today().year
+                    for year in range(current_year, current_year - 3, -1):
+                        try:
+                            df = baostock_source.get_operation_data(code, year)
+                            if not df.empty:
+                                logging.info(f"Successfully retrieved {data_type} data for {code} from Baostock for year {year}")
+                                break
+                        except Exception as e:
+                            logging.debug(f"Failed to get {data_type} data for {code} from Baostock for year {year}: {e}")
+                            continue
+                            
+                elif data_type == 'dupont':
+                    current_year = datetime.date.today().year
+                    for year in range(current_year, current_year - 3, -1):
+                        try:
+                            df = baostock_source.get_dupont_data(code, year)
+                            if not df.empty:
+                                logging.info(f"Successfully retrieved {data_type} data for {code} from Baostock for year {year}")
+                                break
+                        except Exception as e:
+                            logging.debug(f"Failed to get {data_type} data for {code} from Baostock for year {year}: {e}")
+                            continue
+                            
+                elif data_type == 'dividend':
+                    current_year = datetime.date.today().year
+                    for year in range(current_year, current_year - 3, -1):
+                        try:
+                            df = baostock_source.get_dividend_data(code, year)
+                            if not df.empty:
+                                # 分红数据使用dividOperateDate而不是statDate
+                                if 'dividOperateDate' in df.columns:
+                                    # 重命名列以保持一致性
+                                    df = df.rename(columns={'dividOperateDate': 'statDate'})
+                                logging.info(f"Successfully retrieved {data_type} data for {code} from Baostock for year {year}")
+                                break
+                        except Exception as e:
+                            logging.debug(f"Failed to get {data_type} data for {code} from Baostock for year {year}: {e}")
+                            continue
+                
+                if df.empty:
+                    logging.warning(f"No {data_type} data found for code: {code} from any source")
+                    
+            except Exception as e:
+                logging.error(f"Failed to get {data_type} data for {code} from alternative source: {e}")
         
         # 数据清理：处理无穷大和NaN值
-        numeric_columns = df.select_dtypes(include=[np.number]).columns
-        for column in numeric_columns:
-            df[column] = df[column].astype(float)
-            # 替换无穷大值为NaN
-            df[column] = df[column].replace([np.inf, -np.inf], np.nan)
+        if not df.empty:
+            numeric_columns = df.select_dtypes(include=[np.number]).columns
+            for column in numeric_columns:
+                df[column] = df[column].astype(float)
+                # 替换无穷大值为NaN
+                df[column] = df[column].replace([np.inf, -np.inf], np.nan)
         
         return df
 

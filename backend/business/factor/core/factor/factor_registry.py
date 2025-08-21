@@ -71,7 +71,7 @@ class FactorRegistry:
             else:
                 self._factor_categories['custom'].append(name)
             
-            logger.info(f"因子 {name} 注册成功: {description}")
+            logger.debug(f"因子 {name} 注册成功: {description}")
             return wrapper
         
         return decorator
@@ -89,6 +89,8 @@ class FactorRegistry:
         if name in self._factors:
             return self._factors[name]['function']
         return None
+    
+
     
     def get_factor_info(self, name: str) -> Optional[Dict[str, Any]]:
         """

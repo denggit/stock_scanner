@@ -8,9 +8,9 @@
 """
 
 import pandas as pd
-import numpy as np
-from typing import Optional
+
 from ..core.factor.base_factor import register_technical_factor
+
 
 # ==================== 通道分析因子 ====================
 
@@ -31,16 +31,18 @@ def channel_distance(high: pd.Series, low: pd.Series, close: pd.Series, window: 
     # 计算通道边界
     upper_channel = high.rolling(window).max()
     lower_channel = low.rolling(window).min()
-    
+
     # 计算价格在通道中的相对位置
     channel_range = upper_channel - lower_channel
     price_position = (close - lower_channel) / channel_range
-    
+
     # 转换为-1到1的范围
     return 2 * price_position - 1
 
+
 @register_technical_factor(name='channel_breakout', description='通道突破因子')
-def channel_breakout(high: pd.Series, low: pd.Series, close: pd.Series, window: int = 20, threshold: float = 0.05, **kwargs) -> pd.Series:
+def channel_breakout(high: pd.Series, low: pd.Series, close: pd.Series, window: int = 20, threshold: float = 0.05,
+                     **kwargs) -> pd.Series:
     """
     通道突破因子：检测价格突破通道边界
     
@@ -57,12 +59,13 @@ def channel_breakout(high: pd.Series, low: pd.Series, close: pd.Series, window: 
     # 计算通道边界
     upper_channel = high.rolling(window).max()
     lower_channel = low.rolling(window).min()
-    
+
     # 检测突破
     upper_breakout = (close > upper_channel * (1 + threshold)).astype(int)
     lower_breakout = (close < lower_channel * (1 - threshold)).astype(int)
-    
+
     return upper_breakout - lower_breakout
+
 
 @register_technical_factor(name='channel_width', description='通道宽度因子')
 def channel_width(high: pd.Series, low: pd.Series, close: pd.Series, window: int = 20, **kwargs) -> pd.Series:
@@ -81,11 +84,12 @@ def channel_width(high: pd.Series, low: pd.Series, close: pd.Series, window: int
     # 计算通道边界
     upper_channel = high.rolling(window).max()
     lower_channel = low.rolling(window).min()
-    
+
     # 计算通道宽度（相对于价格）
     channel_width = (upper_channel - lower_channel) / close
-    
+
     return channel_width
+
 
 @register_technical_factor(name='channel_trend', description='通道趋势因子')
 def channel_trend(high: pd.Series, low: pd.Series, close: pd.Series, window: int = 20, **kwargs) -> pd.Series:
@@ -105,8 +109,8 @@ def channel_trend(high: pd.Series, low: pd.Series, close: pd.Series, window: int
     upper_channel = high.rolling(window).max()
     lower_channel = low.rolling(window).min()
     channel_mid = (upper_channel + lower_channel) / 2
-    
+
     # 计算通道中点的变化率
     channel_trend = channel_mid.pct_change()
-    
+
     return channel_trend

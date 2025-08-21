@@ -7,18 +7,18 @@
 @Description: 报告生成器，负责生成完整的因子研究报告
 """
 
-import pandas as pd
-import numpy as np
-from typing import Dict, List, Optional, Union, Any
-import matplotlib.pyplot as plt
-import seaborn as sns
-from datetime import datetime
 import os
+from datetime import datetime
+from typing import Dict, List, Optional, Any
+
+import numpy as np
+import pandas as pd
 import quantstats as qs
-from backend.business.factor.core.factor.factor_engine import FactorEngine
-from backend.business.factor.core.backtest.backtest_engine import FactorBacktestEngine
+
 from backend.business.factor.core.analysis.factor_analyzer import FactorAnalyzer
+from backend.business.factor.core.backtest.backtest_engine import FactorBacktestEngine
 from backend.business.factor.core.data.data_manager import FactorDataManager
+from backend.business.factor.core.factor.factor_engine import FactorEngine
 from backend.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -37,7 +37,7 @@ class FactorReportGenerator:
     3. 生成综合分析报告
     4. 导出Excel和PDF报告
     """
-    
+
     def __init__(self,
                  factor_engine: FactorEngine,
                  backtest_engine: FactorBacktestEngine,
@@ -57,11 +57,11 @@ class FactorReportGenerator:
         self.analyzer = analyzer
         self.data_manager = data_manager
         self._reports = {}
-        
+
     def generate_factor_report(self,
-                             factor_name: str,
-                             output_dir: str = "reports",
-                             **kwargs) -> str:
+                               factor_name: str,
+                               output_dir: str = "reports",
+                               **kwargs) -> str:
         """
         生成单个因子研究报告（已废弃，只生成QuantStats HTML报告）
         
@@ -75,11 +75,11 @@ class FactorReportGenerator:
         """
         logger.info(f"因子报告生成已废弃，请使用QuantStats HTML报告")
         return ""
-    
+
     def generate_backtest_report(self,
-                               result_key: str,
-                               output_dir: str = "reports",
-                               **kwargs) -> str:
+                                 result_key: str,
+                                 output_dir: str = "reports",
+                                 **kwargs) -> str:
         """
         生成回测报告
         
@@ -92,10 +92,10 @@ class FactorReportGenerator:
             报告文件路径
         """
         logger.info(f"开始生成回测报告: {result_key}")
-        
+
         # 创建输出目录
         os.makedirs(output_dir, exist_ok=True)
-        
+
         # 获取回测结果
         backtest_result = self.backtest_engine.get_backtest_results(result_key)
         if backtest_result is None:
@@ -103,21 +103,21 @@ class FactorReportGenerator:
             if hasattr(self, '_framework_results') and self._framework_results:
                 backtest_results = self._framework_results.get('backtest_results', {})
                 backtest_result = backtest_results.get(result_key)
-            
+
         if backtest_result is None:
             raise ValueError(f"回测结果 {result_key} 不存在")
-        
+
         # 生成QuantStats HTML报告
         report_path = self._generate_quantstats_report(backtest_result, result_key, output_dir, **kwargs)
-        
+
         logger.info(f"回测报告已生成: {report_path}")
         return report_path
-    
+
     def generate_comprehensive_report(self,
-                                    factor_names: List[str],
-                                    output_dir: str = "reports",
-                                    backtest_results: Optional[Dict[str, Any]] = None,
-                                    **kwargs) -> str:
+                                      factor_names: List[str],
+                                      output_dir: str = "reports",
+                                      backtest_results: Optional[Dict[str, Any]] = None,
+                                      **kwargs) -> str:
         """
         生成综合分析报告
         
@@ -131,19 +131,19 @@ class FactorReportGenerator:
             报告文件路径
         """
         logger.info(f"开始生成综合分析报告: {factor_names}")
-        
+
         # 创建输出目录
         os.makedirs(output_dir, exist_ok=True)
-        
+
         # 生成报告文件名
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         report_filename = f"comprehensive_report_{timestamp}.html"
         report_path = os.path.join(output_dir, report_filename)
-        
+
         # 保存回测结果供后续使用
         if backtest_results:
             self._framework_results = {'backtest_results': backtest_results}
-        
+
         # 生成汇总报告
         try:
             self._generate_summary_report(factor_names, report_path, **kwargs)
@@ -152,17 +152,17 @@ class FactorReportGenerator:
         except Exception as e:
             logger.error(f"汇总分析报告生成失败: {e}")
             raise
-    
+
     def generate_merged_comprehensive_report(self,
-                                           factor_names: List[str],
-                                           merged_results: Dict[str, Any],
-                                           analysis_summary: Dict[str, Any],
-                                           report_path: str,
-                                           start_date: str,
-                                           end_date: str,
-                                           stock_pool: str = "no_st",
-                                           top_n: int = 10,
-                                           n_groups: int = 5) -> None:
+                                             factor_names: List[str],
+                                             merged_results: Dict[str, Any],
+                                             analysis_summary: Dict[str, Any],
+                                             report_path: str,
+                                             start_date: str,
+                                             end_date: str,
+                                             stock_pool: str = "no_st",
+                                             top_n: int = 10,
+                                             n_groups: int = 5) -> None:
         """
         生成合并的综合报告（包含分析总结）
         
@@ -178,11 +178,11 @@ class FactorReportGenerator:
             n_groups: 分组数量
         """
         logger.info(f"开始生成合并的综合报告，包含 {len(factor_names)} 个因子")
-        
+
         try:
             # 保存合并结果供后续使用
             self._framework_results = merged_results
-            
+
             # 生成HTML报告
             html_content = self._generate_merged_summary_html(
                 factor_names=factor_names,
@@ -194,29 +194,23 @@ class FactorReportGenerator:
                 top_n=top_n,
                 n_groups=n_groups
             )
-            
+
             # 确保目录存在
             os.makedirs(os.path.dirname(report_path), exist_ok=True)
-            
+
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
-                
+
             logger.info(f"合并综合报告已生成: {report_path}")
-            
+
         except Exception as e:
             logger.error(f"生成合并综合报告失败: {e}")
             raise
-    
 
-    
-
-    
-
-    
     def _generate_summary_report(self,
-                                factor_names: List[str],
-                                report_path: str,
-                                **kwargs) -> None:
+                                 factor_names: List[str],
+                                 report_path: str,
+                                 **kwargs) -> None:
         """
         生成汇总分析报告，包含所有分析结果
         
@@ -228,15 +222,15 @@ class FactorReportGenerator:
         try:
             # 收集所有分析数据
             summary_data = self._collect_summary_data(factor_names)
-            
+
             # 生成HTML报告
             html_content = self._generate_summary_html(summary_data, factor_names)
-            
+
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
-                
+
             logger.info(f"汇总报告已生成: {report_path}")
-            
+
         except Exception as e:
             logger.error(f"生成汇总报告失败: {e}")
             raise
@@ -259,7 +253,7 @@ class FactorReportGenerator:
             'ic_results': {},
             'effectiveness_results': {}
         }
-        
+
         # 收集TopN回测结果
         for factor_name in factor_names:
             try:
@@ -268,7 +262,7 @@ class FactorReportGenerator:
                 if backtest_result is None and hasattr(self, '_framework_results'):
                     backtest_results = self._framework_results.get('backtest_results', {})
                     backtest_result = backtest_results.get(result_key)
-                
+
                 if backtest_result and 'portfolio' in backtest_result:
                     portfolio = backtest_result['portfolio']
                     returns = portfolio.returns()
@@ -288,7 +282,7 @@ class FactorReportGenerator:
                                 returns_series = pd.Series(returns.mean(axis=1)).dropna()
                         else:
                             returns_series = pd.Series(returns).dropna()
-                        
+
                         if len(returns_series) > 0:
                             # 计算统计指标
                             total_return = (1 + returns_series).prod() - 1
@@ -299,7 +293,7 @@ class FactorReportGenerator:
                             running_max = cumulative.expanding().max()
                             drawdown = (cumulative - running_max) / running_max
                             max_drawdown = drawdown.min()
-                            
+
                             summary_data['topn_results'][factor_name] = {
                                 'total_return': total_return,
                                 'annual_return': annual_return,
@@ -311,7 +305,7 @@ class FactorReportGenerator:
                             }
             except Exception as e:
                 logger.warning(f"收集因子 {factor_name} TopN结果失败: {e}")
-        
+
         # 收集分组回测结果
         for factor_name in factor_names:
             try:
@@ -320,11 +314,11 @@ class FactorReportGenerator:
                 if backtest_result is None and hasattr(self, '_framework_results'):
                     backtest_results = self._framework_results.get('backtest_results', {})
                     backtest_result = backtest_results.get(result_key)
-                
+
                 if backtest_result and 'portfolios' in backtest_result:
                     portfolios = backtest_result['portfolios']
                     group_stats = {}
-                    
+
                     for group_name, portfolio in portfolios.items():
                         try:
                             returns = portfolio.returns()
@@ -344,17 +338,18 @@ class FactorReportGenerator:
                                         returns_series = pd.Series(returns.mean(axis=1)).dropna()
                                 else:
                                     returns_series = pd.Series(returns).dropna()
-                                
+
                                 if len(returns_series) > 0:
                                     total_return = (1 + returns_series).prod() - 1
-                                    annual_return = total_return * 252 / len(returns_series) if len(returns_series) > 0 else 0
+                                    annual_return = total_return * 252 / len(returns_series) if len(
+                                        returns_series) > 0 else 0
                                     volatility = returns_series.std() * np.sqrt(252) if len(returns_series) > 0 else 0
                                     sharpe_ratio = annual_return / volatility if volatility > 0 else 0
                                     cumulative = (1 + returns_series).cumprod()
                                     running_max = cumulative.expanding().max()
                                     drawdown = (cumulative - running_max) / running_max
                                     max_drawdown = drawdown.min()
-                                    
+
                                     group_stats[group_name] = {
                                         'total_return': total_return,
                                         'annual_return': annual_return,
@@ -365,12 +360,12 @@ class FactorReportGenerator:
                                     }
                         except Exception as e:
                             logger.warning(f"收集分组 {group_name} 结果失败: {e}")
-                    
+
                     if group_stats:
                         summary_data['group_results'][factor_name] = group_stats
             except Exception as e:
                 logger.warning(f"收集因子 {factor_name} 分组结果失败: {e}")
-        
+
         # 收集多因子回测结果
         try:
             result_key = 'multifactor'
@@ -378,7 +373,7 @@ class FactorReportGenerator:
             if backtest_result is None and hasattr(self, '_framework_results'):
                 backtest_results = self._framework_results.get('backtest_results', {})
                 backtest_result = backtest_results.get(result_key)
-            
+
             if backtest_result and 'portfolio' in backtest_result:
                 portfolio = backtest_result['portfolio']
                 returns = portfolio.returns()
@@ -398,7 +393,7 @@ class FactorReportGenerator:
                             returns_series = pd.Series(returns.mean(axis=1)).dropna()
                     else:
                         returns_series = pd.Series(returns).dropna()
-                    
+
                     if len(returns_series) > 0:
                         total_return = (1 + returns_series).prod() - 1
                         annual_return = total_return * 252 / len(returns_series) if len(returns_series) > 0 else 0
@@ -408,7 +403,7 @@ class FactorReportGenerator:
                         running_max = cumulative.expanding().max()
                         drawdown = (cumulative - running_max) / running_max
                         max_drawdown = drawdown.min()
-                        
+
                         summary_data['multifactor_results'] = {
                             'total_return': total_return,
                             'annual_return': annual_return,
@@ -420,7 +415,7 @@ class FactorReportGenerator:
                         }
         except Exception as e:
             logger.warning(f"收集多因子结果失败: {e}")
-        
+
         # 收集IC和有效性分析结果
         for factor_name in factor_names:
             try:
@@ -433,7 +428,7 @@ class FactorReportGenerator:
                         'ic_ir': ic_result.get('ic_stats', {}).get('ir', 0),
                         'ic_win_rate': ic_result.get('ic_stats', {}).get('win_rate', 0)
                     }
-                
+
                 # 有效性分析结果
                 effectiveness_key = f'effectiveness_{factor_name}'
                 effectiveness_result = self.analyzer.get_analysis_results(effectiveness_key)
@@ -441,7 +436,7 @@ class FactorReportGenerator:
                     summary_data['effectiveness_results'][factor_name] = effectiveness_result
             except Exception as e:
                 logger.warning(f"收集因子 {factor_name} IC和有效性结果失败: {e}")
-        
+
         return summary_data
 
     def _generate_summary_html(self, summary_data: Dict[str, Any], factor_names: List[str]) -> str:
@@ -456,10 +451,10 @@ class FactorReportGenerator:
             HTML内容
         """
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
+
         # 生成导航菜单
         nav_html = self._generate_navigation_menu(factor_names)
-        
+
         # 生成各个部分的HTML
         overview_html = self._generate_overview_section(summary_data, factor_names)
         topn_html = self._generate_topn_section(summary_data)
@@ -467,7 +462,7 @@ class FactorReportGenerator:
         multifactor_html = self._generate_multifactor_section(summary_data)
         ic_html = self._generate_ic_section(summary_data)
         effectiveness_html = self._generate_effectiveness_section(summary_data)
-        
+
         html_content = f"""
         <!DOCTYPE html>
         <html>
@@ -648,7 +643,7 @@ class FactorReportGenerator:
         </body>
         </html>
         """
-        
+
         return html_content
 
     def _generate_navigation_menu(self, factor_names: List[str]) -> str:
@@ -682,7 +677,7 @@ class FactorReportGenerator:
         """生成TopN回测部分"""
         if not summary_data['topn_results']:
             return '<div id="topn" class="section"><h2>📈 TopN回测</h2><p>暂无TopN回测数据</p></div>'
-        
+
         # 生成统计表格
         table_rows = []
         for factor_name, result in summary_data['topn_results'].items():
@@ -698,7 +693,7 @@ class FactorReportGenerator:
             </tr>
             """
             table_rows.append(row)
-        
+
         topn_html = f"""
         <div id="topn" class="section">
             <h2>📈 TopN回测结果</h2>
@@ -726,12 +721,12 @@ class FactorReportGenerator:
         """生成分组回测部分"""
         if not summary_data['group_results']:
             return '<div id="group" class="section"><h2>📊 分组回测</h2><p>暂无分组回测数据</p></div>'
-        
+
         group_html = '<div id="group" class="section"><h2>📊 分组回测结果</h2>'
-        
+
         for factor_name, group_stats in summary_data['group_results'].items():
             group_html += f'<h3>{factor_name} 分组表现</h3>'
-            
+
             # 生成分组表格
             table_rows = []
             for group_name, stats in group_stats.items():
@@ -747,7 +742,7 @@ class FactorReportGenerator:
                 </tr>
                 """
                 table_rows.append(row)
-            
+
             group_html += f"""
             <table>
                 <thead>
@@ -766,7 +761,7 @@ class FactorReportGenerator:
                 </tbody>
             </table>
             """
-        
+
         group_html += '</div>'
         return group_html
 
@@ -774,7 +769,7 @@ class FactorReportGenerator:
         """生成多因子回测部分"""
         if not summary_data['multifactor_results']:
             return '<div id="multifactor" class="section"><h2>🔗 多因子回测</h2><p>暂无多因子回测数据</p></div>'
-        
+
         result = summary_data['multifactor_results']
         multifactor_html = f"""
         <div id="multifactor" class="section">
@@ -811,7 +806,7 @@ class FactorReportGenerator:
         """生成IC分析部分"""
         if not summary_data['ic_results']:
             return '<div id="ic" class="section"><h2>📊 IC分析</h2><p>暂无IC分析数据</p></div>'
-        
+
         # 生成IC表格
         table_rows = []
         for factor_name, ic_data in summary_data['ic_results'].items():
@@ -824,7 +819,7 @@ class FactorReportGenerator:
             </tr>
             """
             table_rows.append(row)
-        
+
         ic_html = f"""
         <div id="ic" class="section">
             <h2>📊 IC分析结果</h2>
@@ -849,18 +844,18 @@ class FactorReportGenerator:
         """生成有效性分析部分"""
         if not summary_data['effectiveness_results']:
             return '<div id="effectiveness" class="section"><h2>📈 有效性分析</h2><p>暂无有效性分析数据</p></div>'
-        
+
         effectiveness_html = '<div id="effectiveness" class="section"><h2>📈 有效性分析结果</h2>'
-        
+
         for factor_name, effectiveness_data in summary_data['effectiveness_results'].items():
             effectiveness_html += f'<h3>{factor_name} 有效性指标</h3>'
-            
+
             # 解析有效性数据
             ic_analysis = effectiveness_data.get('ic_analysis', {})
             rank_ic_analysis = effectiveness_data.get('rank_ic_analysis', {})
             group_returns = effectiveness_data.get('group_returns', {})
             stability_metrics = effectiveness_data.get('stability_metrics', {})
-            
+
             # 1. IC分析表格
             if ic_analysis and 'ic_stats' in ic_analysis:
                 ic_stats = ic_analysis['ic_stats']
@@ -876,7 +871,7 @@ class FactorReportGenerator:
                     </thead>
                     <tbody>
                 '''
-                
+
                 ic_metrics = [
                     ('mean_ic', '平均IC', '因子预测能力'),
                     ('std_ic', 'IC标准差', 'IC波动性'),
@@ -889,17 +884,18 @@ class FactorReportGenerator:
                     ('max_ic', '最大IC', 'IC最大值'),
                     ('ic_count', 'IC样本数', '有效IC数量')
                 ]
-                
+
                 for key, name, desc in ic_metrics:
                     if key in ic_stats:
                         value = ic_stats[key]
                         if key in ['positive_ic_rate']:
                             formatted_value = f"{value:.2%}"
-                        elif key in ['mean_ic', 'std_ic', 'ir', 'abs_mean_ic', 'ic_skewness', 'ic_kurtosis', 'min_ic', 'max_ic']:
+                        elif key in ['mean_ic', 'std_ic', 'ir', 'abs_mean_ic', 'ic_skewness', 'ic_kurtosis', 'min_ic',
+                                     'max_ic']:
                             formatted_value = f"{value:.4f}"
                         else:
                             formatted_value = str(value)
-                        
+
                         effectiveness_html += f'''
                         <tr>
                             <td>{name}</td>
@@ -907,9 +903,9 @@ class FactorReportGenerator:
                             <td>{desc}</td>
                         </tr>
                         '''
-                
+
                 effectiveness_html += '</tbody></table>'
-            
+
             # 2. Rank IC分析表格
             if rank_ic_analysis and 'ic_stats' in rank_ic_analysis:
                 rank_ic_stats = rank_ic_analysis['ic_stats']
@@ -925,17 +921,18 @@ class FactorReportGenerator:
                     </thead>
                     <tbody>
                 '''
-                
+
                 for key, name, desc in ic_metrics:
                     if key in rank_ic_stats:
                         value = rank_ic_stats[key]
                         if key in ['positive_ic_rate']:
                             formatted_value = f"{value:.2%}"
-                        elif key in ['mean_ic', 'std_ic', 'ir', 'abs_mean_ic', 'ic_skewness', 'ic_kurtosis', 'min_ic', 'max_ic']:
+                        elif key in ['mean_ic', 'std_ic', 'ir', 'abs_mean_ic', 'ic_skewness', 'ic_kurtosis', 'min_ic',
+                                     'max_ic']:
                             formatted_value = f"{value:.4f}"
                         else:
                             formatted_value = str(value)
-                        
+
                         effectiveness_html += f'''
                         <tr>
                             <td>{name}</td>
@@ -943,9 +940,9 @@ class FactorReportGenerator:
                             <td>{desc}</td>
                         </tr>
                         '''
-                
+
                 effectiveness_html += '</tbody></table>'
-            
+
             # 3. 分组收益分析表格
             if group_returns and 'group_stats' in group_returns:
                 group_stats = group_returns['group_stats']
@@ -964,7 +961,7 @@ class FactorReportGenerator:
                     </thead>
                     <tbody>
                 '''
-                
+
                 for group_name in sorted(group_stats.keys()):
                     stats = group_stats[group_name]
                     effectiveness_html += f'''
@@ -977,9 +974,9 @@ class FactorReportGenerator:
                         <td>{stats.get('count', 0)}</td>
                     </tr>
                     '''
-                
+
                 effectiveness_html += '</tbody></table>'
-            
+
             # 4. 稳定性指标表格
             if stability_metrics:
                 effectiveness_html += '''
@@ -994,7 +991,7 @@ class FactorReportGenerator:
                     </thead>
                     <tbody>
                 '''
-                
+
                 stability_metric_names = [
                     ('mean_change', '平均变化', '因子值平均变化幅度'),
                     ('std_change', '变化标准差', '因子值变化波动性'),
@@ -1002,7 +999,7 @@ class FactorReportGenerator:
                     ('autocorr_5d', '5日自相关', '5天间隔因子值相关性'),
                     ('autocorr_20d', '20日自相关', '20天间隔因子值相关性')
                 ]
-                
+
                 for key, name, desc in stability_metric_names:
                     if key in stability_metrics:
                         value = stability_metrics[key]
@@ -1012,7 +1009,7 @@ class FactorReportGenerator:
                             formatted_value = f"{value:.4f}"
                         else:
                             formatted_value = f"{value:.4f}"
-                        
+
                         effectiveness_html += f'''
                         <tr>
                             <td>{name}</td>
@@ -1020,9 +1017,9 @@ class FactorReportGenerator:
                             <td>{desc}</td>
                         </tr>
                         '''
-                
+
                 effectiveness_html += '</tbody></table>'
-            
+
             # 5. 参数信息
             effectiveness_html += '''
             <h4>⚙️ 分析参数</h4>
@@ -1035,7 +1032,7 @@ class FactorReportGenerator:
                 </thead>
                 <tbody>
             '''
-            
+
             effectiveness_html += f'''
             <tr>
                 <td>因子名称</td>
@@ -1046,9 +1043,9 @@ class FactorReportGenerator:
                 <td>{effectiveness_data.get('forward_period', 'N/A')}</td>
             </tr>
             '''
-            
+
             effectiveness_html += '</tbody></table>'
-        
+
         effectiveness_html += '</div>'
         return effectiveness_html
 
@@ -1069,19 +1066,19 @@ class FactorReportGenerator:
             logger.info("只有一个因子，生成简单报告")
             self._generate_simple_comprehensive_report_single(factor_names[0], report_path)
             return
-        
+
         returns_dict = {}
-        
+
         for factor_name in factor_names:
             try:
                 # 获取TopN回测结果
                 result_key = f'topn_{factor_name}'
                 backtest_result = self.backtest_engine.get_backtest_results(result_key)
-                
+
                 if backtest_result is None and hasattr(self, '_framework_results'):
                     backtest_results = self._framework_results.get('backtest_results', {})
                     backtest_result = backtest_results.get(result_key)
-                
+
                 if backtest_result and 'portfolio' in backtest_result:
                     portfolio = backtest_result['portfolio']
                     returns = portfolio.returns()
@@ -1092,19 +1089,19 @@ class FactorReportGenerator:
                                 returns.index = pd.to_datetime(returns.index)
                             except:
                                 pass
-                        
+
                         # 清理数据
                         returns = returns.dropna()
                         if not returns.empty and len(returns) > 1:  # 确保有足够的数据
                             returns_dict[factor_name] = returns
-                        
+
             except Exception as e:
                 logger.warning(f"获取因子 {factor_name} 收益率数据失败: {e}")
                 continue
-        
+
         if not returns_dict:
             raise ValueError("没有可用的收益率数据")
-        
+
         # 确保所有Series有相同的索引
         try:
             # 找到所有Series的公共索引
@@ -1114,55 +1111,55 @@ class FactorReportGenerator:
                     common_index = returns.index
                 else:
                     common_index = common_index.intersection(returns.index)
-            
+
             if common_index is None or len(common_index) == 0:
                 raise ValueError("没有共同的日期索引")
-            
+
             # 重新索引所有Series
             aligned_returns = {}
             for factor_name, returns in returns_dict.items():
                 aligned_returns[factor_name] = returns.reindex(common_index).dropna()
-            
+
             # 检查是否有有效数据
             valid_returns = {}
             for factor_name, returns in aligned_returns.items():
                 if not returns.empty and len(returns) > 1:
                     valid_returns[factor_name] = returns
-            
+
             if not valid_returns:
                 raise ValueError("没有有效的收益率数据")
-            
+
             # 创建收益率DataFrame
             returns_df = pd.DataFrame(valid_returns)
-            
+
             # 确保数据不为空且有正确的索引
             if returns_df.empty:
                 raise ValueError("没有可用的收益率数据")
-            
+
             # 移除全为NaN的行
             returns_df = returns_df.dropna()
-            
+
             if returns_df.empty:
                 raise ValueError("处理后没有可用的收益率数据")
-            
+
             # 尝试生成QuantStats对比报告
             try:
-                qs.reports.html(returns_df, 
-                              output=report_path,
-                              title="因子综合分析报告",
-                              download_filename=os.path.basename(report_path),
-                              benchmark=None)
+                qs.reports.html(returns_df,
+                                output=report_path,
+                                title="因子综合分析报告",
+                                download_filename=os.path.basename(report_path),
+                                benchmark=None)
                 logger.info(f"QuantStats综合分析报告已生成: {report_path}")
             except Exception as e:
                 logger.warning(f"QuantStats综合分析报告生成失败: {e}，生成简单对比报告")
                 self._generate_simple_comprehensive_report(returns_df, report_path)
-                
+
         except Exception as e:
             logger.error(f"处理收益率数据失败: {e}")
             # 生成简单的多因子对比报告
             logger.info("生成简单的多因子对比报告")
             self._generate_simple_comprehensive_report_multi(factor_names, report_path)
-    
+
     def _generate_simple_comprehensive_report(self, returns_df: pd.DataFrame, report_path: str) -> None:
         """
         生成简单的综合分析报告
@@ -1181,13 +1178,13 @@ class FactorReportGenerator:
                     annual_return = total_return * 252 / len(returns)
                     volatility = returns.std() * np.sqrt(252)
                     sharpe_ratio = annual_return / volatility if volatility > 0 else 0
-                    
+
                     # 计算最大回撤
                     cumulative = (1 + returns).cumprod()
                     running_max = cumulative.expanding().max()
                     drawdown = (cumulative - running_max) / running_max
                     max_drawdown = drawdown.min()
-                    
+
                     stats_data.append({
                         '因子名称': factor_name,
                         '总收益率': f"{total_return:.2%}",
@@ -1197,7 +1194,7 @@ class FactorReportGenerator:
                         '最大回撤': f"{max_drawdown:.2%}",
                         '交易天数': len(returns)
                     })
-            
+
             stats_html = ""
             for stat in stats_data:
                 stats_html += f"""
@@ -1211,7 +1208,7 @@ class FactorReportGenerator:
                     <td>{stat['交易天数']}</td>
                 </tr>
                 """
-            
+
             # 生成HTML报告
             html_content = f"""
             <!DOCTYPE html>
@@ -1297,16 +1294,16 @@ class FactorReportGenerator:
             </body>
             </html>
             """
-            
+
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
-            
+
             logger.info(f"简单综合分析报告已生成: {report_path}")
-            
+
         except Exception as e:
             logger.error(f"简单综合分析报告生成失败: {e}")
             raise
-    
+
     def _generate_simple_comprehensive_report_single(self, factor_name: str, report_path: str) -> None:
         """
         生成单个因子的简单综合分析报告
@@ -1319,20 +1316,20 @@ class FactorReportGenerator:
             # 获取TopN回测结果
             result_key = f'topn_{factor_name}'
             backtest_result = self.backtest_engine.get_backtest_results(result_key)
-            
+
             if backtest_result is None and hasattr(self, '_framework_results'):
                 backtest_results = self._framework_results.get('backtest_results', {})
                 backtest_result = backtest_results.get(result_key)
-            
+
             if not backtest_result or 'portfolio' not in backtest_result:
                 raise ValueError(f"无法获取因子 {factor_name} 的回测结果")
-            
+
             portfolio = backtest_result['portfolio']
             returns = portfolio.returns()
-            
+
             if returns is None or returns.empty:
                 raise ValueError(f"因子 {factor_name} 没有收益率数据")
-            
+
             # 生成简单的HTML报告
             html_content = f"""
             <!DOCTYPE html>
@@ -1364,21 +1361,21 @@ class FactorReportGenerator:
             </body>
             </html>
             """
-            
+
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
-            
+
             logger.info(f"简单综合分析报告已生成: {report_path}")
-            
+
         except Exception as e:
             logger.error(f"简单综合分析报告生成失败: {e}")
             raise
-    
-    def _generate_quantstats_report(self, 
-                                  backtest_result: Dict[str, Any], 
-                                  result_key: str, 
-                                  output_dir: str, 
-                                  **kwargs) -> str:
+
+    def _generate_quantstats_report(self,
+                                    backtest_result: Dict[str, Any],
+                                    result_key: str,
+                                    output_dir: str,
+                                    **kwargs) -> str:
         """
         使用QuantStats生成HTML回测报告
         
@@ -1396,17 +1393,17 @@ class FactorReportGenerator:
             if 'portfolios' in backtest_result:
                 # 分组回测结果，生成分组对比报告
                 return self._generate_group_backtest_report(backtest_result, result_key, output_dir, **kwargs)
-            
+
             # 获取portfolio对象
             portfolio = backtest_result.get('portfolio')
             if portfolio is None:
                 raise ValueError(f"回测结果 {result_key} 中没有portfolio对象")
-            
+
             # 获取收益率序列
             returns = portfolio.returns()
             if returns is None or returns.empty:
                 raise ValueError("收益率数据为空")
-            
+
             # 确保收益率数据格式正确
             if isinstance(returns, pd.Series):
                 # 确保索引是datetime类型
@@ -1415,49 +1412,49 @@ class FactorReportGenerator:
                         returns.index = pd.to_datetime(returns.index)
                     except:
                         pass
-                
+
                 # 转换为DataFrame，确保列名为'Strategy'
                 returns = returns.to_frame('Strategy')
-            
+
             # 确保数据不为空且有效
             if returns.empty or returns.isnull().all().all():
                 raise ValueError("收益率数据为空或全为NaN")
-            
+
             # 移除全为NaN的行
             returns = returns.dropna()
-            
+
             if returns.empty:
                 raise ValueError("处理后收益率数据为空")
-            
+
             # 确保至少有一些非零收益率
             if (returns == 0).all().all():
                 logger.warning("所有收益率都为0，可能影响报告质量")
-            
+
             # 生成报告文件名
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             report_filename = f"backtest_report_{result_key}_{timestamp}.html"
             report_path = os.path.join(output_dir, report_filename)
-            
+
             # 尝试生成QuantStats报告
             try:
-                qs.reports.html(returns, 
-                              output=report_path,
-                              title=f"因子回测报告 - {result_key}",
-                              download_filename=report_filename,
-                              benchmark=None)
+                qs.reports.html(returns,
+                                output=report_path,
+                                title=f"因子回测报告 - {result_key}",
+                                download_filename=report_filename,
+                                benchmark=None)
                 logger.info(f"QuantStats HTML报告已生成: {report_path}")
                 return report_path
             except Exception as qs_error:
                 logger.warning(f"QuantStats报告生成失败: {qs_error}，生成简单HTML报告")
                 return self._generate_simple_html_report(returns, result_key, report_path)
-            
+
         except Exception as e:
             logger.error(f"报告生成失败: {e}")
             # 生成一个简单的错误报告
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             report_filename = f"error_report_{result_key}_{timestamp}.html"
             report_path = os.path.join(output_dir, report_filename)
-            
+
             error_html = f"""
             <!DOCTYPE html>
             <html>
@@ -1488,13 +1485,13 @@ class FactorReportGenerator:
             </body>
             </html>
             """
-            
+
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(error_html)
-            
+
             logger.info(f"错误报告已生成: {report_path}")
             return report_path
-    
+
     def _generate_simple_html_report(self, returns: pd.DataFrame, result_key: str, report_path: str) -> str:
         """
         生成简单的HTML回测报告
@@ -1511,22 +1508,22 @@ class FactorReportGenerator:
             # 确保returns是DataFrame格式
             if isinstance(returns, pd.Series):
                 returns = returns.to_frame('Strategy')
-            
+
             # 获取第一列数据
             returns_series = returns.iloc[:, 0]
-            
+
             # 计算基本统计指标
             total_return = (1 + returns_series).prod() - 1
             annual_return = total_return * 252 / len(returns_series) if len(returns_series) > 0 else 0
             volatility = returns_series.std() * np.sqrt(252) if len(returns_series) > 0 else 0
             sharpe_ratio = annual_return / volatility if volatility > 0 else 0
-            
+
             # 计算最大回撤
             cumulative = (1 + returns_series).cumprod()
             running_max = cumulative.expanding().max()
             drawdown = (cumulative - running_max) / running_max
             max_drawdown = drawdown.min()
-            
+
             # 生成HTML报告
             html_content = f"""
             <!DOCTYPE html>
@@ -1619,17 +1616,17 @@ class FactorReportGenerator:
             </body>
             </html>
             """
-            
+
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
-            
+
             logger.info(f"简单HTML报告已生成: {report_path}")
             return report_path
-            
+
         except Exception as e:
             logger.error(f"简单HTML报告生成失败: {e}")
             raise
-    
+
     def _generate_simple_comprehensive_report_multi(self, factor_names: List[str], report_path: str) -> None:
         """
         生成简单的多因子综合分析报告
@@ -1641,34 +1638,34 @@ class FactorReportGenerator:
         try:
             # 收集各因子的基本统计信息
             factor_stats = []
-            
+
             for factor_name in factor_names:
                 try:
                     # 获取TopN回测结果
                     result_key = f'topn_{factor_name}'
                     backtest_result = self.backtest_engine.get_backtest_results(result_key)
-                    
+
                     if backtest_result is None and hasattr(self, '_framework_results'):
                         backtest_results = self._framework_results.get('backtest_results', {})
                         backtest_result = backtest_results.get(result_key)
-                    
+
                     if backtest_result and 'portfolio' in backtest_result:
                         portfolio = backtest_result['portfolio']
                         returns = portfolio.returns()
-                        
+
                         if returns is not None and not returns.empty:
                             # 计算基本统计指标
                             total_return = (1 + returns).prod() - 1
                             annual_return = total_return * 252 / len(returns) if len(returns) > 0 else 0
                             volatility = returns.std() * np.sqrt(252) if len(returns) > 0 else 0
                             sharpe_ratio = annual_return / volatility if volatility > 0 else 0
-                            
+
                             # 计算最大回撤
                             cumulative = (1 + returns).cumprod()
                             running_max = cumulative.expanding().max()
                             drawdown = (cumulative - running_max) / running_max
                             max_drawdown = drawdown.min()
-                            
+
                             factor_stats.append({
                                 '因子名称': factor_name,
                                 '总收益率': f"{total_return:.2%}",
@@ -1698,7 +1695,7 @@ class FactorReportGenerator:
                             '最大回撤': 'N/A',
                             '交易天数': 0
                         })
-                        
+
                 except Exception as e:
                     logger.warning(f"获取因子 {factor_name} 统计信息失败: {e}")
                     factor_stats.append({
@@ -1710,7 +1707,7 @@ class FactorReportGenerator:
                         '最大回撤': 'N/A',
                         '交易天数': 0
                     })
-            
+
             # 生成统计表格HTML
             stats_html = ""
             for stat in factor_stats:
@@ -1725,7 +1722,7 @@ class FactorReportGenerator:
                     <td>{stat['交易天数']}</td>
                 </tr>
                 """
-            
+
             # 生成HTML报告
             html_content = f"""
             <!DOCTYPE html>
@@ -1779,30 +1776,16 @@ class FactorReportGenerator:
             </body>
             </html>
             """
-            
+
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
-            
+
             logger.info(f"简单多因子综合分析报告已生成: {report_path}")
-            
+
         except Exception as e:
             logger.error(f"简单多因子综合分析报告生成失败: {e}")
             raise
-    
 
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
     def get_report_summary(self) -> pd.DataFrame:
         """
         获取报告摘要
@@ -1811,7 +1794,7 @@ class FactorReportGenerator:
             报告摘要DataFrame
         """
         summary_data = []
-        
+
         for report_type, reports in self._reports.items():
             for report_name, report_info in reports.items():
                 summary_data.append({
@@ -1820,14 +1803,14 @@ class FactorReportGenerator:
                     '生成时间': report_info.get('timestamp', ''),
                     '文件路径': report_info.get('file_path', '')
                 })
-        
+
         return pd.DataFrame(summary_data)
 
-    def _generate_group_backtest_report(self, 
-                                      backtest_result: Dict[str, Any], 
-                                      result_key: str, 
-                                      output_dir: str, 
-                                      **kwargs) -> str:
+    def _generate_group_backtest_report(self,
+                                        backtest_result: Dict[str, Any],
+                                        result_key: str,
+                                        output_dir: str,
+                                        **kwargs) -> str:
         """
         生成分组回测报告
         
@@ -1843,10 +1826,10 @@ class FactorReportGenerator:
         try:
             portfolios = backtest_result.get('portfolios', {})
             stats = backtest_result.get('stats', pd.DataFrame())
-            
+
             if not portfolios:
                 raise ValueError("分组回测结果中没有portfolio数据")
-            
+
             # 收集各组的收益率数据
             returns_dict = {}
             for group_name, portfolio in portfolios.items():
@@ -1859,7 +1842,7 @@ class FactorReportGenerator:
                                 returns.index = pd.to_datetime(returns.index)
                             except:
                                 pass
-                        
+
                         # 清理数据
                         returns = returns.dropna()
                         if not returns.empty and len(returns) > 1:
@@ -1867,48 +1850,48 @@ class FactorReportGenerator:
                 except Exception as e:
                     logger.warning(f"获取分组 {group_name} 收益率数据失败: {e}")
                     continue
-            
+
             if not returns_dict:
                 raise ValueError("没有可用的分组收益率数据")
-            
+
             # 生成报告文件名
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             report_filename = f"group_backtest_report_{result_key}_{timestamp}.html"
             report_path = os.path.join(output_dir, report_filename)
-            
+
             # 尝试生成QuantStats对比报告
             try:
                 # 创建收益率DataFrame
                 returns_df = pd.DataFrame(returns_dict)
-                
+
                 # 确保数据不为空
                 if returns_df.empty:
                     raise ValueError("分组收益率数据为空")
-                
+
                 # 移除全为NaN的行
                 returns_df = returns_df.dropna()
-                
+
                 if returns_df.empty:
                     raise ValueError("处理后分组收益率数据为空")
-                
-                qs.reports.html(returns_df, 
-                              output=report_path,
-                              title=f"分组回测报告 - {result_key}",
-                              download_filename=report_filename,
-                              benchmark=None)
+
+                qs.reports.html(returns_df,
+                                output=report_path,
+                                title=f"分组回测报告 - {result_key}",
+                                download_filename=report_filename,
+                                benchmark=None)
                 logger.info(f"分组QuantStats HTML报告已生成: {report_path}")
                 return report_path
             except Exception as e:
                 logger.warning(f"分组QuantStats报告生成失败: {e}，生成简单分组报告")
                 return self._generate_simple_group_report(backtest_result, result_key, report_path)
-            
+
         except Exception as e:
             logger.error(f"分组报告生成失败: {e}")
             # 生成错误报告
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             report_filename = f"error_report_{result_key}_{timestamp}.html"
             report_path = os.path.join(output_dir, report_filename)
-            
+
             error_html = f"""
             <!DOCTYPE html>
             <html>
@@ -1939,17 +1922,17 @@ class FactorReportGenerator:
             </body>
             </html>
             """
-            
+
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(error_html)
-            
+
             logger.info(f"分组错误报告已生成: {report_path}")
             return report_path
-    
-    def _generate_simple_group_report(self, 
-                                    backtest_result: Dict[str, Any], 
-                                    result_key: str, 
-                                    report_path: str) -> str:
+
+    def _generate_simple_group_report(self,
+                                      backtest_result: Dict[str, Any],
+                                      result_key: str,
+                                      report_path: str) -> str:
         """
         生成简单的分组回测报告
         
@@ -1964,7 +1947,7 @@ class FactorReportGenerator:
         try:
             portfolios = backtest_result.get('portfolios', {})
             stats = backtest_result.get('stats', pd.DataFrame())
-            
+
             # 收集各组的统计信息
             group_stats = []
             for group_name, portfolio in portfolios.items():
@@ -1990,20 +1973,20 @@ class FactorReportGenerator:
                                 returns_series = pd.Series(returns.mean(axis=1)).dropna()
                         else:
                             returns_series = pd.Series(returns).dropna()
-                        
+
                         if len(returns_series) > 0:
                             # 计算基本统计指标
                             total_return = (1 + returns_series).prod() - 1
                             annual_return = total_return * 252 / len(returns_series) if len(returns_series) > 0 else 0
                             volatility = returns_series.std() * np.sqrt(252) if len(returns_series) > 0 else 0
                             sharpe_ratio = annual_return / volatility if volatility > 0 else 0
-                            
+
                             # 计算最大回撤
                             cumulative = (1 + returns_series).cumprod()
                             running_max = cumulative.expanding().max()
                             drawdown = (cumulative - running_max) / running_max
                             max_drawdown = drawdown.min()
-                            
+
                             group_stats.append({
                                 '分组名称': group_name,
                                 '总收益率': f"{total_return:.2%}",
@@ -2044,7 +2027,7 @@ class FactorReportGenerator:
                         '最大回撤': 'N/A',
                         '交易天数': 0
                     })
-            
+
             # 生成统计表格HTML
             stats_html = ""
             for stat in group_stats:
@@ -2059,7 +2042,7 @@ class FactorReportGenerator:
                     <td>{stat['交易天数']}</td>
                 </tr>
                 """
-            
+
             # 生成HTML报告
             html_content = f"""
             <!DOCTYPE html>
@@ -2113,26 +2096,26 @@ class FactorReportGenerator:
             </body>
             </html>
             """
-            
+
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
-            
+
             logger.info(f"简单分组回测报告已生成: {report_path}")
             return report_path
-            
+
         except Exception as e:
             logger.error(f"简单分组报告生成失败: {e}")
             raise
-    
+
     def _generate_merged_summary_html(self,
-                                    factor_names: List[str],
-                                    merged_results: Dict[str, Any],
-                                    analysis_summary: Dict[str, Any],
-                                    start_date: str,
-                                    end_date: str,
-                                    stock_pool: str = "no_st",
-                                    top_n: int = 10,
-                                    n_groups: int = 5) -> str:
+                                      factor_names: List[str],
+                                      merged_results: Dict[str, Any],
+                                      analysis_summary: Dict[str, Any],
+                                      start_date: str,
+                                      end_date: str,
+                                      stock_pool: str = "no_st",
+                                      top_n: int = 10,
+                                      n_groups: int = 5) -> str:
         """
         生成合并的综合报告HTML内容
         
@@ -2150,29 +2133,29 @@ class FactorReportGenerator:
             HTML内容字符串
         """
         logger.info("生成合并综合报告HTML内容...")
-        
+
         # 收集数据
         backtest_results = merged_results.get('backtest_results', {})
         effectiveness_results = merged_results.get('effectiveness_results', {})
-        
+
         # 生成分析总结HTML
         analysis_html = self._generate_analysis_summary_html(analysis_summary)
-        
+
         # 生成TopN回测结果HTML
         topn_html = self._generate_topn_results_html(factor_names, backtest_results)
-        
+
         # 生成分组回测结果HTML
         group_html = self._generate_group_results_html(factor_names, backtest_results)
-        
+
         # 生成多因子回测结果HTML
         multifactor_html = self._generate_multifactor_results_html(backtest_results)
-        
+
         # 生成IC分析结果HTML
         ic_html = self._generate_ic_results_html(factor_names, effectiveness_results)
-        
+
         # 生成有效性分析结果HTML
         effectiveness_html = self._generate_effectiveness_results_html(factor_names, effectiveness_results)
-        
+
         # 生成完整的HTML报告
         html_content = f"""
         <!DOCTYPE html>
@@ -2426,9 +2409,9 @@ class FactorReportGenerator:
         </body>
         </html>
         """
-        
+
         return html_content
-    
+
     def _generate_analysis_summary_html(self, analysis_summary: Dict[str, Any]) -> str:
         """生成分析总结HTML"""
         html = f"""
@@ -2452,7 +2435,7 @@ class FactorReportGenerator:
             </div>
         </div>
         """
-        
+
         # 优秀因子
         if analysis_summary['top_performers']:
             html += """
@@ -2470,7 +2453,7 @@ class FactorReportGenerator:
                     </thead>
                     <tbody>
             """
-            
+
             for factor in analysis_summary['top_performers']:
                 html += f"""
                 <tr>
@@ -2481,13 +2464,13 @@ class FactorReportGenerator:
                     <td class="positive">{factor['ic_ir']:.4f}</td>
                 </tr>
                 """
-            
+
             html += """
                     </tbody>
                 </table>
             </div>
             """
-        
+
         # 问题因子
         if analysis_summary['problematic_factors']:
             html += """
@@ -2504,7 +2487,7 @@ class FactorReportGenerator:
                     </thead>
                     <tbody>
             """
-            
+
             for factor in analysis_summary['problematic_factors']:
                 html += f"""
                 <tr>
@@ -2514,13 +2497,13 @@ class FactorReportGenerator:
                     <td class="negative">{factor['ic_mean']:.4f}</td>
                 </tr>
                 """
-            
+
             html += """
                     </tbody>
                 </table>
             </div>
             """
-        
+
         # 建议
         if analysis_summary['recommendations']:
             html += """
@@ -2528,17 +2511,17 @@ class FactorReportGenerator:
                 <h3>💡 建议</h3>
                 <ul>
             """
-            
+
             for recommendation in analysis_summary['recommendations']:
                 html += f"<li>{recommendation}</li>"
-            
+
             html += """
                 </ul>
             </div>
             """
-        
+
         return html
-    
+
     def _generate_topn_results_html(self, factor_names: List[str], backtest_results: Dict[str, Any]) -> str:
         """生成TopN回测结果HTML"""
         html = """
@@ -2556,7 +2539,7 @@ class FactorReportGenerator:
             </thead>
             <tbody>
         """
-        
+
         for factor_name in factor_names:
             topn_key = f'topn_{factor_name}'
             if topn_key in backtest_results:
@@ -2569,7 +2552,7 @@ class FactorReportGenerator:
                     sharpe_ratio = stats.get('sharpe_ratio', 0)
                     max_drawdown = stats.get('max_drawdown', 0)
                     trading_days = stats.get('trading_days', 0)
-                    
+
                     html += f"""
                     <tr>
                         <td>{factor_name}</td>
@@ -2593,25 +2576,25 @@ class FactorReportGenerator:
                     <td>N/A</td>
                 </tr>
                 """
-        
+
         html += """
             </tbody>
         </table>
         """
-        
+
         return html
-    
+
     def _generate_group_results_html(self, factor_names: List[str], backtest_results: Dict[str, Any]) -> str:
         """生成分组回测结果HTML"""
         html = ""
-        
+
         for factor_name in factor_names:
             group_key = f'group_{factor_name}'
             if group_key in backtest_results:
                 result = backtest_results[group_key]
                 if 'group_stats' in result:
                     group_stats = result['group_stats']
-                    
+
                     html += f"""
                     <h3>{factor_name} 分组表现</h3>
                     <table>
@@ -2628,7 +2611,7 @@ class FactorReportGenerator:
                         </thead>
                         <tbody>
                     """
-                    
+
                     for _, row in group_stats.iterrows():
                         total_return = row.get('total_return', 0)
                         annual_return = row.get('annual_return', 0)
@@ -2636,7 +2619,7 @@ class FactorReportGenerator:
                         sharpe_ratio = row.get('sharpe_ratio', 0)
                         max_drawdown = row.get('max_drawdown', 0)
                         trading_days = row.get('trading_days', 0)
-                        
+
                         html += f"""
                         <tr>
                             <td>{row.get('group_name', 'N/A')}</td>
@@ -2648,21 +2631,21 @@ class FactorReportGenerator:
                             <td>{trading_days}</td>
                         </tr>
                         """
-                    
+
                     html += """
                         </tbody>
                     </table>
                     """
-        
+
         return html
-    
+
     def _generate_multifactor_results_html(self, backtest_results: Dict[str, Any]) -> str:
         """生成多因子回测结果HTML"""
         if 'multifactor' in backtest_results:
             result = backtest_results['multifactor']
             if 'portfolio_stats' in result:
                 stats = result['portfolio_stats']
-                
+
                 html = f"""
                 <div class="metric-card">
                     <div class="metric-value {'positive' if stats.get('total_return', 0) > 0 else 'negative'}">{stats.get('total_return', 0):.2%}</div>
@@ -2690,9 +2673,9 @@ class FactorReportGenerator:
                 </div>
                 """
                 return html
-        
+
         return "<p>暂无多因子回测结果</p>"
-    
+
     def _generate_ic_results_html(self, factor_names: List[str], effectiveness_results: Dict[str, Any]) -> str:
         """生成IC分析结果HTML"""
         html = """
@@ -2707,7 +2690,7 @@ class FactorReportGenerator:
             </thead>
             <tbody>
         """
-        
+
         for factor_name in factor_names:
             if factor_name in effectiveness_results:
                 result = effectiveness_results[factor_name]
@@ -2716,7 +2699,7 @@ class FactorReportGenerator:
                     ic_mean = ic_analysis.get('ic_mean', 0)
                     ic_ir = ic_analysis.get('ic_ir', 0)
                     ic_win_rate = ic_analysis.get('ic_win_rate', 0)
-                    
+
                     html += f"""
                     <tr>
                         <td>{factor_name}</td>
@@ -2734,26 +2717,27 @@ class FactorReportGenerator:
                     <td class="negative">0.00%</td>
                 </tr>
                 """
-        
+
         html += """
             </tbody>
         </table>
         """
-        
+
         return html
-    
-    def _generate_effectiveness_results_html(self, factor_names: List[str], effectiveness_results: Dict[str, Any]) -> str:
+
+    def _generate_effectiveness_results_html(self, factor_names: List[str],
+                                             effectiveness_results: Dict[str, Any]) -> str:
         """生成有效性分析结果HTML"""
         html = ""
-        
+
         for factor_name in factor_names:
             if factor_name in effectiveness_results:
                 result = effectiveness_results[factor_name]
-                
+
                 html += f"""
                 <h3>{factor_name} 有效性指标</h3>
                 """
-                
+
                 # IC分析
                 if 'ic_analysis' in result:
                     ic_analysis = result['ic_analysis']
@@ -2769,13 +2753,13 @@ class FactorReportGenerator:
                         </thead>
                         <tbody>
                     """
-                    
+
                     for key, value in ic_analysis.items():
                         if isinstance(value, float):
                             display_value = f"{value:.4f}" if abs(value) < 1 else f"{value:.2f}"
                         else:
                             display_value = str(value)
-                        
+
                         html += f"""
                         <tr>
                             <td>{key}</td>
@@ -2783,12 +2767,12 @@ class FactorReportGenerator:
                             <td>IC分析指标</td>
                         </tr>
                         """
-                    
+
                     html += """
                         </tbody>
                     </table>
                     """
-                
+
                 # Rank IC分析
                 if 'rank_ic_analysis' in result:
                     rank_ic_analysis = result['rank_ic_analysis']
@@ -2804,13 +2788,13 @@ class FactorReportGenerator:
                         </thead>
                         <tbody>
                     """
-                    
+
                     for key, value in rank_ic_analysis.items():
                         if isinstance(value, float):
                             display_value = f"{value:.4f}" if abs(value) < 1 else f"{value:.2f}"
                         else:
                             display_value = str(value)
-                        
+
                         html += f"""
                         <tr>
                             <td>{key}</td>
@@ -2818,12 +2802,12 @@ class FactorReportGenerator:
                             <td>Rank IC分析指标</td>
                         </tr>
                         """
-                    
+
                     html += """
                         </tbody>
                     </table>
                     """
-                
+
                 # 分组收益分析
                 if 'group_analysis' in result:
                     group_analysis = result['group_analysis']
@@ -2842,7 +2826,7 @@ class FactorReportGenerator:
                         </thead>
                         <tbody>
                     """
-                    
+
                     for group_name, group_data in group_analysis.items():
                         html += f"""
                         <tr>
@@ -2854,12 +2838,12 @@ class FactorReportGenerator:
                             <td>{group_data.get('sample_count', 0)}</td>
                         </tr>
                         """
-                    
+
                     html += """
                         </tbody>
                     </table>
                     """
-                
+
                 # 稳定性指标
                 if 'stability_analysis' in result:
                     stability_analysis = result['stability_analysis']
@@ -2875,13 +2859,13 @@ class FactorReportGenerator:
                         </thead>
                         <tbody>
                     """
-                    
+
                     for key, value in stability_analysis.items():
                         if isinstance(value, float):
                             display_value = f"{value:.4f}" if abs(value) < 1 else f"{value:.2f}"
                         else:
                             display_value = str(value)
-                        
+
                         html += f"""
                         <tr>
                             <td>{key}</td>
@@ -2889,12 +2873,12 @@ class FactorReportGenerator:
                             <td>稳定性分析指标</td>
                         </tr>
                         """
-                    
+
                     html += """
                         </tbody>
                     </table>
                     """
-                
+
                 # 分析参数
                 html += """
                 <h4>⚙️ 分析参数</h4>
@@ -2907,7 +2891,7 @@ class FactorReportGenerator:
                     </thead>
                     <tbody>
                 """
-                
+
                 analysis_params = result.get('analysis_params', {})
                 for key, value in analysis_params.items():
                     html += f"""
@@ -2916,10 +2900,10 @@ class FactorReportGenerator:
                         <td>{value}</td>
                     </tr>
                     """
-                
+
                 html += """
                     </tbody>
                 </table>
                 """
-        
+
         return html

@@ -62,21 +62,20 @@
 └── main.py                        # 主入口文件
 """
 
-from .core.factor.base_factor import BaseFactor
-from .core.factor.factor_registry import FactorRegistry
-from .core.factor.factor_engine import FactorEngine
-from .core.data.data_manager import FactorDataManager
-from .core.backtest.backtest_engine import FactorBacktestEngine
+# 导入因子库，自动注册所有因子
+from . import library
 from .core.analysis.factor_analyzer import FactorAnalyzer
+from .core.backtest.backtest_engine import FactorBacktestEngine
+from .core.data.data_manager import FactorDataManager
+from .core.factor.base_factor import BaseFactor
+from .core.factor.factor_engine import FactorEngine
+from .core.factor.factor_registry import FactorRegistry
 from .core.reporting.report_generator import FactorReportGenerator
 from .main import FactorResearchFramework, create_factor_research_framework, run_quick_factor_analysis
 
-# 导入因子库，自动注册所有因子
-from . import library
-
 __all__ = [
     'BaseFactor',
-    'FactorRegistry', 
+    'FactorRegistry',
     'FactorEngine',
     'FactorDataManager',
     'FactorBacktestEngine',

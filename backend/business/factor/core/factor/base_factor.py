@@ -7,14 +7,16 @@
 @Date       : 2025-08-20
 """
 
-import pandas as pd
-import numpy as np
 from abc import ABC, abstractmethod
-from typing import Dict, List, Callable, Optional, Any
+from typing import Callable, Optional
+
+import pandas as pd
+
 from backend.utils.logger import setup_logger
 from .factor_registry import factor_registry, register_factor
 
 logger = setup_logger(__name__)
+
 
 class BaseFactor(ABC):
     """
@@ -22,7 +24,7 @@ class BaseFactor(ABC):
     
     提供因子注册和装饰器功能，所有因子都应该继承此类或使用其装饰器
     """
-    
+
     @staticmethod
     def register_factor(name: str, category: str = 'custom', description: str = ""):
         """
@@ -34,7 +36,7 @@ class BaseFactor(ABC):
             description: 因子描述
         """
         return register_factor(name, category, description)
-    
+
     @classmethod
     def get_registered_factors(cls) -> pd.DataFrame:
         """
@@ -44,7 +46,7 @@ class BaseFactor(ABC):
             因子信息DataFrame
         """
         return factor_registry.list_factors()
-    
+
     @classmethod
     def get_factor_function(cls, name: str) -> Optional[Callable]:
         """
@@ -57,7 +59,7 @@ class BaseFactor(ABC):
             因子函数
         """
         return factor_registry.get_factor(name)
-    
+
     @classmethod
     def calculate_factor(cls, name: str, **kwargs) -> pd.Series:
         """
@@ -71,7 +73,7 @@ class BaseFactor(ABC):
             因子值序列
         """
         return factor_registry.calculate_factor(name, **kwargs)
-    
+
     @classmethod
     def list_factors(cls, category: Optional[str] = None) -> pd.DataFrame:
         """
@@ -84,7 +86,7 @@ class BaseFactor(ABC):
             因子信息DataFrame
         """
         return factor_registry.list_factors(category)
-    
+
     @abstractmethod
     def calculate(self, **kwargs) -> pd.Series:
         """
@@ -98,18 +100,22 @@ class BaseFactor(ABC):
         """
         pass
 
+
 # 便捷函数
 def register_technical_factor(name: str, description: str = ""):
     """注册技术因子"""
     return BaseFactor.register_factor(name, 'technical', description)
 
+
 def register_fundamental_factor(name: str, description: str = ""):
     """注册基本面因子"""
     return BaseFactor.register_factor(name, 'fundamental', description)
 
+
 def register_worldquant_factor(name: str, description: str = ""):
     """注册WorldQuant因子"""
     return BaseFactor.register_factor(name, 'worldquant', description)
+
 
 def register_channel_factor(name: str, description: str = ""):
     """注册通道分析因子"""

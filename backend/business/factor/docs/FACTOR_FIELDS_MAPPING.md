@@ -1,11 +1,13 @@
 # 因子字段映射文档
 
 ## 概述
+
 本文档说明了因子库中使用的字段名称与数据库字段的对应关系，确保因子计算能够正确使用您的数据库中的数据。
 
 ## 数据库字段结构
 
 ### 日线数据字段 (stock_daily_*)
+
 根据 `data_manager.py` 和 `data_fetcher.py`，您的数据库包含以下字段：
 
 | 字段名 | 类型 | 说明 |
@@ -32,6 +34,7 @@
 ### 财务数据字段
 
 #### 利润表 (stock_profit)
+
 | 字段名 | 说明 |
 |--------|------|
 | `roeAvg` | 平均净资产收益率 |
@@ -44,6 +47,7 @@
 | `liqaShare` | 流通股本 |
 
 #### 资产负债表 (stock_balance)
+
 | 字段名 | 说明 |
 |--------|------|
 | `currentRatio` | 流动比率 |
@@ -54,6 +58,7 @@
 | `assetToEquity` | 权益乘数 |
 
 #### 现金流量表 (stock_cashflow)
+
 | 字段名 | 说明 |
 |--------|------|
 | `CAToAsset` | 流动资产/总资产 |
@@ -65,6 +70,7 @@
 | `CFOToGr` | 经营现金流/毛利润 |
 
 #### 成长能力表 (stock_growth)
+
 | 字段名 | 说明 |
 |--------|------|
 | `YOYEquity` | 净资产同比增长率 |
@@ -74,6 +80,7 @@
 | `YOYPNI` | 主营收入同比增长率 |
 
 #### 营运能力表 (stock_operation)
+
 | 字段名 | 说明 |
 |--------|------|
 | `NRTurnRatio` | 应收账款周转率 |
@@ -157,19 +164,19 @@
 ### 已完成的更新
 
 1. **字段名称统一**：将所有因子中的字段名称更新为与数据库完全匹配的名称
-   - `open_price` → `open`
-   - `preclose` 保持不变
-   - 其他字段名称已与数据库字段完全对应
+    - `open_price` → `open`
+    - `preclose` 保持不变
+    - 其他字段名称已与数据库字段完全对应
 
 2. **基本面因子增强**：
-   - 添加了更多基于实际财务数据的因子
-   - 使用正确的财务数据字段名称
-   - 移除了临时的示例数据
+    - 添加了更多基于实际财务数据的因子
+    - 使用正确的财务数据字段名称
+    - 移除了临时的示例数据
 
 3. **新增因子**：
-   - 盈利能力因子：`net_profit_margin`, `gross_profit_margin`, `eps_ttm`
-   - 营运能力因子：`asset_turnover`, `inventory_turnover`
-   - 现金流量因子：`cfo_to_revenue`, `cfo_to_profit`
+    - 盈利能力因子：`net_profit_margin`, `gross_profit_margin`, `eps_ttm`
+    - 营运能力因子：`asset_turnover`, `inventory_turnover`
+    - 现金流量因子：`cfo_to_revenue`, `cfo_to_profit`
 
 ### 使用说明
 
@@ -187,6 +194,7 @@
 ## 测试结果
 
 已成功测试以下因子：
+
 - ✅ `momentum_20d` - 技术因子
 - ✅ `pe_ratio` - 基本面因子
 
