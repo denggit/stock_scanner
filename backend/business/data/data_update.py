@@ -83,6 +83,10 @@ class DataUpdateManager:
     def get_stock_list(self) -> pd.DataFrame:
         """获取股票列表"""
         return self._retry_operation(self.data_source.get_stock_list)
+    
+    def get_stock_list_with_financial_updates(self) -> pd.DataFrame:
+        """获取包含财务数据更新时间的股票列表"""
+        return self.db.get_stock_list(fields='*')
 
     def update_stock_list(self, stock_list: pd.DataFrame):
         """更新股票列表"""
@@ -376,40 +380,101 @@ class DataUpdateManager:
         """财务数据生产者：通过fetcher来获取每一只股票的财务数据"""
         current_year = dt.date.today().year
         for _, row in stock_list.iterrows():
-            code, updated_year = row.code, row.get(f"update_time_{data_type}")
+            code, updated_time = row.code, row.get(f"update_time_{data_type}")
             try:
                 for year in range(start_year, end_year + 1):
-                    # 如果当天停止重新扫描就用这个，省时间
-                    # if updated_year is not None and year <= updated_year:
-                    if updated_year is not None and year < updated_year:
-                        # 如果已经这一年已经更新过也可以覆盖更新，避免遗漏季度，但过去的年份无需重新更新
+                    # 检查是否需要更新该年份的数据
+                    should_update = DataUpdateManager._should_update_financial_data(
+                        updated_time, year, current_year, data_type
+                    )
+                    
+                    if not should_update:
                         logging.debug(f"该数据过去已更新，无需重复更新：{code}_{year}_{data_type}")
                         if progress_queue:
                             progress_queue.put(1)
                         continue
-                    profit_data = fetcher(data_source, code, year)
-                    if not profit_data.empty:
-                        data_queue.put((code, profit_data, year))
+                    
+                    # 获取该年份的财务数据
+                    financial_data = fetcher(data_source, code, year)
+                    if not financial_data.empty:
+                        data_queue.put((code, financial_data, year))
                         with threading.Lock():
                             update_stats["updated"] += 1
                     else:
                         logging.debug(f"该数据为空: {code}_{year}_{data_type}")
                         # 尽管数据为空也已经更新过了
                         if year < current_year:
-                            update_queue.put((code, year, data_type))
+                            update_queue.put((code, f"{year}-Q4", data_type))
                         else:
                             # 避免前一年的季度数据还未更新
-                            update_queue.put((code, year - 1, data_type))
+                            update_queue.put((code, f"{year-1}-Q4", data_type))
                     if progress_queue:
                         progress_queue.put(1)
             except Exception as e:
-                logging.exception(f"获取股票 {code} 利润表数据失败: {e}")
+                logging.exception(f"获取股票 {code} {data_type}数据失败: {e}")
                 with threading.Lock():
                     update_stats["failed"] += 1
                     update_stats["failed_codes"].append(code)
                 if progress_queue:
                     progress_queue.put(1)
         logging.info(f"{data_type}所有数据已获取完毕")
+    
+    @staticmethod
+    def _should_update_financial_data(updated_time, target_year, current_year, data_type):
+        """
+        判断是否需要更新财务数据
+        
+        Args:
+            updated_time: 数据库中的更新时间 (格式: YYYY-Q1/Q2/Q3/Q4 或 INT年份)
+            target_year: 目标更新年份
+            current_year: 当前年份
+            data_type: 数据类型
+            
+        Returns:
+            bool: 是否需要更新
+        """
+        if updated_time is None:
+            return True  # 从未更新过，需要更新
+        
+        # 处理字符串格式的更新时间 (YYYY-Q1/Q2/Q3/Q4)
+        if isinstance(updated_time, str) and '-' in updated_time:
+            try:
+                year_str, quarter_str = updated_time.split('-')
+                updated_year = int(year_str)
+                updated_quarter = quarter_str
+                
+                # 如果目标年份小于已更新年份，跳过
+                if target_year < updated_year:
+                    return False
+                
+                # 如果目标年份等于已更新年份，需要检查季度
+                if target_year == updated_year:
+                    # 对于当前年份，总是尝试更新（可能有新的季度数据）
+                    if target_year == current_year:
+                        return True
+                    # 对于历史年份，如果已经更新到Q4，则跳过
+                    elif updated_quarter == 'Q4':
+                        return False
+                
+                return True
+            except (ValueError, IndexError):
+                # 解析失败，按年份处理
+                pass
+        
+        # 处理整数格式的更新时间（兼容旧版本）
+        if isinstance(updated_time, (int, float)):
+            updated_year = int(updated_time)
+            # 如果目标年份小于已更新年份，跳过
+            if target_year < updated_year:
+                return False
+            # 如果目标年份等于已更新年份且是当前年份，尝试更新（可能有新季度）
+            if target_year == updated_year and target_year == current_year:
+                return True
+            # 如果目标年份等于已更新年份且不是当前年份，跳过（假设已完整更新）
+            if target_year == updated_year:
+                return False
+        
+        return True
 
     @staticmethod
     def __consume_financial_data(producer_done: threading.Event, data_queue: queue.Queue,
@@ -434,9 +499,13 @@ class DataUpdateManager:
                     data_saver(data)
                     with threading.Lock():
                         update_stats["updated"] += 1
-                    logging.debug(f"成功保存 {code} {year}年 {data_type} 数据")
+                    
+                    # 确定更新的季度信息
+                    quarter_info = DataUpdateManager._determine_quarter_from_data(data, year)
+                    logging.debug(f"成功保存 {code} {year}年{quarter_info} {data_type} 数据")
+                    
                     # 将更新信息放入共享队列
-                    update_queue.put((code, year, data_type))
+                    update_queue.put((code, f"{year}-{quarter_info}", data_type))
                 except Exception as e:
                     logging.exception(f"保存数据失败：{e}")
                     with threading.Lock():
@@ -465,10 +534,10 @@ class DataUpdateManager:
             while True:
                 try:
                     # 从队列中获取数据
-                    code, year, data_type = update_queue.get(timeout=5)
+                    code, update_time, data_type = update_queue.get(timeout=5)
                     # 调用数据库方法更新数据
                     db.update_financial_update_time(
-                        pd.DataFrame([{"code": code, "year": year}]),
+                        pd.DataFrame([{"code": code, "year": update_time}]),
                         data_type=data_type
                     )
                 except queue.Empty:
@@ -1078,6 +1147,42 @@ class DataUpdateManager:
             "failed": failed_count,
             "failed_codes": failed_codes
         }
+
+
+    @staticmethod
+    def _determine_quarter_from_data(data, year):
+        """
+        从财务数据中确定季度信息
+        
+        Args:
+            data: 财务数据DataFrame
+            year: 年份
+            
+        Returns:
+            str: 季度信息 (Q1/Q2/Q3/Q4)
+        """
+        if data.empty:
+            return "Q4"  # 默认返回Q4
+        
+        # 检查是否有statDate字段
+        if 'statDate' in data.columns:
+            # 分析日期确定季度
+            dates = pd.to_datetime(data['statDate'])
+            months = dates.dt.month
+            
+            # 根据月份确定季度
+            if months.min() <= 3:
+                return "Q1"
+            elif months.min() <= 6:
+                return "Q2"
+            elif months.min() <= 9:
+                return "Q3"
+            else:
+                return "Q4"
+        
+        # 如果没有日期信息，根据数据量或其他逻辑判断
+        # 这里可以根据实际业务逻辑调整
+        return "Q4"
 
 
 if __name__ == "__main__":

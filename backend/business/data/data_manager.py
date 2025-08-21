@@ -72,6 +72,13 @@ class DatabaseManager:
             update_time_daily_back TIMESTAMP,  # 后复权数据更新时间
             update_time_5min TIMESTAMP,  # 5分钟数据更新时间
             update_time_5min_back TIMESTAMP,  # 后复权5分钟数据更新时间
+            update_time_profit VARCHAR(20),  # 利润表数据更新时间 (格式: YYYY-Q1/Q2/Q3/Q4)
+            update_time_balance VARCHAR(20),  # 资产负债表数据更新时间
+            update_time_cashflow VARCHAR(20),  # 现金流量表数据更新时间
+            update_time_growth VARCHAR(20),  # 成长能力数据更新时间
+            update_time_operation VARCHAR(20),  # 营运能力数据更新时间
+            update_time_dupont VARCHAR(20),  # 杜邦分析数据更新时间
+            update_time_dividend VARCHAR(20),  # 分红数据更新时间
             INDEX idx_status(status),
             INDEX idx_type(type))
         """)
@@ -517,21 +524,59 @@ class DatabaseManager:
         cursor.close()
 
     def update_financial_update_time(self, df: pd.DataFrame, data_type: str):
-        """保存股票行情数据更新时间
+        """保存股票财务数据更新时间
 
         Args:
-            df: 包含code和update_time的DataFrame
+            df: 包含code和year的DataFrame
             data_type: 财务数据类型 -> [dividend, dupont, growth, operation, profit, balance, cashflow]
         """
         cursor = self.conn.cursor()
         column = f"update_time_{data_type}"
 
         for _, row in df.iterrows():
-            cursor.execute(f"""
-                INSERT INTO stock_list (code, {column})
-                VALUES (%s, %s)
-                ON DUPLICATE KEY UPDATE {column} = VALUES({column})
-                """, (row['code'], row['year']))
+            try:
+                # 处理更新时间格式
+                update_time = row['year']
+                
+                # 数据验证和清理
+                if update_time is None:
+                    continue
+                
+                # 如果是字符串格式 (YYYY-Q1/Q2/Q3/Q4)，验证格式
+                if isinstance(update_time, str):
+                    # 验证格式是否正确
+                    if '-' in update_time and len(update_time) <= 20:
+                        final_update_time = update_time
+                    else:
+                        # 格式不正确，尝试转换
+                        try:
+                            year = int(update_time)
+                            final_update_time = f"{year}-Q4"
+                        except ValueError:
+                            logging.warning(f"无效的更新时间格式: {update_time}，跳过")
+                            continue
+                # 如果是数字格式，转换为字符串格式
+                elif isinstance(update_time, (int, float)):
+                    final_update_time = f"{int(update_time)}-Q4"
+                else:
+                    final_update_time = str(update_time)
+                
+                # 最终验证长度
+                if len(final_update_time) > 20:
+                    logging.warning(f"更新时间过长: {final_update_time}，截断到20字符")
+                    final_update_time = final_update_time[:20]
+                
+                cursor.execute(f"""
+                    INSERT INTO stock_list (code, {column})
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE {column} = VALUES({column})
+                    """, (row['code'], final_update_time))
+                    
+            except Exception as e:
+                logging.error(f"更新财务数据时间失败: code={row.get('code', 'unknown')}, "
+                            f"data_type={data_type}, update_time={row.get('year', 'unknown')}, error={e}")
+                continue
+                
         self.conn.commit()
         cursor.close()
 
