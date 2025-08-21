@@ -10,10 +10,7 @@
 import pandas as pd
 import numpy as np
 from typing import Optional
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'core', 'factor'))
-from base_factor import register_fundamental_factor
+from ..core.factor.base_factor import register_fundamental_factor
 
 # ==================== 估值类因子 ====================
 

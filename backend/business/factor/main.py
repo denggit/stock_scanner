@@ -10,6 +10,7 @@
 import os
 import pandas as pd
 from typing import Dict, List, Optional, Any
+from datetime import datetime
 from backend.utils.logger import setup_logger
 
 from .core.factor.factor_engine import FactorEngine
@@ -337,6 +338,198 @@ class FactorResearchFramework:
         return self.report_generator.generate_comprehensive_report(
             factor_names, output_dir=self.output_dir
         )
+    
+    def generate_merged_comprehensive_report(self,
+                                           factor_names: List[str],
+                                           merged_results: Dict[str, Any],
+                                           start_date: str,
+                                           end_date: str,
+                                           stock_pool: str = "no_st",
+                                           top_n: int = 10,
+                                           n_groups: int = 5) -> str:
+        """
+        生成合并的综合报告（包含分析总结）
+        
+        Args:
+            factor_names: 因子名称列表
+            merged_results: 合并的结果字典
+            start_date: 开始日期
+            end_date: 结束日期
+            stock_pool: 股票池
+            top_n: 选股数量
+            n_groups: 分组数量
+            
+        Returns:
+            报告路径
+        """
+        logger.info(f"开始生成合并的综合报告，包含 {len(factor_names)} 个因子")
+        
+        # 创建输出目录
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_dir = os.path.join(self.output_dir, f"worldquant{timestamp}")
+        os.makedirs(report_dir, exist_ok=True)
+        
+        # 生成报告文件名
+        report_filename = f"comprehensive_report_{timestamp}.html"
+        report_path = os.path.join(report_dir, report_filename)
+        
+        # 生成分析总结
+        analysis_summary = self._generate_factor_analysis_summary(factor_names, merged_results)
+        
+        # 生成合并报告
+        try:
+            self.report_generator.generate_merged_comprehensive_report(
+                factor_names=factor_names,
+                merged_results=merged_results,
+                analysis_summary=analysis_summary,
+                report_path=report_path,
+                start_date=start_date,
+                end_date=end_date,
+                stock_pool=stock_pool,
+                top_n=top_n,
+                n_groups=n_groups
+            )
+            
+            logger.info(f"合并综合报告生成成功: {report_path}")
+            return report_path
+            
+        except Exception as e:
+            logger.error(f"生成合并报告失败: {e}")
+            raise
+    
+    def _generate_factor_analysis_summary(self, factor_names: List[str], merged_results: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        生成因子分析总结
+        
+        Args:
+            factor_names: 因子名称列表
+            merged_results: 合并的结果字典
+            
+        Returns:
+            分析总结字典
+        """
+        logger.info("生成因子分析总结...")
+        
+        summary = {
+            'total_factors': len(factor_names),
+            'successful_factors': merged_results.get('successful_factors', []),
+            'failed_factors': merged_results.get('failed_factors', []),
+            'success_rate': merged_results.get('success_rate', 0),
+            'top_performers': [],
+            'problematic_factors': [],
+            'recommendations': []
+        }
+        
+        # 分析TopN表现
+        backtest_results = merged_results.get('backtest_results', {})
+        effectiveness_results = merged_results.get('effectiveness_results', {})
+        
+        factor_performance = []
+        
+        for factor_name in factor_names:
+            performance_data = {
+                'factor_name': factor_name,
+                'topn_sharpe': 0,
+                'topn_return': 0,
+                'topn_max_drawdown': 0,
+                'ic_mean': 0,
+                'ic_ir': 0,
+                'ic_win_rate': 0,
+                'group_monotonicity': 0,
+                'status': 'normal'
+            }
+            
+            # 获取TopN回测结果
+            topn_key = f'topn_{factor_name}'
+            if topn_key in backtest_results:
+                topn_result = backtest_results[topn_key]
+                if 'portfolio_stats' in topn_result:
+                    stats = topn_result['portfolio_stats']
+                    performance_data['topn_sharpe'] = stats.get('sharpe_ratio', 0)
+                    performance_data['topn_return'] = stats.get('total_return', 0)
+                    performance_data['topn_max_drawdown'] = stats.get('max_drawdown', 0)
+            
+            # 获取有效性分析结果
+            if factor_name in effectiveness_results:
+                eff_result = effectiveness_results[factor_name]
+                if 'ic_analysis' in eff_result:
+                    ic_analysis = eff_result['ic_analysis']
+                    performance_data['ic_mean'] = ic_analysis.get('ic_mean', 0)
+                    performance_data['ic_ir'] = ic_analysis.get('ic_ir', 0)
+                    performance_data['ic_win_rate'] = ic_analysis.get('ic_win_rate', 0)
+            
+            # 检查分组单调性
+            group_key = f'group_{factor_name}'
+            if group_key in backtest_results:
+                group_result = backtest_results[group_key]
+                if 'group_stats' in group_result:
+                    group_stats = group_result['group_stats']
+                    # 计算单调性得分（高组收益应该大于低组）
+                    if len(group_stats) >= 2:
+                        high_group_return = group_stats.iloc[-1]['total_return'] if len(group_stats) > 0 else 0
+                        low_group_return = group_stats.iloc[0]['total_return'] if len(group_stats) > 0 else 0
+                        performance_data['group_monotonicity'] = high_group_return - low_group_return
+            
+            # 判断因子状态
+            if performance_data['topn_sharpe'] == 0 and performance_data['ic_mean'] == 0:
+                performance_data['status'] = 'failed'
+            elif performance_data['topn_sharpe'] > 2.0 and performance_data['ic_mean'] > 0.02:
+                performance_data['status'] = 'excellent'
+            elif performance_data['topn_sharpe'] < 0.5 or performance_data['ic_mean'] < 0.01:
+                performance_data['status'] = 'poor'
+            
+            factor_performance.append(performance_data)
+        
+        # 排序并分类
+        factor_performance.sort(key=lambda x: x['topn_sharpe'], reverse=True)
+        
+        # 优秀因子（Top 20%）
+        excellent_count = max(1, len(factor_performance) // 5)
+        summary['top_performers'] = [
+            {
+                'factor_name': fp['factor_name'],
+                'sharpe_ratio': fp['topn_sharpe'],
+                'total_return': fp['topn_return'],
+                'ic_mean': fp['ic_mean'],
+                'ic_ir': fp['ic_ir']
+            }
+            for fp in factor_performance[:excellent_count] if fp['status'] == 'excellent'
+        ]
+        
+        # 问题因子
+        summary['problematic_factors'] = [
+            {
+                'factor_name': fp['factor_name'],
+                'issue': 'failed' if fp['status'] == 'failed' else 'poor_performance',
+                'sharpe_ratio': fp['topn_sharpe'],
+                'ic_mean': fp['ic_mean']
+            }
+            for fp in factor_performance if fp['status'] in ['failed', 'poor']
+        ]
+        
+        # 生成建议
+        recommendations = []
+        
+        if summary['success_rate'] < 0.8:
+            recommendations.append(f"成功率较低({summary['success_rate']:.1%})，建议检查失败因子的实现和数据依赖")
+        
+        if summary['top_performers']:
+            recommendations.append(f"发现{len(summary['top_performers'])}个优秀因子，建议优先纳入组合")
+        
+        if summary['problematic_factors']:
+            recommendations.append(f"发现{len(summary['problematic_factors'])}个问题因子，建议修复或排除")
+        
+        # 添加具体建议
+        if summary['top_performers']:
+            top_factor = summary['top_performers'][0]
+            recommendations.append(f"最佳因子: {top_factor['factor_name']} (夏普比率: {top_factor['sharpe_ratio']:.2f}, IC: {top_factor['ic_mean']:.4f})")
+        
+        summary['recommendations'] = recommendations
+        summary['factor_performance'] = factor_performance
+        
+        logger.info(f"分析总结完成: {len(summary['top_performers'])}个优秀因子, {len(summary['problematic_factors'])}个问题因子")
+        
+        return summary
 
 # 便捷函数
 def create_factor_research_framework(output_dir: str = "storage/reports") -> FactorResearchFramework:

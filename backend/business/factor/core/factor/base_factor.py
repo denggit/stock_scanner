@@ -12,10 +12,7 @@ import numpy as np
 from abc import ABC, abstractmethod
 from typing import Dict, List, Callable, Optional, Any
 from backend.utils.logger import setup_logger
-import sys
-import os
-sys.path.append(os.path.dirname(__file__))
-from factor_registry import factor_registry, register_factor
+from .factor_registry import factor_registry, register_factor
 
 logger = setup_logger(__name__)
 

@@ -33,9 +33,9 @@ def run_momentum_factors():
 
     results = framework.run_factor_comparison(
         factor_names=factor_names,
-        start_date='2025-08-15',
-        end_date='2025-08-19',
-        stock_pool='sz50',
+        start_date='2025-01-01',
+        end_date=datetime.date.today().strftime("%Y-%m-%d"),
+        stock_pool='no_st',
         top_n=10,
         n_groups=5
     )
@@ -54,9 +54,9 @@ def run_volatility_factors():
 
     results = framework.run_factor_comparison(
         factor_names=factor_names,
-        start_date='2025-08-15',
-        end_date='2025-08-19',
-        stock_pool='sz50',
+        start_date='2025-01-01',
+        end_date=datetime.date.today().strftime("%Y-%m-%d"),
+        stock_pool='no_st',
         top_n=10,
         n_groups=5
     )
@@ -75,9 +75,9 @@ def run_technical_indicators():
 
     results = framework.run_factor_comparison(
         factor_names=factor_names,
-        start_date='2025-08-15',
-        end_date='2025-08-19',
-        stock_pool='sz50',
+        start_date='2025-01-01',
+        end_date=datetime.date.today().strftime("%Y-%m-%d"),
+        stock_pool='no_st',
         top_n=10,
         n_groups=5
     )
@@ -96,9 +96,9 @@ def run_volume_factors():
 
     results = framework.run_factor_comparison(
         factor_names=factor_names,
-        start_date='2025-08-15',
-        end_date='2025-08-19',
-        stock_pool='sz50',
+        start_date='2025-01-01',
+        end_date=datetime.date.today().strftime("%Y-%m-%d"),
+        stock_pool='no_st',
         top_n=10,
         n_groups=5
     )
@@ -117,9 +117,9 @@ def run_channel_factors():
 
     results = framework.run_factor_comparison(
         factor_names=factor_names,
-        start_date='2025-08-15',
-        end_date='2025-08-19',
-        stock_pool='sz50',
+        start_date='2025-01-01',
+        end_date=datetime.date.today().strftime("%Y-%m-%d"),
+        stock_pool='no_st',
         top_n=10,
         n_groups=5
     )
@@ -128,25 +128,146 @@ def run_channel_factors():
     return results
 
 
-def run_worldquant_factors():
+def run_worldquant_factors(start_date: str = '2025-01-01', end_date: str = None):
     """运行WorldQuant Alpha因子"""
     logger.info("=== 运行WorldQuant Alpha因子 ===")
 
+    if end_date is None:
+        end_date = datetime.date.today().strftime("%Y-%m-%d")
+
     framework = create_factor_research_framework()
 
-    factor_names = ['alpha_1', 'alpha_2', 'alpha_3', 'alpha_8']
+    # 获取所有WorldQuant Alpha因子
+    from backend.business.factor.core.factor.factor_registry import factor_registry
+    
+    worldquant_factors = [f for f in factor_registry._factors.keys() if f.startswith('alpha_')]
+    worldquant_factors.sort(key=lambda x: int(x.split('_')[1]))  # 按数字排序
+    
+    logger.info(f"找到 {len(worldquant_factors)} 个WorldQuant Alpha因子")
+    logger.info(f"因子列表: {worldquant_factors}")
 
-    results = framework.run_factor_comparison(
-        factor_names=factor_names,
-        start_date='2025-08-15',
-        end_date='2025-08-19',
-        stock_pool='sz50',
-        top_n=10,
-        n_groups=5
-    )
+    # 分批运行，避免内存不足
+    batch_size = 10
+    all_results = {}
 
-    logger.info(f"WorldQuant Alpha因子分析完成，报告路径: {results['report_path']}")
-    return results
+    for i in range(0, len(worldquant_factors), batch_size):
+        batch_factors = worldquant_factors[i:i + batch_size]
+        logger.info(f"运行第 {i // batch_size + 1} 批WorldQuant因子: {batch_factors}")
+
+        try:
+            results = framework.run_factor_comparison(
+                factor_names=batch_factors,
+                start_date=start_date,
+                end_date=end_date,
+                stock_pool='no_st',
+                top_n=10,
+                n_groups=5
+            )
+            all_results[f'worldquant_batch_{i // batch_size + 1}'] = results
+            logger.info(f"第 {i // batch_size + 1} 批WorldQuant因子运行成功，报告路径: {results['report_path']}")
+        except Exception as e:
+            logger.error(f"第 {i // batch_size + 1} 批WorldQuant因子运行失败: {e}")
+
+    logger.info("所有WorldQuant Alpha因子分析完成")
+    return all_results
+
+
+def run_worldquant_factors_merged(start_date: str = '2025-01-01', end_date: str = None, batch_size: int = 10):
+    """运行WorldQuant Alpha因子并合并为单一报告"""
+    logger.info("=== 运行WorldQuant Alpha因子（合并报告模式） ===")
+
+    if end_date is None:
+        end_date = datetime.date.today().strftime("%Y-%m-%d")
+
+    framework = create_factor_research_framework()
+
+    # 获取所有WorldQuant Alpha因子
+    from backend.business.factor.core.factor.factor_registry import factor_registry
+    
+    worldquant_factors = [f for f in factor_registry._factors.keys() if f.startswith('alpha_')]
+    worldquant_factors.sort(key=lambda x: int(x.split('_')[1]))  # 按数字排序
+    
+    logger.info(f"找到 {len(worldquant_factors)} 个WorldQuant Alpha因子")
+    logger.info(f"因子列表: {worldquant_factors}")
+
+    # 分批运行，收集所有结果
+    all_backtest_results = {}
+    all_effectiveness_results = {}
+    all_comparison_results = {}
+    successful_factors = []
+    failed_factors = []
+
+    for i in range(0, len(worldquant_factors), batch_size):
+        batch_factors = worldquant_factors[i:i + batch_size]
+        logger.info(f"运行第 {i // batch_size + 1} 批WorldQuant因子: {batch_factors}")
+
+        try:
+            results = framework.run_factor_comparison(
+                factor_names=batch_factors,
+                start_date=start_date,
+                end_date=end_date,
+                stock_pool='no_st',
+                top_n=10,
+                n_groups=5
+            )
+            
+            # 合并结果
+            if 'backtest_results' in results:
+                all_backtest_results.update(results['backtest_results'])
+            if 'effectiveness_results' in results:
+                all_effectiveness_results.update(results['effectiveness_results'])
+            if 'comparison_results' in results:
+                all_comparison_results.update(results['comparison_results'])
+            
+            successful_factors.extend(batch_factors)
+            logger.info(f"第 {i // batch_size + 1} 批WorldQuant因子运行成功")
+            
+        except Exception as e:
+            logger.error(f"第 {i // batch_size + 1} 批WorldQuant因子运行失败: {e}")
+            failed_factors.extend(batch_factors)
+
+    # 生成合并的综合报告
+    logger.info("开始生成合并的综合报告...")
+    
+    # 创建合并的结果字典
+    merged_results = {
+        'backtest_results': all_backtest_results,
+        'effectiveness_results': all_effectiveness_results,
+        'comparison_results': all_comparison_results,
+        'successful_factors': successful_factors,
+        'failed_factors': failed_factors,
+        'total_factors': len(worldquant_factors),
+        'success_rate': len(successful_factors) / len(worldquant_factors) if worldquant_factors else 0
+    }
+    
+    # 生成合并报告
+    try:
+        report_path = framework.generate_merged_comprehensive_report(
+            factor_names=successful_factors,
+            merged_results=merged_results,
+            start_date=start_date,
+            end_date=end_date,
+            stock_pool='no_st',
+            top_n=10,
+            n_groups=5
+        )
+        
+        logger.info(f"合并综合报告生成成功: {report_path}")
+        logger.info(f"成功运行因子: {len(successful_factors)}/{len(worldquant_factors)}")
+        if failed_factors:
+            logger.warning(f"失败的因子: {failed_factors}")
+        
+        return {
+            'report_path': report_path,
+            'successful_factors': successful_factors,
+            'failed_factors': failed_factors,
+            'success_rate': merged_results['success_rate'],
+            'merged_results': merged_results
+        }
+        
+    except Exception as e:
+        logger.error(f"生成合并报告失败: {e}")
+        raise
 
 
 def run_fundamental_factors():
@@ -159,9 +280,9 @@ def run_fundamental_factors():
 
     results = framework.run_factor_comparison(
         factor_names=factor_names,
-        start_date='2025-08-15',
-        end_date='2025-08-19',
-        stock_pool='sz50',
+        start_date='2025-01-01',
+        end_date=datetime.date.today().strftime("%Y-%m-%d"),
+        stock_pool='no_st',
         top_n=10,
         n_groups=5
     )
@@ -183,7 +304,7 @@ def run_single_factor(factor_name: str, start_date: str = '2025-01-01', end_date
         factor_name=factor_name,
         start_date=start_date,
         end_date=end_date,
-        stock_pool='sz50',
+        stock_pool='no_st',
         top_n=10,
         n_groups=5
     )
@@ -217,7 +338,7 @@ def run_all_factors():
                 factor_names=batch_factors,
                 start_date='2025-01-01',
                 end_date=datetime.date.today().strftime("%Y-%m-%d"),
-                stock_pool='sz50',
+                stock_pool='no_st',
                 top_n=10,
                 n_groups=5
             )
@@ -243,6 +364,10 @@ if __name__ == "__main__":
                         help='开始日期 (YYYY-MM-DD)')
     parser.add_argument('--end_date', type=str, default=datetime.date.today().strftime("%Y-%m-%d"),
                         help='结束日期 (YYYY-MM-DD)，默认为今天')
+    parser.add_argument('--merged', action='store_true',
+                        help='使用合并报告模式（分批运行但输出单一报告）')
+    parser.add_argument('--batch_size', type=int, default=10,
+                        help='批处理大小（仅在合并模式下使用）')
 
     args = parser.parse_args()
 
@@ -258,7 +383,10 @@ if __name__ == "__main__":
         elif args.factor_type == 'channel':
             run_channel_factors()
         elif args.factor_type == 'worldquant':
-            run_worldquant_factors()
+            if args.merged:
+                run_worldquant_factors_merged(args.start_date, args.end_date, args.batch_size)
+            else:
+                run_worldquant_factors(args.start_date, args.end_date)
         elif args.factor_type == 'fundamental':
             run_fundamental_factors()
         elif args.factor_type == 'single':

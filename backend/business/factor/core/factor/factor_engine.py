@@ -1,23 +1,64 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-@Author     : Zijun Deng
-@Date       : 8/19/25 11:24 PM
 @File       : factor_engine.py
-@Description: 因子计算引擎，负责批量计算所有股票的因子值
+@Description: 因子计算引擎
+@Author     : Zijun Deng
+@Date       : 2025-08-20
 """
 
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Optional, Union, Callable, Any
+from typing import Dict, List, Optional, Callable, Any, Union
+from datetime import datetime, timedelta
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 from backend.business.factor.core.factor.base_factor import BaseFactor
 from backend.business.factor.core.data.data_manager import FactorDataManager
 from backend.utils.logger import setup_logger
+from .factor_registry import factor_registry
+
+# 全局警告处理配置
+warnings.filterwarnings('ignore', category=RuntimeWarning)
+warnings.filterwarnings('ignore', category=FutureWarning)
+warnings.filterwarnings('ignore', category=UserWarning)
 
 logger = setup_logger(__name__)
+
+
+def ensure_pandas_series(data: Any, index: Optional[pd.Index] = None) -> pd.Series:
+    """
+    确保数据是pandas Series类型
+    
+    Args:
+        data: 输入数据
+        index: 索引
+        
+    Returns:
+        pandas Series
+    """
+    if isinstance(data, pd.Series):
+        return data
+    elif isinstance(data, np.ndarray):
+        return pd.Series(data, index=index)
+    elif isinstance(data, (list, tuple)):
+        return pd.Series(data, index=index)
+    elif isinstance(data, (int, float)):
+        if index is not None:
+            return pd.Series([data] * len(index), index=index)
+        else:
+            return pd.Series([data])
+    else:
+        # 其他类型，尝试转换为Series
+        try:
+            return pd.Series(data, index=index)
+        except:
+            # 如果转换失败，返回空Series
+            if index is not None:
+                return pd.Series([np.nan] * len(index), index=index)
+            else:
+                return pd.Series([])
 
 
 class FactorEngine:
@@ -45,6 +86,11 @@ class FactorEngine:
     def calculate_factors(self,
                          factor_names: List[str],
                          data: Optional[pd.DataFrame] = None,
+                         start_date: str = '2025-01-01',
+                         end_date: str = None,
+                         stock_pool: str = 'no_st',
+                         top_n: int = 10,
+                         n_groups: int = 5,
                          **kwargs) -> pd.DataFrame:
         """
         批量计算因子值
@@ -52,6 +98,11 @@ class FactorEngine:
         Args:
             factor_names: 因子名称列表
             data: 输入数据，None表示使用数据管理器的数据
+            start_date: 开始日期，格式为YYYY-MM-DD，默认为2025-01-01
+            end_date: 结束日期，格式为YYYY-MM-DD，默认为当天
+            stock_pool: 股票池，默认为'no_st'
+            top_n: 选股数量，默认为10
+            n_groups: 分组数量，默认为5
             **kwargs: 其他参数
             
         Returns:
@@ -59,16 +110,31 @@ class FactorEngine:
         """
         logger.info(f"开始计算因子: {factor_names}")
         
+        # 处理日期参数
+        if end_date is None:
+            end_date = datetime.date.today().strftime("%Y-%m-%d")
+        
+        # 验证日期格式
+        try:
+            datetime.datetime.strptime(start_date, "%Y-%m-%d")
+            datetime.datetime.strptime(end_date, "%Y-%m-%d")
+        except ValueError as e:
+            raise ValueError(f"日期格式错误: {e}")
+        
+        # 验证其他参数
+        if top_n <= 0:
+            raise ValueError("top_n必须大于0")
+        if n_groups <= 0:
+            raise ValueError("n_groups必须大于0")
+        
+        logger.info(f"参数设置: start_date={start_date}, end_date={end_date}, stock_pool={stock_pool}, top_n={top_n}, n_groups={n_groups}")
+        
         if data is None:
             if self.data_manager._processed_data is None:
                 raise ValueError("请先调用 data_manager.prepare_factor_data 准备数据")
             data = self.data_manager._processed_data.copy()
         
         # 获取注册的因子
-        import sys
-        import os
-        sys.path.append(os.path.dirname(__file__))
-        from factor_registry import factor_registry
         
         # 检查因子是否存在
         missing_factors = []
@@ -81,7 +147,7 @@ class FactorEngine:
                     missing_factors.append(factor_name)
                     continue
                     
-                factor_values = self._calculate_single_factor(factor_func, data, **kwargs)
+                factor_values = self._calculate_single_factor(factor_func, data, start_date, end_date, stock_pool, top_n, n_groups, **kwargs)
                 factor_results[factor_name] = factor_values
                 
                 logger.info(f"因子 {factor_name} 计算完成")
@@ -113,6 +179,11 @@ class FactorEngine:
     def _calculate_single_factor(self,
                                 factor_func: Callable,
                                 data: pd.DataFrame,
+                                start_date: str,
+                                end_date: str,
+                                stock_pool: str,
+                                top_n: int,
+                                n_groups: int,
                                 **kwargs) -> pd.Series:
         """
         计算单个因子值
@@ -120,6 +191,11 @@ class FactorEngine:
         Args:
             factor_func: 因子计算函数
             data: 输入数据
+            start_date: 开始日期
+            end_date: 结束日期
+            stock_pool: 股票池
+            top_n: 选股数量
+            n_groups: 分组数量
             **kwargs: 其他参数
             
         Returns:
@@ -133,8 +209,22 @@ class FactorEngine:
             stock_data = stock_data.sort_values('trade_date').reset_index(drop=True)
             
             try:
-                # 调用因子函数
-                stock_factor = factor_func(**stock_data, **kwargs)
+                # 确保传递给因子函数的参数都是pandas Series
+                factor_params = {}
+                for col in stock_data.columns:
+                    if col not in ['code', 'trade_date']:
+                        factor_params[col] = ensure_pandas_series(stock_data[col], stock_data.index)
+                
+                # 调用因子函数，传递所有参数
+                factor_kwargs = {
+                    'start_date': start_date,
+                    'end_date': end_date,
+                    'stock_pool': stock_pool,
+                    'top_n': top_n,
+                    'n_groups': n_groups,
+                    **kwargs
+                }
+                stock_factor = factor_func(**factor_params, **factor_kwargs)
                 
                 # 确保返回的是Series
                 if isinstance(stock_factor, (int, float)):

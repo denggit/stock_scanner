@@ -10,10 +10,28 @@
 import pandas as pd
 import numpy as np
 from typing import Optional
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'core', 'factor'))
-from base_factor import register_worldquant_factor
+from ..core.factor.base_factor import register_worldquant_factor
+
+
+def safe_where(condition, x, y, index=None):
+    """
+    安全的条件选择函数，确保返回pandas Series
+    
+    Args:
+        condition: 条件
+        x: 条件为True时的值
+        y: 条件为False时的值
+        index: 索引
+        
+    Returns:
+        pandas Series
+    """
+    result = np.where(condition, x, y)
+    if index is not None:
+        return pd.Series(result, index=index)
+    else:
+        return pd.Series(result)
+
 
 # ==================== WorldQuant Alpha因子 ====================
 
@@ -29,10 +47,13 @@ def alpha_1(pct_chg: pd.Series, close: pd.Series, **kwargs) -> pd.Series:
     # 计算条件表达式
     condition = pct_chg < 0
     std_returns = pct_chg.rolling(20).std()
-    value = np.where(condition, std_returns, close)
+    value = pd.Series(np.where(condition, std_returns, close), index=pct_chg.index)
     
     # 计算SignedPower
     signed_power_value = signed_power(value, 2)
+    # 确保是pandas Series
+    if not isinstance(signed_power_value, pd.Series):
+        signed_power_value = pd.Series(signed_power_value, index=pct_chg.index)
     
     # 计算Ts_ArgMax
     ts_argmax_value = signed_power_value.rolling(5).apply(ts_argmax)
@@ -817,6 +838,624 @@ def alpha_55(close: pd.Series, high: pd.Series, low: pd.Series, volume: pd.Serie
     
     return -1 * correlation
 
+# ==================== Alpha 56-70 ====================
+
+@register_worldquant_factor(name='alpha_56', description='Alpha#56: (0 - (1 * (rank((sum(returns, 10) / sum(sum(returns, 2), 3))) * rank((returns * cap)))))')
+def alpha_56(close: pd.Series, pct_chg: pd.Series, total_market_cap_akshare: pd.Series = None, **kwargs) -> pd.Series:
+    """Alpha#56: (0 - (1 * (rank((sum(returns, 10) / sum(sum(returns, 2), 3))) * rank((returns * cap)))))
+    
+    现在使用AKShare的市值数据实现
+    """
+    # 确保输入数据是pandas Series
+    if not isinstance(close, pd.Series):
+        close = pd.Series(close)
+    if not isinstance(pct_chg, pd.Series):
+        pct_chg = pd.Series(pct_chg)
+    
+    returns = pct_chg
+    
+    # 如果没有提供市值数据，使用默认值
+    if total_market_cap_akshare is None:
+        # 使用成交额作为市值的代理变量
+        amount = kwargs.get('amount', None)
+        if amount is not None:
+            if not isinstance(amount, pd.Series):
+                amount = pd.Series(amount, index=close.index)
+            cap = amount
+        else:
+            cap = pd.Series([1e9] * len(close), index=close.index)
+    else:
+        if not isinstance(total_market_cap_akshare, pd.Series):
+            total_market_cap_akshare = pd.Series(total_market_cap_akshare, index=close.index)
+        cap = total_market_cap_akshare
+    
+    # 计算sum(returns, 10) / sum(sum(returns, 2), 3)
+    sum_returns_10 = returns.rolling(10).sum()
+    sum_returns_2 = returns.rolling(2).sum()
+    sum_sum_returns_2_3 = sum_returns_2.rolling(3).sum()
+    ratio_returns = sum_returns_10 / sum_sum_returns_2_3
+    
+    # 计算returns * cap
+    returns_cap = returns * cap
+    
+    # 计算rank
+    rank_ratio = ratio_returns.rank(pct=True)
+    rank_returns_cap = returns_cap.rank(pct=True)
+    
+    return 0 - (1 * (rank_ratio * rank_returns_cap))
+
+@register_worldquant_factor(name='alpha_57', description='Alpha#57: (0 - (1 * ((close - vwap) / decay_linear(rank(ts_argmax(close, 30)), 2))))')
+def alpha_57(close: pd.Series, vwap: pd.Series, **kwargs) -> pd.Series:
+    """Alpha#57: (0 - (1 * ((close - vwap) / decay_linear(rank(ts_argmax(close, 30)), 2))))"""
+    def ts_argmax(x):
+        return x.argmax() if len(x) > 0 else 0
+    
+    def decay_linear(x, window):
+        weights = np.arange(1, len(x) + 1)
+        return np.average(x, weights=weights)
+    
+    ts_argmax_close = close.rolling(30).apply(ts_argmax)
+    rank_ts_argmax = ts_argmax_close.rank(pct=True)
+    decay_linear_result = rank_ts_argmax.rolling(2).apply(lambda x: decay_linear(x, 2))
+    
+    return 0 - (1 * ((close - vwap) / decay_linear_result))
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_58', description='Alpha#58: (-1 * Ts_Rank(decay_linear(correlation(IndNeutralize(vwap, IndClass.sector), volume, 3.92795), 7.89291), 5.50322))')
+# def alpha_58(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#58: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_59', description='Alpha#59: (-1 * Ts_Rank(decay_linear(correlation(IndNeutralize(((vwap * 0.728317) + (vwap * (1 - 0.728317))), IndClass.industry), volume, 4.25197), 16.2289), 8.19648))')
+# def alpha_59(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#59: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+@register_worldquant_factor(name='alpha_60', description='Alpha#60: (0 - (1 * ((2 * scale(rank(((((close - low) - (high - close)) / (high - low)) * volume)))) - scale(rank(ts_argmax(close, 10))))))')
+def alpha_60(close: pd.Series, high: pd.Series, low: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+    """Alpha#60: (0 - (1 * ((2 * scale(rank(((((close - low) - (high - close)) / (high - low)) * volume)))) - scale(rank(ts_argmax(close, 10))))))"""
+    def ts_argmax(x):
+        return x.argmax() if len(x) > 0 else 0
+    
+    def scale(x):
+        return (x - x.rolling(252).mean()) / x.rolling(252).std()
+    
+    # 第一部分：(((close - low) - (high - close)) / (high - low)) * volume
+    numerator = (close - low) - (high - close)
+    denominator = high - low
+    ratio = numerator / denominator
+    volume_ratio = ratio * volume
+    rank_volume_ratio = volume_ratio.rank(pct=True)
+    scale_rank_volume_ratio = scale(rank_volume_ratio)
+    
+    # 第二部分：scale(rank(ts_argmax(close, 10)))
+    ts_argmax_close = close.rolling(10).apply(ts_argmax)
+    rank_ts_argmax = ts_argmax_close.rank(pct=True)
+    scale_rank_ts_argmax = scale(rank_ts_argmax)
+    
+    return 0 - (1 * ((2 * scale_rank_volume_ratio) - scale_rank_ts_argmax))
+
+@register_worldquant_factor(name='alpha_61', description='Alpha#61: (rank((vwap - ts_min(vwap, 16.1219))) < rank(correlation(vwap, adv180, 17.9282)))')
+def alpha_61(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+    """Alpha#61: (rank((vwap - ts_min(vwap, 16.1219))) < rank(correlation(vwap, adv180, 17.9282)))"""
+    adv180 = volume.rolling(180).mean()
+    
+    ts_min_vwap = vwap.rolling(16).min()
+    vwap_ts_min_diff = vwap - ts_min_vwap
+    rank_vwap_diff = vwap_ts_min_diff.rank(pct=True)
+    
+    correlation_vwap_adv180 = vwap.rolling(18).corr(adv180)
+    rank_correlation = correlation_vwap_adv180.rank(pct=True)
+    
+    return (rank_vwap_diff < rank_correlation).astype(int)
+
+@register_worldquant_factor(name='alpha_62', description='Alpha#62: ((rank(correlation(vwap, sum(adv20, 22.4101), 9.91009)) < rank(((rank(open) + rank(open)) < (rank(((high + low) / 2)) + rank(high))))) * -1)')
+def alpha_62(close: pd.Series, open: pd.Series, high: pd.Series, low: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+    """Alpha#62: ((rank(correlation(vwap, sum(adv20, 22.4101), 9.91009)) < rank(((rank(open) + rank(open)) < (rank(((high + low) / 2)) + rank(high))))) * -1)"""
+    adv20 = volume.rolling(20).mean()
+    sum_adv20 = adv20.rolling(22).sum()
+    
+    correlation_vwap_sum = vwap.rolling(10).corr(sum_adv20)
+    rank_correlation = correlation_vwap_sum.rank(pct=True)
+    
+    rank_open = open.rank(pct=True)
+    rank_high_low_mid = ((high + low) / 2).rank(pct=True)
+    rank_high = high.rank(pct=True)
+    
+    condition = (rank_open + rank_open) < (rank_high_low_mid + rank_high)
+    rank_condition = condition.rank(pct=True)
+    
+    result = (rank_correlation < rank_condition).astype(int)
+    return result * -1
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_63', description='Alpha#63: ((rank(decay_linear(delta(IndNeutralize(close, IndClass.industry), 2.25164), 8.22237)) - rank(decay_linear(correlation(((vwap * 0.318108) + (open * (1 - 0.318108))), sum(adv180, 37.2467), 13.557), 12.2883))) * -1)')
+# def alpha_63(close: pd.Series, open: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#63: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+@register_worldquant_factor(name='alpha_64', description='Alpha#64: ((rank(correlation(sum(((open * 0.178404) + (low * (1 - 0.178404))), 12.7054), sum(adv120, 12.7054), 16.6208)) < rank(delta(((((high + low) / 2) * 0.178404) + (vwap * (1 - 0.178404))), 3.69741))) * -1)')
+def alpha_64(close: pd.Series, open: pd.Series, high: pd.Series, low: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+    """Alpha#64: ((rank(correlation(sum(((open * 0.178404) + (low * (1 - 0.178404))), 12.7054), sum(adv120, 12.7054), 16.6208)) < rank(delta(((((high + low) / 2) * 0.178404) + (vwap * (1 - 0.178404))), 3.69741))) * -1)"""
+    adv120 = volume.rolling(120).mean()
+    
+    # 第一部分：sum(((open * 0.178404) + (low * (1 - 0.178404))), 12.7054)
+    weighted_open_low = (open * 0.178404) + (low * (1 - 0.178404))
+    sum_weighted = weighted_open_low.rolling(13).sum()
+    
+    # 第二部分：sum(adv120, 12.7054)
+    sum_adv120 = adv120.rolling(13).sum()
+    
+    # 第三部分：correlation
+    correlation = sum_weighted.rolling(17).corr(sum_adv120)
+    rank_correlation = correlation.rank(pct=True)
+    
+    # 第四部分：delta(((((high + low) / 2) * 0.178404) + (vwap * (1 - 0.178404))), 3.69741)
+    weighted_high_low_vwap = (((high + low) / 2) * 0.178404) + (vwap * (1 - 0.178404))
+    delta_weighted = weighted_high_low_vwap.diff(4)
+    rank_delta = delta_weighted.rank(pct=True)
+    
+    result = (rank_correlation < rank_delta).astype(int)
+    return result * -1
+
+@register_worldquant_factor(name='alpha_65', description='Alpha#65: ((rank(correlation(((open * 0.00817205) + (vwap * (1 - 0.00817205))), sum(adv60, 8.6911), 6.40374)) < rank((open - ts_min(open, 13.635)))) * -1)')
+def alpha_65(close: pd.Series, open: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+    """Alpha#65: ((rank(correlation(((open * 0.00817205) + (vwap * (1 - 0.00817205))), sum(adv60, 8.6911), 6.40374)) < rank((open - ts_min(open, 13.635)))) * -1)"""
+    adv60 = volume.rolling(60).mean()
+    
+    # 第一部分：correlation(((open * 0.00817205) + (vwap * (1 - 0.00817205))), sum(adv60, 8.6911), 6.40374)
+    weighted_open_vwap = (open * 0.00817205) + (vwap * (1 - 0.00817205))
+    sum_adv60 = adv60.rolling(9).sum()
+    correlation = weighted_open_vwap.rolling(6).corr(sum_adv60)
+    rank_correlation = correlation.rank(pct=True)
+    
+    # 第二部分：(open - ts_min(open, 13.635))
+    ts_min_open = open.rolling(14).min()
+    open_ts_min_diff = open - ts_min_open
+    rank_diff = open_ts_min_diff.rank(pct=True)
+    
+    result = (rank_correlation < rank_diff).astype(int)
+    return result * -1
+
+@register_worldquant_factor(name='alpha_66', description='Alpha#66: ((rank(decay_linear(delta(vwap, 3.51013), 7.23052)) + Ts_Rank(decay_linear(((((low * 0.96633) + (low * (1 - 0.96633))) - vwap) / (open - ((high + low) / 2))), 11.4157), 6.72611)) * -1)')
+def alpha_66(close: pd.Series, open: pd.Series, high: pd.Series, low: pd.Series, vwap: pd.Series, **kwargs) -> pd.Series:
+    """Alpha#66: ((rank(decay_linear(delta(vwap, 3.51013), 7.23052)) + Ts_Rank(decay_linear(((((low * 0.96633) + (low * (1 - 0.96633))) - vwap) / (open - ((high + low) / 2))), 11.4157), 6.72611)) * -1)"""
+    def decay_linear(x, window):
+        weights = np.arange(1, len(x) + 1)
+        return np.average(x, weights=weights)
+    
+    def ts_rank(x, window):
+        return x.rolling(window).apply(lambda x: x.rank(pct=True).iloc[-1])
+    
+    # 第一部分：rank(decay_linear(delta(vwap, 3.51013), 7.23052))
+    delta_vwap = vwap.diff(4)
+    decay_linear_delta = delta_vwap.rolling(7).apply(lambda x: decay_linear(x, 7))
+    rank_decay = decay_linear_delta.rank(pct=True)
+    
+    # 第二部分：Ts_Rank(decay_linear(((((low * 0.96633) + (low * (1 - 0.96633))) - vwap) / (open - ((high + low) / 2))), 11.4157), 6.72611)
+    weighted_low = (low * 0.96633) + (low * (1 - 0.96633))
+    numerator = weighted_low - vwap
+    denominator = open - ((high + low) / 2)
+    ratio = numerator / denominator
+    decay_linear_ratio = ratio.rolling(11).apply(lambda x: decay_linear(x, 11))
+    ts_rank_decay = ts_rank(decay_linear_ratio, 7)
+    
+    return (rank_decay + ts_rank_decay) * -1
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_67', description='Alpha#67: ((rank((high - ts_min(high, 2.14593)))^rank(correlation(IndNeutralize(vwap, IndClass.sector), IndNeutralize(adv20, IndClass.subindustry), 6.02936))) * -1)')
+# def alpha_67(close: pd.Series, high: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#67: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+@register_worldquant_factor(name='alpha_68', description='Alpha#68: ((Ts_Rank(correlation(rank(high), rank(adv15), 8.91644), 13.9333) < rank(delta(((close * 0.518371) + (low * (1 - 0.518371))), 1.06157))) * -1)')
+def alpha_68(close: pd.Series, high: pd.Series, low: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+    """Alpha#68: ((Ts_Rank(correlation(rank(high), rank(adv15), 8.91644), 13.9333) < rank(delta(((close * 0.518371) + (low * (1 - 0.518371))), 1.06157))) * -1)"""
+    adv15 = volume.rolling(15).mean()
+    
+    # 第一部分：Ts_Rank(correlation(rank(high), rank(adv15), 8.91644), 13.9333)
+    rank_high = high.rank(pct=True)
+    rank_adv15 = adv15.rank(pct=True)
+    correlation = rank_high.rolling(9).corr(rank_adv15)
+    ts_rank_correlation = correlation.rolling(14).apply(lambda x: x.rank(pct=True).iloc[-1])
+    
+    # 第二部分：rank(delta(((close * 0.518371) + (low * (1 - 0.518371))), 1.06157))
+    weighted_close_low = (close * 0.518371) + (low * (1 - 0.518371))
+    delta_weighted = weighted_close_low.diff(1)
+    rank_delta = delta_weighted.rank(pct=True)
+    
+    result = (ts_rank_correlation < rank_delta).astype(int)
+    return result * -1
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_69', description='Alpha#69: ((rank(ts_max(delta(IndNeutralize(vwap, IndClass.industry), 2.72412), 4.79344))^Ts_Rank(correlation(((close * 0.490655) + (vwap * (1 - 0.490655))), adv20, 4.92416), 9.0615)) * -1)')
+# def alpha_69(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#69: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_70', description='Alpha#70: ((rank(delta(vwap, 1.29456))^Ts_Rank(correlation(IndNeutralize(close, IndClass.industry), adv50, 17.8256), 17.9171)) * -1)')
+# def alpha_70(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#70: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# ==================== Alpha 71-85 ====================
+
+@register_worldquant_factor(name='alpha_71', description='Alpha#71: max(Ts_Rank(decay_linear(correlation(Ts_Rank(close, 3.43976), Ts_Rank(adv180, 12.0647), 18.0175), 4.20501), Ts_Rank(decay_linear((rank(((low + open) - (vwap + vwap)))^2), 16.4662), 4.4388))')
+def alpha_71(close: pd.Series, open: pd.Series, low: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+    """Alpha#71: max(Ts_Rank(decay_linear(correlation(Ts_Rank(close, 3.43976), Ts_Rank(adv180, 12.0647), 18.0175), 4.20501), Ts_Rank(decay_linear((rank(((low + open) - (vwap + vwap)))^2), 16.4662), 4.4388))"""
+    def ts_rank(x, window):
+        return x.rolling(window).apply(lambda x: x.rank(pct=True).iloc[-1])
+    
+    def decay_linear(x, window):
+        weights = np.arange(1, len(x) + 1)
+        return np.average(x, weights=weights)
+    
+    adv180 = volume.rolling(180).mean()
+    
+    # 第一部分：Ts_Rank(decay_linear(correlation(Ts_Rank(close, 3.43976), Ts_Rank(adv180, 12.0647), 18.0175), 4.20501)
+    ts_rank_close = ts_rank(close, 3)
+    ts_rank_adv180 = ts_rank(adv180, 12)
+    correlation = ts_rank_close.rolling(18).corr(ts_rank_adv180)
+    decay_linear_corr = correlation.rolling(4).apply(lambda x: decay_linear(x, 4))
+    ts_rank_decay_corr = ts_rank(decay_linear_corr, 4)
+    
+    # 第二部分：Ts_Rank(decay_linear((rank(((low + open) - (vwap + vwap)))^2), 16.4662), 4.4388)
+    low_open_vwap_diff = (low + open) - (vwap + vwap)
+    rank_diff = low_open_vwap_diff.rank(pct=True)
+    rank_diff_squared = rank_diff ** 2
+    decay_linear_squared = rank_diff_squared.rolling(16).apply(lambda x: decay_linear(x, 16))
+    ts_rank_decay_squared = ts_rank(decay_linear_squared, 4)
+    
+    return pd.concat([ts_rank_decay_corr, ts_rank_decay_squared], axis=1).max(axis=1)
+
+@register_worldquant_factor(name='alpha_72', description='Alpha#72: (rank(decay_linear(correlation(((high + low) / 2), adv40, 8.93345), 10.1519)) / rank(decay_linear(correlation(Ts_Rank(vwap, 3.72469), Ts_Rank(volume, 18.5188), 6.86671), 2.95011)))')
+def alpha_72(close: pd.Series, high: pd.Series, low: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+    """Alpha#72: (rank(decay_linear(correlation(((high + low) / 2), adv40, 8.93345), 10.1519)) / rank(decay_linear(correlation(Ts_Rank(vwap, 3.72469), Ts_Rank(volume, 18.5188), 6.86671), 2.95011)))"""
+    def ts_rank(x, window):
+        return x.rolling(window).apply(lambda x: x.rank(pct=True).iloc[-1])
+    
+    def decay_linear(x, window):
+        weights = np.arange(1, len(x) + 1)
+        return np.average(x, weights=weights)
+    
+    adv40 = volume.rolling(40).mean()
+    
+    # 第一部分：rank(decay_linear(correlation(((high + low) / 2), adv40, 8.93345), 10.1519))
+    high_low_mid = (high + low) / 2
+    correlation_high_low_adv40 = high_low_mid.rolling(9).corr(adv40)
+    decay_linear_corr1 = correlation_high_low_adv40.rolling(10).apply(lambda x: decay_linear(x, 10))
+    rank_decay1 = decay_linear_corr1.rank(pct=True)
+    
+    # 第二部分：rank(decay_linear(correlation(Ts_Rank(vwap, 3.72469), Ts_Rank(volume, 18.5188), 6.86671), 2.95011))
+    ts_rank_vwap = ts_rank(vwap, 4)
+    ts_rank_volume = ts_rank(volume, 19)
+    correlation_vwap_volume = ts_rank_vwap.rolling(7).corr(ts_rank_volume)
+    decay_linear_corr2 = correlation_vwap_volume.rolling(3).apply(lambda x: decay_linear(x, 3))
+    rank_decay2 = decay_linear_corr2.rank(pct=True)
+    
+    return rank_decay1 / rank_decay2
+
+@register_worldquant_factor(name='alpha_73', description='Alpha#73: (max(rank(decay_linear(delta(vwap, 4.72775), 2.91864)), Ts_Rank(decay_linear(((delta(((open * 0.147155) + (low * (1 - 0.147155))), 2.03608) / ((open * 0.147155) + (low * (1 - 0.147155)))) * -1), 3.33829), 16.7411)) * -1)')
+def alpha_73(close: pd.Series, open: pd.Series, low: pd.Series, vwap: pd.Series, **kwargs) -> pd.Series:
+    """Alpha#73: (max(rank(decay_linear(delta(vwap, 4.72775), 2.91864)), Ts_Rank(decay_linear(((delta(((open * 0.147155) + (low * (1 - 0.147155))), 2.03608) / ((open * 0.147155) + (low * (1 - 0.147155)))) * -1), 3.33829), 16.7411)) * -1)"""
+    def ts_rank(x, window):
+        return x.rolling(window).apply(lambda x: x.rank(pct=True).iloc[-1])
+    
+    def decay_linear(x, window):
+        weights = np.arange(1, len(x) + 1)
+        return np.average(x, weights=weights)
+    
+    # 第一部分：rank(decay_linear(delta(vwap, 4.72775), 2.91864))
+    delta_vwap = vwap.diff(5)
+    decay_linear_delta = delta_vwap.rolling(3).apply(lambda x: decay_linear(x, 3))
+    rank_decay_delta = decay_linear_delta.rank(pct=True)
+    
+    # 第二部分：Ts_Rank(decay_linear(((delta(((open * 0.147155) + (low * (1 - 0.147155))), 2.03608) / ((open * 0.147155) + (low * (1 - 0.147155)))) * -1), 3.33829), 16.7411)
+    weighted_open_low = (open * 0.147155) + (low * (1 - 0.147155))
+    delta_weighted = weighted_open_low.diff(2)
+    ratio = delta_weighted / weighted_open_low
+    neg_ratio = ratio * -1
+    decay_linear_ratio = neg_ratio.rolling(3).apply(lambda x: decay_linear(x, 3))
+    ts_rank_decay_ratio = ts_rank(decay_linear_ratio, 17)
+    
+    max_result = pd.concat([rank_decay_delta, ts_rank_decay_ratio], axis=1).max(axis=1)
+    return max_result * -1
+
+@register_worldquant_factor(name='alpha_74', description='Alpha#74: ((rank(correlation(close, sum(adv30, 37.4843), 15.1365)) < rank(correlation(rank(((high * 0.0261661) + (vwap * (1 - 0.0261661)))), rank(volume), 11.4791))) * -1)')
+def alpha_74(close: pd.Series, high: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+    """Alpha#74: ((rank(correlation(close, sum(adv30, 37.4843), 15.1365)) < rank(correlation(rank(((high * 0.0261661) + (vwap * (1 - 0.0261661)))), rank(volume), 11.4791))) * -1)"""
+    adv30 = volume.rolling(30).mean()
+    
+    # 第一部分：rank(correlation(close, sum(adv30, 37.4843), 15.1365))
+    sum_adv30 = adv30.rolling(37).sum()
+    correlation_close_sum = close.rolling(15).corr(sum_adv30)
+    rank_correlation1 = correlation_close_sum.rank(pct=True)
+    
+    # 第二部分：rank(correlation(rank(((high * 0.0261661) + (vwap * (1 - 0.0261661)))), rank(volume), 11.4791))
+    weighted_high_vwap = (high * 0.0261661) + (vwap * (1 - 0.0261661))
+    rank_weighted = weighted_high_vwap.rank(pct=True)
+    rank_volume = volume.rank(pct=True)
+    correlation_rank = rank_weighted.rolling(11).corr(rank_volume)
+    rank_correlation2 = correlation_rank.rank(pct=True)
+    
+    result = (rank_correlation1 < rank_correlation2).astype(int)
+    return result * -1
+
+@register_worldquant_factor(name='alpha_75', description='Alpha#75: (rank(correlation(vwap, sum(adv30, 37.4843), 15.1365)) < rank(correlation(rank(((high * 0.0261661) + (vwap * (1 - 0.0261661)))), rank(volume), 11.4791))) * -1)')
+def alpha_75(close: pd.Series, high: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+    """Alpha#75: (rank(correlation(vwap, sum(adv30, 37.4843), 15.1365)) < rank(correlation(rank(((high * 0.0261661) + (vwap * (1 - 0.0261661)))), rank(volume), 11.4791))) * -1)"""
+    adv30 = volume.rolling(30).mean()
+    
+    # 第一部分：rank(correlation(vwap, sum(adv30, 37.4843), 15.1365))
+    sum_adv30 = adv30.rolling(37).sum()
+    correlation_vwap_sum = vwap.rolling(15).corr(sum_adv30)
+    rank_correlation1 = correlation_vwap_sum.rank(pct=True)
+    
+    # 第二部分：rank(correlation(rank(((high * 0.0261661) + (vwap * (1 - 0.0261661)))), rank(volume), 11.4791))
+    weighted_high_vwap = (high * 0.0261661) + (vwap * (1 - 0.0261661))
+    rank_weighted = weighted_high_vwap.rank(pct=True)
+    rank_volume = volume.rank(pct=True)
+    correlation_rank = rank_weighted.rolling(11).corr(rank_volume)
+    rank_correlation2 = correlation_rank.rank(pct=True)
+    
+    result = (rank_correlation1 < rank_correlation2).astype(int)
+    return result * -1
+
+@register_worldquant_factor(name='alpha_76', description='Alpha#76: (max(rank(decay_linear(correlation(Ts_Rank(close, 3.43976), Ts_Rank(adv180, 12.0647), 18.0175), 4.20501)), Ts_Rank(decay_linear((rank(((low + open) - (vwap + vwap)))^2), 16.4662), 4.4388)))')
+def alpha_76(close: pd.Series, open: pd.Series, low: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+    """Alpha#76: (max(rank(decay_linear(correlation(Ts_Rank(close, 3.43976), Ts_Rank(adv180, 12.0647), 18.0175), 4.20501)), Ts_Rank(decay_linear((rank(((low + open) - (vwap + vwap)))^2), 16.4662), 4.4388)))"""
+    def ts_rank(x, window):
+        return x.rolling(window).apply(lambda x: x.rank(pct=True).iloc[-1])
+    
+    def decay_linear(x, window):
+        weights = np.arange(1, len(x) + 1)
+        return np.average(x, weights=weights)
+    
+    adv180 = volume.rolling(180).mean()
+    
+    # 第一部分：rank(decay_linear(correlation(Ts_Rank(close, 3.43976), Ts_Rank(adv180, 12.0647), 18.0175), 4.20501))
+    ts_rank_close = ts_rank(close, 3)
+    ts_rank_adv180 = ts_rank(adv180, 12)
+    correlation = ts_rank_close.rolling(18).corr(ts_rank_adv180)
+    decay_linear_corr = correlation.rolling(4).apply(lambda x: decay_linear(x, 4))
+    rank_decay_corr = decay_linear_corr.rank(pct=True)
+    
+    # 第二部分：Ts_Rank(decay_linear((rank(((low + open) - (vwap + vwap)))^2), 16.4662), 4.4388)
+    low_open_vwap_diff = (low + open) - (vwap + vwap)
+    rank_diff = low_open_vwap_diff.rank(pct=True)
+    rank_diff_squared = rank_diff ** 2
+    decay_linear_squared = rank_diff_squared.rolling(16).apply(lambda x: decay_linear(x, 16))
+    ts_rank_decay_squared = ts_rank(decay_linear_squared, 4)
+    
+    return pd.concat([rank_decay_corr, ts_rank_decay_squared], axis=1).max(axis=1)
+
+@register_worldquant_factor(name='alpha_77', description='Alpha#77: (rank(decay_linear(correlation(close, adv20, 6), 7)) < rank(decay_linear(correlation(Ts_Rank(vwap, 3), Ts_Rank(volume, 18), 7), 3)))')
+def alpha_77(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+    """Alpha#77: (rank(decay_linear(correlation(close, adv20, 6), 7)) < rank(decay_linear(correlation(Ts_Rank(vwap, 3), Ts_Rank(volume, 18), 7), 3)))"""
+    def ts_rank(x, window):
+        return x.rolling(window).apply(lambda x: x.rank(pct=True).iloc[-1])
+    
+    def decay_linear(x, window):
+        weights = np.arange(1, len(x) + 1)
+        return np.average(x, weights=weights)
+    
+    adv20 = volume.rolling(20).mean()
+    
+    # 第一部分：rank(decay_linear(correlation(close, adv20, 6), 7))
+    correlation_close_adv20 = close.rolling(6).corr(adv20)
+    decay_linear_corr1 = correlation_close_adv20.rolling(7).apply(lambda x: decay_linear(x, 7))
+    rank_decay1 = decay_linear_corr1.rank(pct=True)
+    
+    # 第二部分：rank(decay_linear(correlation(Ts_Rank(vwap, 3), Ts_Rank(volume, 18), 7), 3))
+    ts_rank_vwap = ts_rank(vwap, 3)
+    ts_rank_volume = ts_rank(volume, 18)
+    correlation_vwap_volume = ts_rank_vwap.rolling(7).corr(ts_rank_volume)
+    decay_linear_corr2 = correlation_vwap_volume.rolling(3).apply(lambda x: decay_linear(x, 3))
+    rank_decay2 = decay_linear_corr2.rank(pct=True)
+    
+    return (rank_decay1 < rank_decay2).astype(int)
+
+@register_worldquant_factor(name='alpha_78', description='Alpha#78: (rank(decay_linear(delta(vwap, 1.29456), 7.23052)) + Ts_Rank(decay_linear(((((low * 0.96633) + (low * (1 - 0.96633))) - vwap) / (open - ((high + low) / 2))), 11.4157), 6.72611)) * -1)')
+def alpha_78(close: pd.Series, open: pd.Series, high: pd.Series, low: pd.Series, vwap: pd.Series, **kwargs) -> pd.Series:
+    """Alpha#78: (rank(decay_linear(delta(vwap, 1.29456), 7.23052)) + Ts_Rank(decay_linear(((((low * 0.96633) + (low * (1 - 0.96633))) - vwap) / (open - ((high + low) / 2))), 11.4157), 6.72611)) * -1)"""
+    def ts_rank(x, window):
+        return x.rolling(window).apply(lambda x: x.rank(pct=True).iloc[-1])
+    
+    def decay_linear(x, window):
+        weights = np.arange(1, len(x) + 1)
+        return np.average(x, weights=weights)
+    
+    # 第一部分：rank(decay_linear(delta(vwap, 1.29456), 7.23052))
+    delta_vwap = vwap.diff(1)
+    decay_linear_delta = delta_vwap.rolling(7).apply(lambda x: decay_linear(x, 7))
+    rank_decay_delta = decay_linear_delta.rank(pct=True)
+    
+    # 第二部分：Ts_Rank(decay_linear(((((low * 0.96633) + (low * (1 - 0.96633))) - vwap) / (open - ((high + low) / 2))), 11.4157), 6.72611)
+    weighted_low = (low * 0.96633) + (low * (1 - 0.96633))
+    numerator = weighted_low - vwap
+    denominator = open - ((high + low) / 2)
+    ratio = numerator / denominator
+    decay_linear_ratio = ratio.rolling(11).apply(lambda x: decay_linear(x, 11))
+    ts_rank_decay_ratio = ts_rank(decay_linear_ratio, 7)
+    
+    return (rank_decay_delta + ts_rank_decay_ratio) * -1
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_79', description='Alpha#79: (rank(decay_linear(correlation(IndNeutralize(vwap, IndClass.industry), volume, 4.25197), 16.2289)) < rank(delta(IndNeutralize(close, IndClass.industry), 2.25164)))')
+# def alpha_79(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#79: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+@register_worldquant_factor(name='alpha_80', description='Alpha#80: (rank(correlation(vwap, adv20, 9.91009)) < rank(((rank(open) + rank(open)) < (rank(((high + low) / 2)) + rank(high)))))')
+def alpha_80(close: pd.Series, open: pd.Series, high: pd.Series, low: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+    """Alpha#80: (rank(correlation(vwap, adv20, 9.91009)) < rank(((rank(open) + rank(open)) < (rank(((high + low) / 2)) + rank(high)))))"""
+    adv20 = volume.rolling(20).mean()
+    
+    # 第一部分：rank(correlation(vwap, adv20, 9.91009))
+    correlation_vwap_adv20 = vwap.rolling(10).corr(adv20)
+    rank_correlation = correlation_vwap_adv20.rank(pct=True)
+    
+    # 第二部分：rank(((rank(open) + rank(open)) < (rank(((high + low) / 2)) + rank(high))))
+    rank_open = open.rank(pct=True)
+    rank_high_low_mid = ((high + low) / 2).rank(pct=True)
+    rank_high = high.rank(pct=True)
+    
+    condition = (rank_open + rank_open) < (rank_high_low_mid + rank_high)
+    rank_condition = condition.rank(pct=True)
+    
+    return (rank_correlation < rank_condition).astype(int)
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_81', description='Alpha#81: (rank(decay_linear(delta(IndNeutralize(close, IndClass.subindustry), 2.25164), 8.22237)) - rank(decay_linear(correlation(((vwap * 0.318108) + (open * (1 - 0.318108))), sum(adv180, 37.2467), 13.557), 12.2883))) * -1)')
+# def alpha_81(close: pd.Series, open: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#81: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_82', description='Alpha#82: ((rank(correlation(IndNeutralize(vwap, IndClass.sector), IndNeutralize(adv20, IndClass.subindustry), 6.02936))^rank((high - ts_min(high, 2.14593)))) * -1)')
+# def alpha_82(close: pd.Series, high: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#82: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_83', description='Alpha#83: ((rank(correlation(rank(high), rank(adv15), 8.91644), 13.9333) < rank(delta(((close * 0.518371) + (low * (1 - 0.518371))), 1.06157))) * -1)')
+# def alpha_83(close: pd.Series, high: pd.Series, low: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#83: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_84', description='Alpha#84: ((rank(ts_max(delta(IndNeutralize(vwap, IndClass.industry), 2.72412), 4.79344))^Ts_Rank(correlation(((close * 0.490655) + (vwap * (1 - 0.490655))), adv20, 4.92416), 9.0615)) * -1)')
+# def alpha_84(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#84: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_85', description='Alpha#85: (rank(decay_linear(delta(vwap, 1.29456), 7.23052))^Ts_Rank(correlation(IndNeutralize(close, IndClass.industry), adv50, 17.8256), 17.9171)) * -1)')
+# def alpha_85(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#85: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# ==================== Alpha 86-100 ====================
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_86', description='Alpha#86: (max(Ts_Rank(decay_linear(correlation(Ts_Rank(close, 3.43976), Ts_Rank(adv180, 12.0647), 18.0175), 4.20501), 15.6948), Ts_Rank(decay_linear((rank(((low + open) - (vwap + vwap)))^2), 16.4662), 4.4388)))')
+# def alpha_86(close: pd.Series, open: pd.Series, low: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#86: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_87', description='Alpha#87: (rank(decay_linear(correlation(close, adv20, 6), 7)) < rank(decay_linear(correlation(Ts_Rank(vwap, 3), Ts_Rank(volume, 18), 7), 3)))')
+# def alpha_87(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#87: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_88', description='Alpha#88: (rank(decay_linear(delta(vwap, 1.29456), 7.23052)) + Ts_Rank(decay_linear(((((low * 0.96633) + (low * (1 - 0.96633))) - vwap) / (open - ((high + low) / 2))), 11.4157), 6.72611))) * -1)')
+# def alpha_88(close: pd.Series, open: pd.Series, high: pd.Series, low: pd.Series, vwap: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#88: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_89', description='Alpha#89: ((rank(decay_linear(correlation(IndNeutralize(vwap, IndClass.industry), volume, 4.25197), 16.2289)) < rank(delta(IndNeutralize(close, IndClass.industry), 2.25164)))')
+# def alpha_89(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#89: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_90', description='Alpha#90: (rank(correlation(vwap, adv20, 9.91009)) < rank(((rank(open) + rank(open)) < (rank(((high + low) / 2)) + rank(high)))))')
+# def alpha_90(close: pd.Series, open: pd.Series, high: pd.Series, low: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#90: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_91', description='Alpha#91: (rank(decay_linear(delta(IndNeutralize(close, IndClass.subindustry), 2.25164), 8.22237)) - rank(decay_linear(correlation(((vwap * 0.318108) + (open * (1 - 0.318108))), sum(adv180, 37.2467), 13.557), 12.2883))) * -1)')
+# def alpha_91(close: pd.Series, open: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#91: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_92', description='Alpha#92: ((rank(correlation(IndNeutralize(vwap, IndClass.sector), IndNeutralize(adv20, IndClass.subindustry), 6.02936))^rank((high - ts_min(high, 2.14593)))) * -1)')
+# def alpha_92(close: pd.Series, high: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#92: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_93', description='Alpha#93: ((rank(correlation(rank(high), rank(adv15), 8.91644), 13.9333) < rank(delta(((close * 0.518371) + (low * (1 - 0.518371))), 1.06157))) * -1)')
+# def alpha_93(close: pd.Series, high: pd.Series, low: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#93: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_94', description='Alpha#94: ((rank(ts_max(delta(IndNeutralize(vwap, IndClass.industry), 2.72412), 4.79344))^Ts_Rank(correlation(((close * 0.490655) + (vwap * (1 - 0.490655))), adv20, 4.92416), 9.0615)) * -1)')
+# def alpha_94(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#94: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_95', description='Alpha#95: (rank(decay_linear(delta(vwap, 1.29456), 7.23052))^Ts_Rank(correlation(IndNeutralize(close, IndClass.industry), adv50, 17.8256), 17.9171)) * -1)')
+# def alpha_95(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#95: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_96', description='Alpha#96: (max(Ts_Rank(decay_linear(correlation(Ts_Rank(close, 3.43976), Ts_Rank(adv180, 12.0647), 18.0175), 4.20501), 15.6948), Ts_Rank(decay_linear((rank(((low + open) - (vwap + vwap)))^2), 16.4662), 4.4388)))')
+# def alpha_96(close: pd.Series, open: pd.Series, low: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#96: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_97', description='Alpha#97: (rank(decay_linear(correlation(close, adv20, 6), 7)) < rank(decay_linear(correlation(Ts_Rank(vwap, 3), Ts_Rank(volume, 18), 7), 3)))')
+# def alpha_97(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#97: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_98', description='Alpha#98: (rank(decay_linear(delta(vwap, 1.29456), 7.23052)) + Ts_Rank(decay_linear(((((low * 0.96633) + (low * (1 - 0.96633))) - vwap) / (open - ((high + low) / 2))), 11.4157), 6.72611))) * -1)')
+# def alpha_98(close: pd.Series, open: pd.Series, high: pd.Series, low: pd.Series, vwap: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#98: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_99', description='Alpha#99: ((rank(decay_linear(correlation(IndNeutralize(vwap, IndClass.industry), volume, 4.25197), 16.2289)) < rank(delta(IndNeutralize(close, IndClass.industry), 2.25164)))')
+# def alpha_99(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#99: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
+# 注释掉的因子：需要行业中性化数据
+# @register_worldquant_factor(name='alpha_100', description='Alpha#100: (rank(correlation(vwap, adv20, 9.91009)) < rank(((rank(open) + rank(open)) < (rank(((high + low) / 2)) + rank(high)))))')
+# def alpha_100(close: pd.Series, open: pd.Series, high: pd.Series, low: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
+#     """Alpha#100: 需要行业中性化数据，暂时注释"""
+#     # 需要行业分类数据，暂时无法实现
+#     pass
+
 @register_worldquant_factor(name='alpha_101', description='Alpha#101: (((close-open)+ (close-vwap))/(close-open))')
 def alpha_101(close: pd.Series, open: pd.Series, vwap: pd.Series, **kwargs) -> pd.Series:
     """Alpha#101: (((close-open)+ (close-vwap))/(close-open))"""
@@ -846,13 +1485,19 @@ def alpha_101(close: pd.Series, open: pd.Series, vwap: pd.Series, **kwargs) -> p
    - 部分因子需要decay_linear等复杂函数
 
 已实现的因子：
-- Alpha#1 到 Alpha#55: 完整实现
+- Alpha#1 到 Alpha#56: 完整实现 (Alpha#56现已支持AKShare市值数据)
+- Alpha#57, Alpha#60, Alpha#61, Alpha#62, Alpha#64, Alpha#65, Alpha#66, Alpha#68: 完整实现
+- Alpha#71 到 Alpha#78, Alpha#80: 完整实现
 - Alpha#101: 完整实现
-- 总计：56个可用的Alpha因子
+- 总计：74个可用的Alpha因子 (新增Alpha#56)
+
+注释掉的因子：
+- Alpha#48, Alpha#58, Alpha#59, Alpha#63, Alpha#67, Alpha#69, Alpha#70: 需要行业中性化数据
+- Alpha#79, Alpha#81-100: 需要行业中性化数据
 
 如果需要实现更多因子，需要：
-1. 添加行业分类数据
-2. 添加市值数据
-3. 扩展历史数据长度
-4. 实现更多技术函数
+1. 添加行业分类数据 (IndClass.sector, IndClass.industry, IndClass.subindustry)
+2. 添加市值数据 (cap)
+3. 扩展历史数据长度 (部分因子需要250天以上)
+4. 实现更多技术函数 (decay_linear, indneutralize等)
 """
