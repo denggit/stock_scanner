@@ -7,15 +7,23 @@
 @Date       : 2025-08-20
 """
 
+import traceback
 import warnings
 from datetime import datetime
 from typing import List, Optional, Callable, Any
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing
 
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
 from backend.business.factor.core.data.data_manager import FactorDataManager
+from backend.business.factor.core.config import (
+    DEFAULT_START_DATE, DEFAULT_END_DATE, DEFAULT_STOCK_POOL,
+    DEFAULT_TOP_N, DEFAULT_N_GROUPS, DEFAULT_USE_PARALLEL, DEFAULT_MAX_WORKERS,
+    DEFAULT_OPTIMIZE_DATA_FETCH
+)
 from backend.utils.logger import setup_logger
 from .factor_registry import factor_registry
 
@@ -25,6 +33,124 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=UserWarning)
 
 logger = setup_logger(__name__)
+
+
+def _calculate_single_factor_parallel(factor_name: str, 
+                                     data: pd.DataFrame,
+                                     start_date: str,
+                                     end_date: str,
+                                     stock_pool: str,
+                                     top_n: int,
+                                     n_groups: int,
+                                     **kwargs) -> tuple:
+    """
+    并行计算单个因子的辅助函数
+    
+    Args:
+        factor_name: 因子名称（将在此函数内部获取实际函数）
+        data: 输入数据
+        start_date: 开始日期
+        end_date: 结束日期
+        stock_pool: 股票池
+        top_n: 选股数量
+        n_groups: 分组数量
+        **kwargs: 其他参数
+        
+    Returns:
+        (factor_name, factor_values) 元组
+    """
+    try:
+        # 在子进程中重新获取因子函数，避免pickle问题
+        from .factor_registry import factor_registry
+        factor_func = factor_registry.get_factor(factor_name)
+        
+        if factor_func is None:
+            raise ValueError(f"因子 {factor_name} 未注册")
+        
+        # 确保数据按股票代码和交易日期排序
+        data = data.sort_values(['code', 'trade_date']).reset_index(drop=True)
+        
+        def calculate_factor_for_group(group_data):
+            """为单个股票组计算因子值"""
+            try:
+                # 获取股票代码用于错误日志
+                code = group_data['code'].iloc[0] if 'code' in group_data.columns else 'unknown'
+                
+                # 准备因子函数的参数
+                factor_kwargs = {
+                    'start_date': start_date,
+                    'end_date': end_date,
+                    'stock_pool': stock_pool,
+                    'top_n': top_n,
+                    'n_groups': n_groups,
+                    **kwargs
+                }
+                
+                # 调用因子函数，传入整个DataFrame
+                stock_factor = factor_func(group_data, **factor_kwargs)
+                
+                # 确保返回的是Series，并且索引与输入数据对齐
+                if isinstance(stock_factor, (int, float)):
+                    stock_factor = pd.Series([stock_factor] * len(group_data), 
+                                           index=group_data.index, 
+                                           name=factor_name)
+                elif isinstance(stock_factor, np.ndarray):
+                    stock_factor = pd.Series(stock_factor, 
+                                           index=group_data.index, 
+                                           name=factor_name)
+                elif isinstance(stock_factor, pd.Series):
+                    # 确保索引对齐
+                    if len(stock_factor) == len(group_data):
+                        stock_factor.index = group_data.index
+                        stock_factor.name = factor_name
+                    else:
+                        # 长度不匹配，用NaN填充
+                        stock_factor = pd.Series([np.nan] * len(group_data), 
+                                               index=group_data.index, 
+                                               name=factor_name)
+                else:
+                    # 其他类型，尝试转换
+                    try:
+                        stock_factor = pd.Series(stock_factor, 
+                                               index=group_data.index, 
+                                               name=factor_name)
+                    except:
+                        stock_factor = pd.Series([np.nan] * len(group_data), 
+                                               index=group_data.index, 
+                                               name=factor_name)
+                
+                return stock_factor
+                
+            except Exception as e:
+                # 捕获所有异常，返回NaN序列
+                code = group_data['code'].iloc[0] if 'code' in group_data.columns and len(group_data) > 0 else 'unknown'
+                return pd.Series([np.nan] * len(group_data), 
+                               index=group_data.index, 
+                               name=factor_name)
+        
+        # 使用向量化的groupby().apply()计算所有股票的因子值
+        factor_result = data.groupby('code', group_keys=False).apply(calculate_factor_for_group)
+        
+        # 处理可能的多级索引
+        if isinstance(factor_result.index, pd.MultiIndex):
+            factor_result = factor_result.droplevel(0)
+        
+        # 确保结果与原始数据长度一致
+        if len(factor_result) != len(data):
+            # 重建结果，确保长度一致
+            result = pd.Series([np.nan] * len(data), index=data.index, name=factor_name)
+            if len(factor_result) > 0:
+                # 尽可能对齐数据
+                common_indices = result.index.intersection(factor_result.index)
+                if len(common_indices) > 0:
+                    result.loc[common_indices] = factor_result.loc[common_indices]
+            factor_result = result
+        
+        return factor_name, factor_result
+        
+    except Exception as e:
+        # 返回错误信息
+        return factor_name, pd.Series([np.nan] * len(data), index=data.index, name=factor_name)
 
 
 def ensure_pandas_series(data: Any, index: Optional[pd.Index] = None) -> pd.Series:
@@ -86,12 +212,14 @@ class FactorEngine:
     def calculate_factors(self,
                          factor_names: List[str],
                          data: Optional[pd.DataFrame] = None,
-                         start_date: str = '2025-01-01',
+                         start_date: str = DEFAULT_START_DATE,
                          end_date: str = None,
-                         stock_pool: str = 'no_st',
-                         top_n: int = 10,
-                         n_groups: int = 5,
-                         optimize_data_fetch: bool = True,
+                         stock_pool: str = DEFAULT_STOCK_POOL,
+                         top_n: int = DEFAULT_TOP_N,
+                         n_groups: int = DEFAULT_N_GROUPS,
+                         optimize_data_fetch: bool = DEFAULT_OPTIMIZE_DATA_FETCH,
+                         use_parallel: bool = DEFAULT_USE_PARALLEL,
+                         max_workers: Optional[int] = DEFAULT_MAX_WORKERS,
                          **kwargs) -> pd.DataFrame:
         """
         批量计算因子值
@@ -104,6 +232,9 @@ class FactorEngine:
             stock_pool: 股票池，默认为'no_st'
             top_n: 选股数量，默认为10
             n_groups: 分组数量，默认为5
+            optimize_data_fetch: 是否优化数据获取，默认为True
+            use_parallel: 是否使用并行计算，默认为True
+            max_workers: 最大工作进程数，None表示使用CPU核心数
             **kwargs: 其他参数
             
         Returns:
@@ -148,31 +279,83 @@ class FactorEngine:
             else:
                 data = self.data_manager._processed_data.copy()
 
-        # 获取注册的因子
-
-        # 检查因子是否存在
+        # 获取注册的因子并检查是否存在
         missing_factors = []
-        factor_results = {}
-
-        for factor_name in tqdm(factor_names, desc="计算因子"):
-            try:
-                factor_func = factor_registry.get_factor(factor_name)
-                if factor_func is None:
-                    missing_factors.append(factor_name)
-                    continue
-
-                factor_values = self._calculate_single_factor(factor_func, data, start_date, end_date, stock_pool,
-                                                              top_n, n_groups, **kwargs)
-                factor_results[factor_name] = factor_values
-
-                logger.info(f"因子 {factor_name} 计算完成")
-
-            except Exception as e:
-                logger.error(f"计算因子 {factor_name} 失败: {e}")
-                continue
-
+        factor_funcs = {}
+        
+        for factor_name in factor_names:
+            factor_func = factor_registry.get_factor(factor_name)
+            if factor_func is None:
+                missing_factors.append(factor_name)
+            else:
+                factor_funcs[factor_name] = factor_func
+        
         if missing_factors:
             raise ValueError(f"以下因子未注册: {missing_factors}")
+        
+        if not factor_funcs:
+            raise ValueError("没有可计算的因子")
+        
+        factor_results = {}
+        
+        # 确定工作进程数
+        if max_workers is None:
+            max_workers = min(multiprocessing.cpu_count(), len(factor_funcs))
+        else:
+            max_workers = min(max_workers, len(factor_funcs))
+        
+        if use_parallel and max_workers > 1:
+            # 并行计算模式
+            logger.info(f"使用并行计算模式，工作进程数: {max_workers}")
+            
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                # 提交所有任务
+                future_to_factor = {}
+                for factor_name in factor_funcs.keys():
+                    future = executor.submit(
+                        _calculate_single_factor_parallel,
+                        factor_name,  # 只传递因子名称，避免pickle问题
+                        data,
+                        start_date,
+                        end_date,
+                        stock_pool,
+                        top_n,
+                        n_groups,
+                        **kwargs
+                    )
+                    future_to_factor[future] = factor_name
+                
+                # 收集结果
+                with tqdm(total=len(factor_funcs), desc="并行计算因子") as pbar:
+                    for future in as_completed(future_to_factor):
+                        factor_name = future_to_factor[future]
+                        try:
+                            result_factor_name, factor_values = future.result()
+                            factor_results[result_factor_name] = factor_values
+                            logger.info(f"因子 {result_factor_name} 计算完成")
+                        except Exception as e:
+                            logger.error(f"计算因子 {factor_name} 失败: {e}")
+                            # 创建空的因子结果
+                            factor_results[factor_name] = pd.Series([np.nan] * len(data), 
+                                                                   index=data.index, 
+                                                                   name=factor_name)
+                        pbar.update(1)
+        else:
+            # 串行计算模式
+            logger.info("使用串行计算模式")
+            
+            for factor_name, factor_func in tqdm(factor_funcs.items(), desc="计算因子"):
+                try:
+                    factor_values = self._calculate_single_factor(factor_func, data, start_date, end_date, stock_pool,
+                                                                  top_n, n_groups, **kwargs)
+                    factor_results[factor_name] = factor_values
+                    logger.info(f"因子 {factor_name} 计算完成")
+                except Exception as e:
+                    logger.error(f"计算因子 {factor_name} 失败: {e}")
+                    # 创建空的因子结果
+                    factor_results[factor_name] = pd.Series([np.nan] * len(data), 
+                                                           index=data.index, 
+                                                           name=factor_name)
 
         # 合并因子结果
         if factor_results:
@@ -180,8 +363,9 @@ class FactorEngine:
             factor_df['code'] = data['code'].values
             factor_df['trade_date'] = data['trade_date'].values
 
-            # 重新排列列顺序
-            cols = ['code', 'trade_date'] + list(factor_results.keys())
+            # 确保因子列按照原始factor_names的顺序排列
+            factor_cols = [name for name in factor_names if name in factor_results.keys()]
+            cols = ['code', 'trade_date'] + factor_cols
             factor_df = factor_df[cols]
 
             self._factor_data = factor_df
@@ -201,7 +385,7 @@ class FactorEngine:
                                  n_groups: int,
                                  **kwargs) -> pd.Series:
         """
-        计算单个因子值
+        计算单个因子值（向量化版本）
         
         Args:
             factor_func: 因子计算函数
@@ -216,21 +400,27 @@ class FactorEngine:
         Returns:
             因子值序列
         """
-        # 按股票分组计算
-        factor_values = []
-
-        for code in data['code'].unique():
-            stock_data = data[data['code'] == code].copy()
-            stock_data = stock_data.sort_values('trade_date').reset_index(drop=True)
-
+        # 获取因子名称用于错误日志
+        factor_name = factor_func.__name__ if hasattr(factor_func, '__name__') else 'unknown_factor'
+        
+        # 确保数据按股票代码和交易日期排序
+        data = data.sort_values(['code', 'trade_date']).reset_index(drop=True)
+        
+        def calculate_factor_for_group(group_data):
+            """
+            为单个股票组计算因子值
+            
+            Args:
+                group_data: 单个股票的历史数据 DataFrame
+                
+            Returns:
+                因子值序列
+            """
             try:
-                # 确保传递给因子函数的参数都是pandas Series
-                factor_params = {}
-                for col in stock_data.columns:
-                    if col not in ['code', 'trade_date']:
-                        factor_params[col] = ensure_pandas_series(stock_data[col], stock_data.index)
-
-                # 调用因子函数，传递所有参数
+                # 获取股票代码用于错误日志
+                code = group_data['code'].iloc[0] if 'code' in group_data.columns else 'unknown'
+                
+                # 准备因子函数的参数
                 factor_kwargs = {
                     'start_date': start_date,
                     'end_date': end_date,
@@ -239,23 +429,112 @@ class FactorEngine:
                     'n_groups': n_groups,
                     **kwargs
                 }
-                stock_factor = factor_func(**factor_params, **factor_kwargs)
-
-                # 确保返回的是Series
+                
+                # 调用因子函数，传入整个DataFrame
+                stock_factor = factor_func(group_data, **factor_kwargs)
+                
+                # 确保返回的是Series，并且索引与输入数据对齐
                 if isinstance(stock_factor, (int, float)):
-                    stock_factor = pd.Series([stock_factor] * len(stock_data), index=stock_data.index)
+                    stock_factor = pd.Series([stock_factor] * len(group_data), 
+                                           index=group_data.index, 
+                                           name=factor_name)
                 elif isinstance(stock_factor, np.ndarray):
-                    stock_factor = pd.Series(stock_factor, index=stock_data.index)
-
-                factor_values.append(stock_factor)
-
+                    stock_factor = pd.Series(stock_factor, 
+                                           index=group_data.index, 
+                                           name=factor_name)
+                elif isinstance(stock_factor, pd.Series):
+                    # 确保索引对齐
+                    if len(stock_factor) == len(group_data):
+                        stock_factor.index = group_data.index
+                        stock_factor.name = factor_name
+                    else:
+                        # 长度不匹配，用NaN填充
+                        logger.warning(f"股票 {code} 的因子 {factor_name} 计算结果长度不匹配，使用NaN填充")
+                        stock_factor = pd.Series([np.nan] * len(group_data), 
+                                               index=group_data.index, 
+                                               name=factor_name)
+                else:
+                    # 其他类型，尝试转换
+                    try:
+                        stock_factor = pd.Series(stock_factor, 
+                                               index=group_data.index, 
+                                               name=factor_name)
+                    except:
+                        stock_factor = pd.Series([np.nan] * len(group_data), 
+                                               index=group_data.index, 
+                                               name=factor_name)
+                
+                return stock_factor
+                
+            except (ValueError, KeyError, ZeroDivisionError, TypeError, IndexError) as e:
+                # 捕获具体的常见异常
+                code = group_data['code'].iloc[0] if 'code' in group_data.columns and len(group_data) > 0 else 'unknown'
+                error_msg = f"计算股票 {code} 的因子 {factor_name} 时发生 {type(e).__name__} 错误: {str(e)}"
+                logger.error(f"{error_msg}\n完整错误堆栈:\n{traceback.format_exc()}")
+                # 填充NaN并继续执行
+                return pd.Series([np.nan] * len(group_data), 
+                               index=group_data.index, 
+                               name=factor_name)
+                
+            except (pd.errors.EmptyDataError, pd.errors.ParserError) as e:
+                # 捕获pandas相关异常
+                code = group_data['code'].iloc[0] if 'code' in group_data.columns and len(group_data) > 0 else 'unknown'
+                error_msg = f"计算股票 {code} 的因子 {factor_name} 时发生pandas数据错误: {str(e)}"
+                logger.error(f"{error_msg}\n完整错误堆栈:\n{traceback.format_exc()}")
+                # 填充NaN并继续执行
+                return pd.Series([np.nan] * len(group_data), 
+                               index=group_data.index, 
+                               name=factor_name)
+                
+            except (np.linalg.LinAlgError, np.core._exceptions._UFuncNoLoopError) as e:
+                # 捕获numpy相关异常
+                code = group_data['code'].iloc[0] if 'code' in group_data.columns and len(group_data) > 0 else 'unknown'
+                error_msg = f"计算股票 {code} 的因子 {factor_name} 时发生numpy计算错误: {str(e)}"
+                logger.error(f"{error_msg}\n完整错误堆栈:\n{traceback.format_exc()}")
+                # 填充NaN并继续执行
+                return pd.Series([np.nan] * len(group_data), 
+                               index=group_data.index, 
+                               name=factor_name)
+                
             except Exception as e:
-                logger.warning(f"计算股票 {code} 因子失败: {e}")
-                # 填充NaN
-                factor_values.append(pd.Series([np.nan] * len(stock_data), index=stock_data.index))
-
-        # 合并所有股票的因子值
-        return pd.concat(factor_values, ignore_index=True)
+                # 捕获其他未预期的异常
+                code = group_data['code'].iloc[0] if 'code' in group_data.columns and len(group_data) > 0 else 'unknown'
+                error_msg = f"计算股票 {code} 的因子 {factor_name} 时发生未预期的错误 {type(e).__name__}: {str(e)}"
+                logger.error(f"{error_msg}\n完整错误堆栈:\n{traceback.format_exc()}")
+                # 填充NaN并继续执行
+                return pd.Series([np.nan] * len(group_data), 
+                               index=group_data.index, 
+                               name=factor_name)
+        
+        try:
+            # 使用向量化的groupby().apply()计算所有股票的因子值
+            logger.debug(f"开始向量化计算因子 {factor_name}，共 {data['code'].nunique()} 只股票")
+            factor_result = data.groupby('code', group_keys=False).apply(calculate_factor_for_group)
+            
+            # 处理可能的多级索引
+            if isinstance(factor_result.index, pd.MultiIndex):
+                # 如果是多级索引，取第二级（原始行索引）
+                factor_result = factor_result.droplevel(0)
+            
+            # 确保结果与原始数据长度一致
+            if len(factor_result) != len(data):
+                logger.warning(f"因子 {factor_name} 计算结果长度 {len(factor_result)} 与原始数据长度 {len(data)} 不一致")
+                # 重建结果，确保长度一致
+                result = pd.Series([np.nan] * len(data), index=data.index, name=factor_name)
+                if len(factor_result) > 0:
+                    # 尽可能对齐数据
+                    common_indices = result.index.intersection(factor_result.index)
+                    if len(common_indices) > 0:
+                        result.loc[common_indices] = factor_result.loc[common_indices]
+                factor_result = result
+            
+            logger.debug(f"因子 {factor_name} 向量化计算完成，结果长度: {len(factor_result)}")
+            return factor_result
+            
+        except Exception as e:
+            logger.error(f"向量化计算因子 {factor_name} 失败: {e}\n完整错误堆栈:\n{traceback.format_exc()}")
+            # 返回全NaN的Series作为fallback
+            return pd.Series([np.nan] * len(data), index=data.index, name=factor_name)
 
     def standardize_factors(self,
                             factor_names: Optional[List[str]] = None,

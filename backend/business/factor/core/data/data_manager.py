@@ -384,6 +384,8 @@ class FactorDataManager:
         """
         合并市场数据和财务数据
         
+        使用 pandas.merge_asof 进行高效的时间序列数据合并，替代原来的嵌套循环方式。
+        
         Args:
             market_data: 市场数据
             financial_data: 财务数据
@@ -397,10 +399,85 @@ class FactorDataManager:
 
         logger.info(f"开始合并市场数据({len(market_data)}条)和财务数据({len(financial_data)}条)")
 
-        # 确保日期格式一致
+        # 1. 确保日期格式一致并转换为datetime类型
+        market_data = market_data.copy()
+        financial_data = financial_data.copy()
+        
         market_data['trade_date'] = pd.to_datetime(market_data['trade_date'])
         financial_data['statDate'] = pd.to_datetime(financial_data['statDate'])
 
+        # 2. 确保数据已按日期排序（merge_asof的要求）
+        market_data = market_data.sort_values(['code', 'trade_date']).reset_index(drop=True)
+        financial_data = financial_data.sort_values(['code', 'statDate']).reset_index(drop=True)
+
+        # 3. 使用 merge_asof 进行高效合并
+        try:
+            # 重命名财务数据的日期列以便合并
+            financial_data_renamed = financial_data.rename(columns={'statDate': 'trade_date'})
+            
+            # 确保数据按合并键排序（merge_asof的要求）
+            # merge_asof要求整个数据框按trade_date排序，而不仅仅是按code和trade_date排序
+            market_data_sorted = market_data.sort_values('trade_date').reset_index(drop=True)
+            financial_data_sorted = financial_data_renamed.sort_values('trade_date').reset_index(drop=True)
+            
+            # 验证排序是否正确
+            if not market_data_sorted['trade_date'].is_monotonic_increasing:
+                logger.warning("市场数据日期排序不正确")
+                raise ValueError("市场数据日期排序失败")
+            
+            if not financial_data_sorted['trade_date'].is_monotonic_increasing:
+                logger.warning("财务数据日期排序不正确")
+                raise ValueError("财务数据日期排序失败")
+            
+            # 使用 merge_asof 进行合并
+            # left: market_data (交易日数据)
+            # right: financial_data_renamed (财务报告日数据)
+            # on: 'trade_date' (日期列)
+            # by: 'code' (按股票代码分组)
+            # direction: 'backward' (匹配最近的、不晚于交易日的财务报告)
+            merged_data = pd.merge_asof(
+                left=market_data_sorted,
+                right=financial_data_sorted,
+                on='trade_date',
+                by='code',
+                direction='backward',
+                suffixes=('', '_financial')
+            )
+            
+            # 4. 清理合并后的数据
+            # 移除财务数据特有的列（如pubDate等）
+            columns_to_drop = [col for col in merged_data.columns 
+                             if col.endswith('_financial') or col in ['pubDate']]
+            merged_data = merged_data.drop(columns=columns_to_drop, errors='ignore')
+            
+            # 5. 确保结果按原始顺序排列
+            merged_data = merged_data.sort_values(['code', 'trade_date']).reset_index(drop=True)
+            
+            logger.info(f"数据合并完成，共 {len(merged_data)} 条记录")
+            logger.info(f"合并效率提升: 使用 merge_asof 替代嵌套循环")
+            
+            return merged_data
+            
+        except Exception as e:
+            logger.error(f"使用 merge_asof 合并失败: {e}")
+            logger.info("回退到原始合并方法")
+            
+            # 回退到原始方法（如果 merge_asof 失败）
+            return self._merge_market_and_financial_data_fallback(market_data, financial_data)
+    
+    def _merge_market_and_financial_data_fallback(self, market_data: pd.DataFrame, financial_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        回退的合并方法（原始嵌套循环方式）
+        
+        Args:
+            market_data: 市场数据
+            financial_data: 财务数据
+            
+        Returns:
+            合并后的数据DataFrame
+        """
+        logger.info("使用回退方法合并数据")
+        
         # 为每个交易日找到最近的财务数据
         merged_data_list = []
 
@@ -443,10 +520,10 @@ class FactorDataManager:
 
         if merged_data_list:
             result = pd.concat(merged_data_list, ignore_index=True)
-            logger.info(f"数据合并完成，共 {len(result)} 条记录")
+            logger.info(f"回退方法数据合并完成，共 {len(result)} 条记录")
             return result
         else:
-            logger.warning("数据合并失败，返回市场数据")
+            logger.warning("回退方法数据合并失败，返回市场数据")
             return market_data.copy()
 
     def get_stock_pool(self, pool_name: str = "hs300", **kwargs) -> pd.DataFrame:

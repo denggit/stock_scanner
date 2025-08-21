@@ -15,19 +15,22 @@ from ..core.factor.base_factor import register_technical_factor
 # ==================== 通道分析因子 ====================
 
 @register_technical_factor(name='channel_distance', description='通道距离因子')
-def channel_distance(high: pd.Series, low: pd.Series, close: pd.Series, window: int = 20, **kwargs) -> pd.Series:
+def channel_distance(data: pd.DataFrame, window: int = 20, **kwargs) -> pd.Series:
     """
     通道距离因子：价格在通道中的相对位置
     
     Args:
-        high: 最高价序列
-        low: 最低价序列
-        close: 收盘价序列
-        window: 计算窗口
+        data: 单只股票的历史数据 DataFrame，包含 high, low, close 等列
+        window: 计算窗口，默认 20
+        **kwargs: 其他参数
         
     Returns:
         通道距离因子值 (-1到1之间，-1表示在下沿，1表示在上沿)
     """
+    high = data['high']
+    low = data['low']
+    close = data['close']
+    
     # 计算通道边界
     upper_channel = high.rolling(window).max()
     lower_channel = low.rolling(window).min()
@@ -41,21 +44,23 @@ def channel_distance(high: pd.Series, low: pd.Series, close: pd.Series, window: 
 
 
 @register_technical_factor(name='channel_breakout', description='通道突破因子')
-def channel_breakout(high: pd.Series, low: pd.Series, close: pd.Series, window: int = 20, threshold: float = 0.05,
-                     **kwargs) -> pd.Series:
+def channel_breakout(data: pd.DataFrame, window: int = 20, threshold: float = 0.05, **kwargs) -> pd.Series:
     """
     通道突破因子：检测价格突破通道边界
     
     Args:
-        high: 最高价序列
-        low: 最低价序列
-        close: 收盘价序列
-        window: 计算窗口
-        threshold: 突破阈值
+        data: 单只股票的历史数据 DataFrame，包含 high, low, close 等列
+        window: 计算窗口，默认 20
+        threshold: 突破阈值，默认 0.05
+        **kwargs: 其他参数
         
     Returns:
         突破因子值 (1表示向上突破，-1表示向下突破，0表示无突破)
     """
+    high = data['high']
+    low = data['low']
+    close = data['close']
+    
     # 计算通道边界
     upper_channel = high.rolling(window).max()
     lower_channel = low.rolling(window).min()
@@ -68,19 +73,22 @@ def channel_breakout(high: pd.Series, low: pd.Series, close: pd.Series, window: 
 
 
 @register_technical_factor(name='channel_width', description='通道宽度因子')
-def channel_width(high: pd.Series, low: pd.Series, close: pd.Series, window: int = 20, **kwargs) -> pd.Series:
+def channel_width(data: pd.DataFrame, window: int = 20, **kwargs) -> pd.Series:
     """
     通道宽度因子：通道的相对宽度
     
     Args:
-        high: 最高价序列
-        low: 最低价序列
-        close: 收盘价序列
-        window: 计算窗口
+        data: 单只股票的历史数据 DataFrame，包含 high, low, close 等列
+        window: 计算窗口，默认 20
+        **kwargs: 其他参数
         
     Returns:
         通道宽度因子值
     """
+    high = data['high']
+    low = data['low']
+    close = data['close']
+    
     # 计算通道边界
     upper_channel = high.rolling(window).max()
     lower_channel = low.rolling(window).min()
@@ -92,19 +100,21 @@ def channel_width(high: pd.Series, low: pd.Series, close: pd.Series, window: int
 
 
 @register_technical_factor(name='channel_trend', description='通道趋势因子')
-def channel_trend(high: pd.Series, low: pd.Series, close: pd.Series, window: int = 20, **kwargs) -> pd.Series:
+def channel_trend(data: pd.DataFrame, window: int = 20, **kwargs) -> pd.Series:
     """
     通道趋势因子：通道的趋势方向
     
     Args:
-        high: 最高价序列
-        low: 最低价序列
-        close: 收盘价序列
-        window: 计算窗口
+        data: 单只股票的历史数据 DataFrame，包含 high, low, close 等列
+        window: 计算窗口，默认 20
+        **kwargs: 其他参数
         
     Returns:
         通道趋势因子值 (正值表示上升趋势，负值表示下降趋势)
     """
+    high = data['high']
+    low = data['low']
+    
     # 计算通道中点
     upper_channel = high.rolling(window).max()
     lower_channel = low.rolling(window).min()

@@ -9,6 +9,7 @@
 
 from typing import Dict, List, Optional, Any
 
+import numpy as np
 import pandas as pd
 import vectorbt as vbt
 
@@ -412,28 +413,190 @@ class FactorBacktestEngine:
                 'max_drawdown': max_drawdown,
             }
         except Exception as e:
-            logger.warning(f"计算portfolio统计指标失败: {e}，使用简化指标")
-            # 使用简化的统计指标
+            logger.warning(f"计算portfolio统计指标失败: {e}，使用手动计算的详细指标")
+            # 使用手动计算的详细统计指标
             try:
                 returns = portfolio.returns()
                 if returns is not None and not returns.empty:
-                    stats = {
-                        'total_return': (1 + returns).prod() - 1,
-                        'max_drawdown': self._calculate_simple_max_drawdown(returns),
-                    }
+                    stats = self._calculate_manual_portfolio_stats(returns)
                 else:
-                    stats = {
-                        'total_return': 0.0,
-                        'max_drawdown': 0.0,
-                    }
+                    stats = self._get_default_stats()
             except Exception as e2:
-                logger.error(f"计算简化统计指标也失败: {e2}")
-                stats = {
-                    'total_return': 0.0,
-                    'max_drawdown': 0.0,
-                }
+                logger.error(f"计算手动统计指标也失败: {e2}")
+                stats = self._get_default_stats()
 
         return stats
+
+    def _calculate_manual_portfolio_stats(self, returns: pd.Series) -> Dict[str, float]:
+        """
+        手动计算详细的组合统计指标
+        
+        Args:
+            returns: 收益率序列
+            
+        Returns:
+            统计指标字典，指标名称与vectorbt的stats()方法保持一致
+        """
+        try:
+            # 移除NaN值
+            returns_clean = returns.dropna()
+            
+            if len(returns_clean) == 0:
+                return self._get_default_stats()
+            
+            # 计算基本指标
+            total_return = (1 + returns_clean).prod() - 1
+            annual_return = total_return * 252 / len(returns_clean) if len(returns_clean) > 0 else 0.0
+            volatility = returns_clean.std() * np.sqrt(252) if len(returns_clean) > 0 else 0.0
+            
+            # 计算最大回撤
+            max_drawdown = self._calculate_simple_max_drawdown(returns_clean)
+            
+            # 计算夏普比率（假设无风险利率为0）
+            sharpe_ratio = annual_return / volatility if volatility > 0 else 0.0
+            
+            # 计算卡玛比率
+            calmar_ratio = annual_return / abs(max_drawdown) if max_drawdown != 0 else 0.0
+            
+            # 计算索提诺比率（只考虑下行风险）
+            downside_returns = returns_clean[returns_clean < 0]
+            downside_volatility = downside_returns.std() * np.sqrt(252) if len(downside_returns) > 0 else 0.0
+            sortino_ratio = annual_return / downside_volatility if downside_volatility > 0 else 0.0
+            
+            # 计算VaR（95%置信水平）
+            var_95 = returns_clean.quantile(0.05) if len(returns_clean) > 0 else 0.0
+            
+            # 计算CVaR（条件VaR）
+            cvar_95 = returns_clean[returns_clean <= var_95].mean() if len(returns_clean[returns_clean <= var_95]) > 0 else 0.0
+            
+            # 计算胜率
+            win_rate = (returns_clean > 0).mean() * 100 if len(returns_clean) > 0 else 0.0
+            
+            # 计算盈亏比
+            winning_returns = returns_clean[returns_clean > 0]
+            losing_returns = returns_clean[returns_clean < 0]
+            avg_win = winning_returns.mean() if len(winning_returns) > 0 else 0.0
+            avg_loss = losing_returns.mean() if len(losing_returns) > 0 else 0.0
+            profit_factor = abs(avg_win / avg_loss) if avg_loss != 0 else float('inf')
+            
+            # 计算Omega比率
+            threshold = 0.0  # 使用0作为阈值
+            positive_returns = returns_clean[returns_clean > threshold]
+            negative_returns = returns_clean[returns_clean < threshold]
+            omega_ratio = (positive_returns.sum() / abs(negative_returns.sum()) 
+                          if negative_returns.sum() != 0 else float('inf'))
+            
+            # 构建统计指标字典，使用与vectorbt一致的名称
+            stats = {
+                'Total Return [%]': total_return * 100,
+                'Max Drawdown [%]': max_drawdown * 100,
+                'Sharpe Ratio': sharpe_ratio,
+                'Calmar Ratio': calmar_ratio,
+                'Sortino Ratio': sortino_ratio,
+                'Win Rate [%]': win_rate,
+                'Profit Factor': profit_factor,
+                'Omega Ratio': omega_ratio,
+                'Value at Risk [%]': var_95 * 100,
+                'Conditional VaR [%]': cvar_95 * 100,
+                'Annual Return [%]': annual_return * 100,
+                'Annual Volatility [%]': volatility * 100,
+                'Best Trade [%]': returns_clean.max() * 100,
+                'Worst Trade [%]': returns_clean.min() * 100,
+                'Avg Winning Trade [%]': avg_win * 100,
+                'Avg Losing Trade [%]': avg_loss * 100,
+                'Total Trades': len(returns_clean),
+                'Total Closed Trades': len(returns_clean),
+                'Total Open Trades': 0.0,
+                'Open Trade PnL': 0.0,
+                'Expectancy': (avg_win * (win_rate/100) + avg_loss * (1-win_rate/100)) * 100,
+                'Max Drawdown Duration': self._calculate_max_drawdown_duration(returns_clean),
+                'Avg Winning Trade Duration': 1.0,  # 简化处理
+                'Avg Losing Trade Duration': 1.0,   # 简化处理
+                'Start': returns.index[0] if len(returns) > 0 else None,
+                'End': returns.index[-1] if len(returns) > 0 else None,
+                'Period': len(returns),
+                'Start Value': 10000.0,  # 假设初始资金
+                'End Value': 10000.0 * (1 + total_return),
+                'Benchmark Return [%]': 0.0,  # 简化处理
+                'Max Gross Exposure [%]': 100.0,  # 简化处理
+                'Total Fees Paid': 0.0  # 简化处理
+            }
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"手动计算统计指标失败: {e}")
+            return self._get_default_stats()
+    
+    def _get_default_stats(self) -> Dict[str, float]:
+        """
+        获取默认的统计指标
+        
+        Returns:
+            默认统计指标字典
+        """
+        return {
+            'Total Return [%]': 0.0,
+            'Max Drawdown [%]': 0.0,
+            'Sharpe Ratio': 0.0,
+            'Calmar Ratio': 0.0,
+            'Sortino Ratio': 0.0,
+            'Win Rate [%]': 0.0,
+            'Profit Factor': 0.0,
+            'Omega Ratio': 0.0,
+            'Value at Risk [%]': 0.0,
+            'Conditional VaR [%]': 0.0,
+            'Annual Return [%]': 0.0,
+            'Annual Volatility [%]': 0.0,
+            'Best Trade [%]': 0.0,
+            'Worst Trade [%]': 0.0,
+            'Avg Winning Trade [%]': 0.0,
+            'Avg Losing Trade [%]': 0.0,
+            'Total Trades': 0.0,
+            'Total Closed Trades': 0.0,
+            'Total Open Trades': 0.0,
+            'Open Trade PnL': 0.0,
+            'Expectancy': 0.0,
+            'Max Drawdown Duration': 0.0,
+            'Avg Winning Trade Duration': 0.0,
+            'Avg Losing Trade Duration': 0.0,
+            'Start': None,
+            'End': None,
+            'Period': 0.0,
+            'Start Value': 10000.0,
+            'End Value': 10000.0,
+            'Benchmark Return [%]': 0.0,
+            'Max Gross Exposure [%]': 0.0,
+            'Total Fees Paid': 0.0
+        }
+    
+    def _calculate_max_drawdown_duration(self, returns: pd.Series) -> float:
+        """
+        计算最大回撤持续时间
+        
+        Args:
+            returns: 收益率序列
+            
+        Returns:
+            最大回撤持续时间（天数）
+        """
+        try:
+            cumulative = (1 + returns).cumprod()
+            running_max = cumulative.expanding().max()
+            drawdown = (cumulative - running_max) / running_max
+            
+            # 找到最大回撤的结束点
+            max_dd_idx = drawdown.idxmin()
+            
+            # 找到最大回撤的开始点（在最大回撤结束点之前的最高点）
+            peak_idx = cumulative.loc[:max_dd_idx].idxmax()
+            
+            # 计算持续时间
+            duration = (max_dd_idx - peak_idx).days if hasattr(max_dd_idx - peak_idx, 'days') else 0
+            
+            return float(duration)
+        except:
+            return 0.0
 
     def _calculate_simple_max_drawdown(self, returns: pd.Series) -> float:
         """

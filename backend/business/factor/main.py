@@ -13,6 +13,11 @@ from typing import Dict, List, Optional, Any
 
 import pandas as pd
 
+from backend.business.factor.core.config import (
+    DEFAULT_START_DATE, DEFAULT_END_DATE, DEFAULT_STOCK_POOL,
+    DEFAULT_TOP_N, DEFAULT_N_GROUPS, DEFAULT_BATCH_SIZE,
+    DEFAULT_REPORT_OUTPUT_DIR, DEFAULT_USE_PARALLEL, DEFAULT_MAX_WORKERS
+)
 from backend.utils.logger import setup_logger
 from .core.analysis.factor_analyzer import FactorAnalyzer
 from .core.backtest.backtest_engine import FactorBacktestEngine
@@ -31,7 +36,7 @@ class FactorResearchFramework:
     整合因子开发到回测的全流程，提供一站式因子研究解决方案
     """
 
-    def __init__(self, output_dir: str = "storage/reports"):
+    def __init__(self, output_dir: str = DEFAULT_REPORT_OUTPUT_DIR):
         """
         初始化因子研究框架
         
@@ -54,10 +59,10 @@ class FactorResearchFramework:
 
     def run_factor_research(self,
                             factor_names: List[str],
-                            start_date: str,
-                            end_date: str,
+                            start_date: str = DEFAULT_START_DATE,
+                            end_date: str = DEFAULT_END_DATE,
                             stock_codes: Optional[List[str]] = None,
-                            stock_pool: str = "hs300",
+                            stock_pool: str = DEFAULT_STOCK_POOL,
                             **kwargs) -> Dict[str, Any]:
         """
         运行完整的因子研究流程
@@ -109,14 +114,14 @@ class FactorResearchFramework:
             # TopN回测
             for factor_name in factor_names:
                 topn_result = self.backtest_engine.run_topn_backtest(
-                    factor_name, n=kwargs.get('top_n', 10)
+                    factor_name, n=kwargs.get('top_n', DEFAULT_TOP_N)
                 )
                 backtest_results[f'topn_{factor_name}'] = topn_result
 
             # 分组回测
             for factor_name in factor_names:
                 group_result = self.backtest_engine.run_group_backtest(
-                    factor_name, n_groups=kwargs.get('n_groups', 5)
+                    factor_name, n_groups=kwargs.get('n_groups', DEFAULT_N_GROUPS)
                 )
                 backtest_results[f'group_{factor_name}'] = group_result
 
@@ -157,10 +162,10 @@ class FactorResearchFramework:
 
     def run_single_factor_analysis(self,
                                    factor_name: str,
-                                   start_date: str,
-                                   end_date: str,
+                                   start_date: str = DEFAULT_START_DATE,
+                                   end_date: str = DEFAULT_END_DATE,
                                    stock_codes: Optional[List[str]] = None,
-                                   stock_pool: str = "hs300",
+                                   stock_pool: str = DEFAULT_STOCK_POOL,
                                    **kwargs) -> Dict[str, Any]:
         """
         运行单因子分析
@@ -182,10 +187,10 @@ class FactorResearchFramework:
 
     def run_factor_comparison(self,
                               factor_names: List[str],
-                              start_date: str,
-                              end_date: str,
+                              start_date: str = DEFAULT_START_DATE,
+                              end_date: str = DEFAULT_END_DATE,
                               stock_codes: Optional[List[str]] = None,
-                              stock_pool: str = "hs300",
+                              stock_pool: str = DEFAULT_STOCK_POOL,
                               **kwargs) -> Dict[str, Any]:
         """
         运行因子对比分析
@@ -344,11 +349,11 @@ class FactorResearchFramework:
     def generate_merged_comprehensive_report(self,
                                              factor_names: List[str],
                                              merged_results: Dict[str, Any],
-                                             start_date: str,
-                                             end_date: str,
-                                             stock_pool: str = "no_st",
-                                             top_n: int = 10,
-                                             n_groups: int = 5) -> str:
+                                             start_date: str = DEFAULT_START_DATE,
+                                             end_date: str = DEFAULT_END_DATE,
+                                             stock_pool: str = DEFAULT_STOCK_POOL,
+                                             top_n: int = DEFAULT_TOP_N,
+                                             n_groups: int = DEFAULT_N_GROUPS) -> str:
         """
         生成合并的综合报告（包含分析总结）
         
@@ -538,15 +543,15 @@ class FactorResearchFramework:
 
 
 # 便捷函数
-def create_factor_research_framework(output_dir: str = "storage/reports") -> FactorResearchFramework:
+def create_factor_research_framework(output_dir: str = DEFAULT_REPORT_OUTPUT_DIR) -> FactorResearchFramework:
     """创建因子研究框架实例"""
     return FactorResearchFramework(output_dir)
 
 
 def run_quick_factor_analysis(factor_name: str,
-                              start_date: str,
-                              end_date: str,
-                              stock_pool: str = "hs300",
+                              start_date: str = DEFAULT_START_DATE,
+                              end_date: str = DEFAULT_END_DATE,
+                              stock_pool: str = DEFAULT_STOCK_POOL,
                               **kwargs) -> Dict[str, Any]:
     """
     快速因子分析
