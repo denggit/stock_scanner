@@ -1360,8 +1360,8 @@ def alpha_47(data: pd.DataFrame, **kwargs) -> pd.Series:
 # 注释掉的因子：需要行业中性化数据
 #
 
-@register_worldquant_factor(name='alpha_48', description='Alpha#48: (indneutralize(((correlation(delta(close, 1), delta(delay(close, 1), 1), 250) * delta(close, 1)) / close), IndClass.subindustry) / sum(((delta(close, 1) / delay(close, 1))^2), 250))')
-# def alpha_48(close: pd.Series, **kwargs) -> pd.Series:
+# @register_worldquant_factor(name='alpha_48', description='Alpha#48: (indneutralize(((correlation(delta(close, 1), delta(delay(close, 1), 1), 250) * delta(close, 1)) / close), IndClass.subindustry) / sum(((delta(close, 1) / delay(close, 1))^2), 250))')
+# def alpha_48(data: pd.DataFrame, **kwargs) -> pd.Series:
 #     """Alpha#48: 需要行业中性化数据，暂时注释"""
 #     # 需要行业分类数据，暂时无法实现
 #     pass

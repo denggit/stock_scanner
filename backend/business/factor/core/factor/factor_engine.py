@@ -32,7 +32,7 @@ warnings.filterwarnings('ignore', category=RuntimeWarning)
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=UserWarning)
 
-logger = setup_logger(__name__)
+logger = setup_logger("backtest_factor")
 
 
 def _calculate_single_factor_parallel(factor_name: str, 
@@ -332,7 +332,7 @@ class FactorEngine:
                         try:
                             result_factor_name, factor_values = future.result()
                             factor_results[result_factor_name] = factor_values
-                            logger.info(f"因子 {result_factor_name} 计算完成")
+                            logger.debug(f"因子 {result_factor_name} 计算完成")
                         except Exception as e:
                             logger.error(f"计算因子 {factor_name} 失败: {e}")
                             # 创建空的因子结果
@@ -349,7 +349,7 @@ class FactorEngine:
                     factor_values = self._calculate_single_factor(factor_func, data, start_date, end_date, stock_pool,
                                                                   top_n, n_groups, **kwargs)
                     factor_results[factor_name] = factor_values
-                    logger.info(f"因子 {factor_name} 计算完成")
+                    logger.debug(f"因子 {factor_name} 计算完成")
                 except Exception as e:
                     logger.error(f"计算因子 {factor_name} 失败: {e}")
                     # 创建空的因子结果

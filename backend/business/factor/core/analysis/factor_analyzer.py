@@ -17,7 +17,7 @@ from backend.business.factor.core.data.data_manager import FactorDataManager
 from backend.business.factor.core.factor.factor_engine import FactorEngine
 from backend.utils.logger import setup_logger
 
-logger = setup_logger(__name__)
+logger = setup_logger("backtest_factor")
 
 
 class FactorAnalyzer:
@@ -60,7 +60,7 @@ class FactorAnalyzer:
         Returns:
             IC分析结果字典
         """
-        logger.info(f"开始计算因子IC: {factor_name}")
+        logger.debug(f"开始计算因子IC: {factor_name}")
 
         # 获取因子数据
         factor_data = self.factor_engine.get_factor_data()
@@ -102,7 +102,7 @@ class FactorAnalyzer:
             }
         }
 
-        logger.info(f"IC计算完成: {result_key}")
+        logger.debug(f"IC计算完成: {result_key}")
         return self._analysis_results[result_key]
 
     def calculate_rank_ic(self,
@@ -135,7 +135,7 @@ class FactorAnalyzer:
         Returns:
             因子有效性分析结果
         """
-        logger.info(f"开始分析因子有效性: {factor_name}")
+        logger.debug(f"开始分析因子有效性: {factor_name}")
 
         # 计算IC和RankIC
         ic_result = self.calculate_ic(factor_name, forward_period=forward_period)
@@ -161,7 +161,7 @@ class FactorAnalyzer:
         result_key = f"effectiveness_{factor_name}"
         self._analysis_results[result_key] = effectiveness_result
 
-        logger.info(f"因子有效性分析完成: {result_key}")
+        logger.debug(f"因子有效性分析完成: {result_key}")
         return effectiveness_result
 
     def analyze_factor_correlation(self,
@@ -175,7 +175,7 @@ class FactorAnalyzer:
         Returns:
             因子相关性分析结果
         """
-        logger.info(f"开始分析因子相关性: {factor_names}")
+        logger.debug(f"开始分析因子相关性: {factor_names}")
 
         # 获取因子数据
         factor_data = self.factor_engine.get_factor_data()
@@ -203,7 +203,7 @@ class FactorAnalyzer:
             'factor_names': factor_names
         }
 
-        logger.info(f"因子相关性分析完成: {result_key}")
+        logger.debug(f"因子相关性分析完成: {result_key}")
         return self._analysis_results[result_key]
 
     def _prepare_price_data(self) -> pd.DataFrame:

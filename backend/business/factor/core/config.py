@@ -61,7 +61,9 @@ MIN_WORKERS = 1
 MAX_WORKERS_LIMIT = 16
 
 # 数据获取配置
-DEFAULT_OPTIMIZE_DATA_FETCH = True
+DEFAULT_OPTIMIZE_DATA_FETCH = True  # 重新启用智能优化
+# 对于WorldQuant因子，建议设置为False以确保获取所有必要字段
+DEFAULT_OPTIMIZE_DATA_FETCH_FOR_WORLDQUANT = False
 DEFAULT_DATA_FIELDS = [
     'code', 'trade_date', 'open', 'high', 'low', 'close', 'preclose',
     'volume', 'amount', 'turn', 'tradestatus', 'pct_chg', 'pe_ttm',

@@ -17,7 +17,7 @@ from backend.business.factor.core.data.data_manager import FactorDataManager
 from backend.business.factor.core.factor.factor_engine import FactorEngine
 from backend.utils.logger import setup_logger
 
-logger = setup_logger(__name__)
+logger = setup_logger("backtest_factor")
 
 
 class FactorBacktestEngine:
@@ -65,7 +65,7 @@ class FactorBacktestEngine:
         Returns:
             回测结果字典
         """
-        logger.info(f"开始TopN回测: {factor_name}, N={n}")
+        logger.debug(f"开始TopN回测: {factor_name}, N={n}")
 
         # 获取因子数据
         factor_data = self.factor_engine.get_factor_data()
@@ -102,7 +102,7 @@ class FactorBacktestEngine:
             }
         }
 
-        logger.info(f"TopN回测完成: {result_key}")
+        logger.debug(f"TopN回测完成: {result_key}")
         return self._backtest_results[result_key]
 
     def run_group_backtest(self,
@@ -126,7 +126,7 @@ class FactorBacktestEngine:
         Returns:
             回测结果字典
         """
-        logger.info(f"开始分组回测: {factor_name}, 分组数={n_groups}")
+        logger.debug(f"开始分组回测: {factor_name}, 分组数={n_groups}")
 
         # 获取因子数据
         factor_data = self.factor_engine.get_factor_data()
@@ -180,7 +180,7 @@ class FactorBacktestEngine:
             }
         }
 
-        logger.info(f"分组回测完成: {result_key}")
+        logger.debug(f"分组回测完成: {result_key}")
         return self._backtest_results[result_key]
 
     def run_multifactor_backtest(self,
@@ -400,25 +400,58 @@ class FactorBacktestEngine:
             统计指标字典
         """
         try:
-            # 尝试使用vectorbt的统计指标，但避免单位问题
-            total_return = portfolio.total_return()
-
-            # 对于最大回撤，使用自定义计算避免单位问题
+            # 获取组合的整体收益率序列
             returns = portfolio.returns()
-            max_drawdown = self._calculate_simple_max_drawdown(
-                returns) if returns is not None and not returns.empty else 0.0
+            if returns is None or returns.empty:
+                logger.warning("portfolio.returns()返回None或空")
+                return self._get_default_stats()
+            
+            # 计算组合的整体收益率（所有股票的平均收益率）
+            if hasattr(returns, 'mean'):
+                # 如果returns是DataFrame，计算每行的平均值
+                portfolio_returns = returns.mean(axis=1)
+                logger.debug(f"使用DataFrame.mean(axis=1)，portfolio_returns长度: {len(portfolio_returns)}")
+            else:
+                # 如果returns是Series，直接使用
+                portfolio_returns = returns
+                logger.debug(f"直接使用Series，portfolio_returns长度: {len(portfolio_returns)}")
+            
+            # 计算总收益率
+            total_return = (1 + portfolio_returns).prod() - 1
+            logger.debug(f"计算得到total_return: {total_return}")
+            
+            # 确保total_return是标量值
+            if hasattr(total_return, 'iloc'):
+                total_return = total_return.iloc[0] if len(total_return) > 0 else 0.0
+                logger.debug(f"使用.iloc[0]后total_return: {total_return}")
+            elif hasattr(total_return, 'item'):
+                total_return = total_return.item()
+                logger.debug(f"使用.item()后total_return: {total_return}")
+            else:
+                total_return = float(total_return) if total_return is not None else 0.0
+                logger.debug(f"使用float()后total_return: {total_return}")
+
+            # 计算最大回撤
+            max_drawdown = self._calculate_simple_max_drawdown(portfolio_returns)
+            logger.debug(f"计算得到max_drawdown: {max_drawdown}")
 
             stats = {
                 'total_return': total_return,
                 'max_drawdown': max_drawdown,
             }
+            logger.debug(f"返回stats: {stats}")
         except Exception as e:
             logger.warning(f"计算portfolio统计指标失败: {e}，使用手动计算的详细指标")
             # 使用手动计算的详细统计指标
             try:
                 returns = portfolio.returns()
                 if returns is not None and not returns.empty:
-                    stats = self._calculate_manual_portfolio_stats(returns)
+                    # 计算组合的整体收益率
+                    if hasattr(returns, 'mean'):
+                        portfolio_returns = returns.mean(axis=1)
+                    else:
+                        portfolio_returns = returns
+                    stats = self._calculate_manual_portfolio_stats(portfolio_returns)
                 else:
                     stats = self._get_default_stats()
             except Exception as e2:
@@ -536,38 +569,38 @@ class FactorBacktestEngine:
             默认统计指标字典
         """
         return {
-            'Total Return [%]': 0.0,
-            'Max Drawdown [%]': 0.0,
-            'Sharpe Ratio': 0.0,
-            'Calmar Ratio': 0.0,
-            'Sortino Ratio': 0.0,
-            'Win Rate [%]': 0.0,
-            'Profit Factor': 0.0,
-            'Omega Ratio': 0.0,
-            'Value at Risk [%]': 0.0,
-            'Conditional VaR [%]': 0.0,
-            'Annual Return [%]': 0.0,
-            'Annual Volatility [%]': 0.0,
-            'Best Trade [%]': 0.0,
-            'Worst Trade [%]': 0.0,
-            'Avg Winning Trade [%]': 0.0,
-            'Avg Losing Trade [%]': 0.0,
-            'Total Trades': 0.0,
-            'Total Closed Trades': 0.0,
-            'Total Open Trades': 0.0,
-            'Open Trade PnL': 0.0,
-            'Expectancy': 0.0,
-            'Max Drawdown Duration': 0.0,
-            'Avg Winning Trade Duration': 0.0,
-            'Avg Losing Trade Duration': 0.0,
-            'Start': None,
-            'End': None,
-            'Period': 0.0,
-            'Start Value': 10000.0,
-            'End Value': 10000.0,
-            'Benchmark Return [%]': 0.0,
-            'Max Gross Exposure [%]': 0.0,
-            'Total Fees Paid': 0.0
+            'total_return': 0.0,
+            'max_drawdown': 0.0,
+            'sharpe_ratio': 0.0,
+            'calmar_ratio': 0.0,
+            'sortino_ratio': 0.0,
+            'win_rate': 0.0,
+            'profit_factor': 0.0,
+            'omega_ratio': 0.0,
+            'var_95': 0.0,
+            'cvar_95': 0.0,
+            'annual_return': 0.0,
+            'annual_volatility': 0.0,
+            'best_trade': 0.0,
+            'worst_trade': 0.0,
+            'avg_winning_trade': 0.0,
+            'avg_losing_trade': 0.0,
+            'total_trades': 0.0,
+            'total_closed_trades': 0.0,
+            'total_open_trades': 0.0,
+            'open_trade_pnl': 0.0,
+            'expectancy': 0.0,
+            'max_drawdown_duration': 0.0,
+            'avg_winning_trade_duration': 0.0,
+            'avg_losing_trade_duration': 0.0,
+            'start': None,
+            'end': None,
+            'period': 0.0,
+            'start_value': 10000.0,
+            'end_value': 10000.0,
+            'benchmark_return': 0.0,
+            'max_gross_exposure': 0.0,
+            'total_fees_paid': 0.0
         }
     
     def _calculate_max_drawdown_duration(self, returns: pd.Series) -> float:
@@ -606,15 +639,32 @@ class FactorBacktestEngine:
             returns: 收益率序列
             
         Returns:
-            最大回撤
+            最大回撤（标量值）
         """
-        try:
-            cumulative = (1 + returns).cumprod()
-            running_max = cumulative.expanding().max()
-            drawdown = (cumulative - running_max) / running_max
-            return drawdown.min()
-        except:
+        if returns is None or returns.empty:
             return 0.0
+        
+        # 计算累积收益
+        cumulative = (1 + returns).cumprod()
+        
+        # 计算滚动最大值
+        rolling_max = cumulative.expanding().max()
+        
+        # 计算回撤
+        drawdown = (cumulative - rolling_max) / rolling_max
+        
+        # 计算最大回撤
+        max_drawdown = drawdown.min()
+        
+        # 确保返回标量值
+        if hasattr(max_drawdown, 'iloc'):
+            max_drawdown = max_drawdown.iloc[0] if len(max_drawdown) > 0 else 0.0
+        elif hasattr(max_drawdown, 'item'):
+            max_drawdown = max_drawdown.item()
+        else:
+            max_drawdown = float(max_drawdown) if max_drawdown is not None else 0.0
+        
+        return max_drawdown
 
     def get_backtest_results(self, result_key: Optional[str] = None) -> Dict[str, Any]:
         """

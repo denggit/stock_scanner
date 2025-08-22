@@ -12,7 +12,7 @@ from typing import Dict, List, Callable, Optional, Any
 from functools import wraps
 from backend.utils.logger import setup_logger
 
-logger = setup_logger(__name__)
+logger = setup_logger("backtest_factor")
 
 class FactorRegistry:
     """

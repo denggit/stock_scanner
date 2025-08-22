@@ -21,7 +21,7 @@ from backend.business.factor.core.data.data_manager import FactorDataManager
 from backend.business.factor.core.factor.factor_engine import FactorEngine
 from backend.utils.logger import setup_logger
 
-logger = setup_logger(__name__)
+logger = setup_logger("backtest_factor")
 
 # 设置QuantStats
 qs.extend_pandas()
@@ -147,7 +147,6 @@ class FactorReportGenerator:
         # 生成汇总报告
         try:
             self._generate_summary_report(factor_names, report_path, **kwargs)
-            logger.info(f"汇总分析报告已生成: {report_path}")
             return report_path
         except Exception as e:
             logger.error(f"汇总分析报告生成失败: {e}")
@@ -257,12 +256,27 @@ class FactorReportGenerator:
         # 收集TopN回测结果
         for factor_name in factor_names:
             try:
-                result_key = f'topn_{factor_name}'
-                backtest_result = self.backtest_engine.get_backtest_results(result_key)
-                if backtest_result is None and hasattr(self, '_framework_results'):
-                    backtest_results = self._framework_results.get('backtest_results', {})
-                    backtest_result = backtest_results.get(result_key)
-
+                # 尝试多种可能的result_key格式
+                possible_keys = [
+                    f'topn_{factor_name}',  # 原始格式
+                    f'topn_{factor_name}_10',  # 带n参数的格式
+                    f'topn_{factor_name}_5',   # 可能的其他n值
+                    f'topn_{factor_name}_20'   # 可能的其他n值
+                ]
+                
+                backtest_result = None
+                used_key = None
+                
+                for result_key in possible_keys:
+                    backtest_result = self.backtest_engine.get_backtest_results(result_key)
+                    if backtest_result is None and hasattr(self, '_framework_results'):
+                        backtest_results = self._framework_results.get('backtest_results', {})
+                        backtest_result = backtest_results.get(result_key)
+                    
+                    if backtest_result is not None:
+                        used_key = result_key
+                        break
+                
                 if backtest_result and 'portfolio' in backtest_result:
                     portfolio = backtest_result['portfolio']
                     returns = portfolio.returns()
@@ -303,18 +317,40 @@ class FactorReportGenerator:
                                 'trading_days': len(returns_series),
                                 'returns': returns_series
                             }
+                            logger.info(f"成功收集因子 {factor_name} TopN结果，使用键: {used_key}")
+                        else:
+                            logger.warning(f"因子 {factor_name} TopN结果returns_series为空")
+                    else:
+                        logger.warning(f"因子 {factor_name} TopN结果portfolio.returns()为空或None")
+                else:
+                    logger.warning(f"因子 {factor_name} TopN结果未找到，尝试的键: {possible_keys}")
             except Exception as e:
                 logger.warning(f"收集因子 {factor_name} TopN结果失败: {e}")
 
         # 收集分组回测结果
         for factor_name in factor_names:
             try:
-                result_key = f'group_{factor_name}'
-                backtest_result = self.backtest_engine.get_backtest_results(result_key)
-                if backtest_result is None and hasattr(self, '_framework_results'):
-                    backtest_results = self._framework_results.get('backtest_results', {})
-                    backtest_result = backtest_results.get(result_key)
-
+                # 尝试多种可能的result_key格式
+                possible_keys = [
+                    f'group_{factor_name}',  # 原始格式
+                    f'group_{factor_name}_5',  # 带n_groups参数的格式
+                    f'group_{factor_name}_10', # 可能的其他n_groups值
+                    f'group_{factor_name}_3'   # 可能的其他n_groups值
+                ]
+                
+                backtest_result = None
+                used_key = None
+                
+                for result_key in possible_keys:
+                    backtest_result = self.backtest_engine.get_backtest_results(result_key)
+                    if backtest_result is None and hasattr(self, '_framework_results'):
+                        backtest_results = self._framework_results.get('backtest_results', {})
+                        backtest_result = backtest_results.get(result_key)
+                    
+                    if backtest_result is not None:
+                        used_key = result_key
+                        break
+                
                 if backtest_result and 'portfolios' in backtest_result:
                     portfolios = backtest_result['portfolios']
                     group_stats = {}
@@ -363,6 +399,11 @@ class FactorReportGenerator:
 
                     if group_stats:
                         summary_data['group_results'][factor_name] = group_stats
+                        logger.info(f"成功收集因子 {factor_name} 分组结果，使用键: {used_key}")
+                    else:
+                        logger.warning(f"因子 {factor_name} 分组结果group_stats为空")
+                else:
+                    logger.warning(f"因子 {factor_name} 分组结果未找到，尝试的键: {possible_keys}")
             except Exception as e:
                 logger.warning(f"收集因子 {factor_name} 分组结果失败: {e}")
 

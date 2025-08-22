@@ -15,7 +15,7 @@ import pandas as pd
 from backend.utils.logger import setup_logger
 from .factor_registry import factor_registry, register_factor
 
-logger = setup_logger(__name__)
+logger = setup_logger("backtest_factor")
 
 
 class BaseFactor(ABC):

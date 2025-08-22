@@ -26,7 +26,7 @@ from .core.factor.base_factor import BaseFactor
 from .core.factor.factor_engine import FactorEngine
 from .core.reporting.report_generator import FactorReportGenerator
 
-logger = setup_logger(__name__)
+logger = setup_logger("backtest_factor")
 
 
 class FactorResearchFramework:
@@ -114,14 +114,20 @@ class FactorResearchFramework:
             # TopN回测
             for factor_name in factor_names:
                 topn_result = self.backtest_engine.run_topn_backtest(
-                    factor_name, n=kwargs.get('top_n', DEFAULT_TOP_N)
+                    factor_name, 
+                    n=kwargs.get('top_n', DEFAULT_TOP_N),
+                    start_date=start_date,
+                    end_date=end_date
                 )
                 backtest_results[f'topn_{factor_name}'] = topn_result
 
             # 分组回测
             for factor_name in factor_names:
                 group_result = self.backtest_engine.run_group_backtest(
-                    factor_name, n_groups=kwargs.get('n_groups', DEFAULT_N_GROUPS)
+                    factor_name, 
+                    n_groups=kwargs.get('n_groups', DEFAULT_N_GROUPS),
+                    start_date=start_date,
+                    end_date=end_date
                 )
                 backtest_results[f'group_{factor_name}'] = group_result
 
@@ -230,8 +236,8 @@ class FactorResearchFramework:
             topn_key = f'topn_{factor_name}'
             if topn_key in results['backtest_results']:
                 topn_result = results['backtest_results'][topn_key]
-                if 'portfolio_stats' in topn_result:
-                    performance_comparison[factor_name] = topn_result['portfolio_stats']
+                if 'stats' in topn_result:
+                    performance_comparison[factor_name] = topn_result['stats']
 
         comparison_results['performance_comparison'] = performance_comparison
 

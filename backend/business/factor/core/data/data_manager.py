@@ -16,7 +16,7 @@ import pandas as pd
 from backend.business.data.data_fetcher import StockDataFetcher
 from backend.utils.logger import setup_logger
 
-logger = setup_logger(__name__)
+logger = setup_logger("backtest_factor")
 
 
 class FactorDataManager:

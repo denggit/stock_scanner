@@ -15,13 +15,14 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
 # 导入配置
 from backend.business.factor.core.config import (
     DEFAULT_START_DATE, DEFAULT_END_DATE, DEFAULT_STOCK_POOL,
-    DEFAULT_TOP_N, DEFAULT_N_GROUPS, DEFAULT_BATCH_SIZE
+    DEFAULT_TOP_N, DEFAULT_N_GROUPS, DEFAULT_BATCH_SIZE,
+    DEFAULT_OPTIMIZE_DATA_FETCH_FOR_WORLDQUANT
 )
 
 from backend.business.factor import create_factor_research_framework
 from backend.utils.logger import setup_logger
 
-logger = setup_logger(__name__)
+logger = setup_logger("backtest_factor")
 
 
 def run_momentum_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE, 
@@ -135,7 +136,8 @@ def run_channel_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE
 
 
 def run_worldquant_factors(start_date: str = DEFAULT_START_DATE, end_date: str = None, 
-                          stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS):
+                          stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS,
+                          optimize_data_fetch=DEFAULT_OPTIMIZE_DATA_FETCH_FOR_WORLDQUANT):
     """运行WorldQuant Alpha因子"""
     logger.info("=== 运行WorldQuant Alpha因子 ===")
 
@@ -168,7 +170,8 @@ def run_worldquant_factors(start_date: str = DEFAULT_START_DATE, end_date: str =
                 end_date=end_date,
                 stock_pool=stock_pool,
                 top_n=top_n,
-                n_groups=n_groups
+                n_groups=n_groups,
+                optimize_data_fetch=optimize_data_fetch
             )
             all_results[f'worldquant_batch_{i // batch_size + 1}'] = results
             logger.info(f"第 {i // batch_size + 1} 批WorldQuant因子运行成功，报告路径: {results['report_path']}")
@@ -181,7 +184,8 @@ def run_worldquant_factors(start_date: str = DEFAULT_START_DATE, end_date: str =
 
 def run_worldquant_factors_merged(start_date: str = DEFAULT_START_DATE, end_date: str = None, 
                                  batch_size: int = DEFAULT_BATCH_SIZE, stock_pool=DEFAULT_STOCK_POOL, 
-                                 top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS):
+                                 top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS,
+                                 optimize_data_fetch=DEFAULT_OPTIMIZE_DATA_FETCH_FOR_WORLDQUANT):
     """运行WorldQuant Alpha因子并合并为单一报告"""
     logger.info("=== 运行WorldQuant Alpha因子（合并报告模式） ===")
 
@@ -217,7 +221,8 @@ def run_worldquant_factors_merged(start_date: str = DEFAULT_START_DATE, end_date
                 end_date=end_date,
                 stock_pool=stock_pool,
                 top_n=top_n,
-                n_groups=n_groups
+                n_groups=n_groups,
+                optimize_data_fetch=optimize_data_fetch
             )
 
             # 合并结果
