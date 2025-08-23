@@ -108,34 +108,16 @@ class FactorResearchFramework:
 
             # 5. 回测分析
             logger.info("步骤5: 回测分析")
-            backtest_results = {}
-
-            # TopN回测
-            for factor_name in factor_names:
-                topn_result = self.backtest_engine.run_topn_backtest(
-                    factor_name, 
-                    n=kwargs.get('top_n', DEFAULT_TOP_N),
-                    start_date=start_date,
-                    end_date=end_date
-                )
-                backtest_results[f'topn_{factor_name}'] = topn_result
-
-            # 分组回测
-            for factor_name in factor_names:
-                group_result = self.backtest_engine.run_group_backtest(
-                    factor_name, 
-                    n_groups=kwargs.get('n_groups', DEFAULT_N_GROUPS),
-                    start_date=start_date,
-                    end_date=end_date
-                )
-                backtest_results[f'group_{factor_name}'] = group_result
-
-            # 多因子回测
-            if len(factor_names) > 1:
-                multifactor_result = self.backtest_engine.run_multifactor_backtest(
-                    factor_names, weights=kwargs.get('weights')
-                )
-                backtest_results['multifactor'] = multifactor_result
+            
+            # 调用专门的回测分析函数
+            self.run_backtest_analysis(
+                factor_names=factor_names,
+                top_n=kwargs.get('top_n', DEFAULT_TOP_N),
+                n_groups=kwargs.get('n_groups', DEFAULT_N_GROUPS)
+            )
+            
+            # 获取回测结果
+            backtest_results = self.backtest_engine.get_backtest_results()
 
             # 6. 生成报告
             logger.info("步骤6: 生成报告")
@@ -215,6 +197,45 @@ class FactorResearchFramework:
         return self.run_factor_research(
             [factor_name], start_date, end_date, stock_codes, stock_pool, **kwargs
         )
+
+    def run_backtest_analysis(self, factor_names: List[str], top_n: int = 10, n_groups: int = 5) -> None:
+        """
+        运行所有类型（TopN、分组、多因子）的回测分析。
+        """
+        logger.info("开始执行回测分析流程...")
+
+        # 1. 为每个因子运行TopN和分组回测
+        for factor_name in factor_names:
+            try:
+                logger.info(f"--- 正在为因子 '{factor_name}' 运行TopN回测 ---")
+                self.backtest_engine.run_topn_backtest(
+                    factor_name=factor_name,
+                    n=top_n
+                )
+            except Exception as e:
+                logger.error(f"因子 '{factor_name}' TopN回测失败: {e}", exc_info=True)
+
+            try:
+                logger.info(f"--- 正在为因子 '{factor_name}' 运行分组回测 ---")
+                self.backtest_engine.run_group_backtest(
+                    factor_name=factor_name,
+                    n_groups=n_groups
+                )
+            except Exception as e:
+                logger.error(f"因子 '{factor_name}' 分组回测失败: {e}", exc_info=True)
+
+        # 2. 运行多因子回测
+        if len(factor_names) > 1:
+            try:
+                logger.info(f"--- 正在运行多因子回测 ---")
+                self.backtest_engine.run_multifactor_backtest(
+                    factor_names=factor_names,
+                    n=top_n
+                )
+            except Exception as e:
+                logger.error(f"多因子回测失败: {e}", exc_info=True)
+
+        logger.info("所有回测分析流程执行完毕。")
 
     def run_factor_comparison(self,
                               factor_names: List[str],
