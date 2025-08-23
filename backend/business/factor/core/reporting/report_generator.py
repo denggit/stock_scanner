@@ -100,6 +100,10 @@ class FactorReportGenerator:
             except (ValueError, TypeError):
                 logger.warning(f"无法将字符串 '{value}' 从键 '{found_key}' 转换为浮点数")
                 return default
+        
+        # 如果键名包含 [%] 但值不是字符串，说明已经是百分比数值，需要除以100转换为小数
+        elif found_key and '[%]' in found_key and isinstance(value, (int, float, np.number)):
+            value = float(value) / 100.0
 
         if not isinstance(value, (int, float, np.number)):
             logger.warning(f"键 '{found_key}' 的值 '{value}' (类型: {type(value)}) 不是有效的数值")
@@ -453,13 +457,13 @@ class FactorReportGenerator:
             # 直接使用提取后的数据（已经处理了嵌套结构）
             sharpe_ratio = self._get_metric(
                 performance, 
-                ['sharpe_ratio', 'sharpe', 'sharpe_ratio_annual', 'Sharpe Ratio'], 
+                ['sharpe_ratio', 'smart_sharpe', 'sharpe', 'Sharpe', 'sharpe_ratio_annual', 'Sharpe Ratio'], 
                 default=0.0
             )
             
             annual_return = self._get_metric(
                 performance, 
-                ['annual_return', 'annual_ret', 'return_annual', 'Annual Return [%]'], 
+                ['annual_return', 'annual_ret', 'return_annual', 'Annual Return [%]', 'Annual Return', 'annual_ret_pct'], 
                 default=0.0
             )
             
@@ -809,13 +813,13 @@ class FactorReportGenerator:
             # 直接使用提取后的数据（已经处理了嵌套结构）
             sharpe_ratio = self._get_metric(
                 performance, 
-                ['sharpe_ratio', 'sharpe', 'sharpe_ratio_annual', 'Sharpe Ratio'], 
+                ['sharpe_ratio', 'sharpe', 'Sharpe', 'sharpe_ratio_annual', 'Sharpe Ratio'], 
                 default=0.0
             )
             
             annual_return = self._get_metric(
                 performance, 
-                ['annual_return', 'annual_ret', 'return_annual', 'Annual Return [%]'], 
+                ['annual_return', 'annual_ret', 'return_annual', 'Annual Return [%]', 'Annual Return'], 
                 default=0.0
             )
             
@@ -948,11 +952,11 @@ class FactorReportGenerator:
                 stats = result.get('stats', {})
 
                 # 使用完全正确的键名列表
-                total_return = self._get_metric(stats, ['Cumulative Return'])
-                annual_return = self._get_metric(stats, ['Annual Return'])
-                annual_volatility = self._get_metric(stats, ['Annual Volatility'])
-                sharpe_ratio = self._get_metric(stats, ['Sharpe Ratio'])
-                max_drawdown = self._get_metric(stats, ['Max Drawdown'])
+                total_return = self._get_metric(stats, ['Cumulative Return', 'total_return', 'Total Return [%]'])
+                annual_return = self._get_metric(stats, ['annual_return', 'annual_ret', 'return_annual', 'Annual Return [%]', 'Annual Return'])
+                annual_volatility = self._get_metric(stats, ['Annual Volatility', 'volatility', 'Annual Volatility [%]'])
+                sharpe_ratio = self._get_metric(stats, ['sharpe_ratio', 'sharpe', 'Sharpe', 'sharpe_ratio_annual', 'Sharpe Ratio'])
+                max_drawdown = self._get_metric(stats, ['Max Drawdown', 'max_drawdown', 'Max Drawdown [%]'])
                 # 'period' 的值可能是 '100 days' 这样的字符串，需要特殊处理
                 trading_days_str = stats.get('Period', '0 days')
                 trading_days = int(''.join(filter(str.isdigit, trading_days_str)))
