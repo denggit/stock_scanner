@@ -533,6 +533,7 @@
         // 数据表格初始化
         function initializeDataTables() {
             $('#performance-table').DataTable({
+                destroy: true, // 防止重复初始化
                 responsive: true,
                 pageLength: 25,
                 order: [[2, 'desc']], // 默认按年化收益率排序

@@ -140,10 +140,18 @@ class FactorResearchFramework:
             # 6. 生成报告
             logger.info("步骤6: 生成报告")
             
-            # 准备报告数据
+            # 准备报告数据 - 修复数据结构以匹配报告生成器的期望
+            # 从回测结果中提取性能指标，按因子名称组织
+            performance_metrics = {}
+            for factor_name in factor_names:
+                # 提取TopN回测结果
+                topn_key = f'topn_{factor_name}'
+                if topn_key in backtest_results:
+                    performance_metrics[factor_name] = backtest_results[topn_key]
+            
             report_data = {
                 'factor_names': factor_names,
-                'performance_metrics': backtest_results,
+                'performance_metrics': performance_metrics,
                 'ic_metrics': effectiveness_results,
                 'time_series_returns': {},  # 需要从回测结果中提取
                 'detailed_analysis': {}     # 需要从回测结果中提取

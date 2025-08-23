@@ -126,6 +126,7 @@ $(document).ready(function() {
 // 自定义DataTables配置
 $(document).ready(function() {
     $('#performance-table').DataTable({
+        destroy: true, // 防止重复初始化
         responsive: true,
         pageLength: 25,
         order: [[4, 'desc']], // 默认按夏普比率排序

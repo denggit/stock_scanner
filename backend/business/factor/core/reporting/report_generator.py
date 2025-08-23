@@ -457,13 +457,13 @@ class FactorReportGenerator:
             # 直接使用提取后的数据（已经处理了嵌套结构）
             sharpe_ratio = self._get_metric(
                 performance, 
-                ['sharpe_ratio', 'smart_sharpe', 'sharpe', 'Sharpe', 'sharpe_ratio_annual', 'Sharpe Ratio'], 
+                ['sharpe_ratio', 'sharpe', 'Sharpe', 'sharpe_ratio_annual', 'Sharpe Ratio'], 
                 default=0.0
             )
             
             annual_return = self._get_metric(
                 performance, 
-                ['annual_return', 'annual_ret', 'return_annual', 'Annual Return [%]', 'Annual Return', 'annual_ret_pct'], 
+                ['annual_return', 'annual_ret', 'return_annual', 'Annual Return [%]', 'Annual Return'], 
                 default=0.0
             )
             
@@ -953,7 +953,7 @@ class FactorReportGenerator:
 
                 # 使用完全正确的键名列表
                 total_return = self._get_metric(stats, ['Cumulative Return', 'total_return', 'Total Return [%]'])
-                annual_return = self._get_metric(stats, ['annual_return', 'annual_ret', 'return_annual', 'Annual Return [%]', 'Annual Return'])
+                annual_return = self._get_metric(stats, ['Annual Return', 'annual_return', 'Annual Return [%]'])
                 annual_volatility = self._get_metric(stats, ['Annual Volatility', 'volatility', 'Annual Volatility [%]'])
                 sharpe_ratio = self._get_metric(stats, ['sharpe_ratio', 'sharpe', 'Sharpe', 'sharpe_ratio_annual', 'Sharpe Ratio'])
                 max_drawdown = self._get_metric(stats, ['Max Drawdown', 'max_drawdown', 'Max Drawdown [%]'])
