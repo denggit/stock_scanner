@@ -43,7 +43,7 @@ class FactorResearchFramework:
         Args:
             output_dir: 输出目录
         """
-        self.output_dir = output_dir
+        self.output_dir = os.path.join(output_dir, datetime.now().strftime("%Y%m%d_%H%M%S"))
         os.makedirs(output_dir, exist_ok=True)
 
         # 初始化各个组件
@@ -379,7 +379,7 @@ class FactorResearchFramework:
 
         # 创建输出目录
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_dir = os.path.join(self.output_dir, f"worldquant{timestamp}")
+        report_dir = os.path.join(self.output_dir, f"comprehensive_report_总_{timestamp}")
         os.makedirs(report_dir, exist_ok=True)
 
         # 生成报告文件名

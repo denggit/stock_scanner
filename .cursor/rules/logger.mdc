@@ -1,0 +1,9 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+日志统一用
+from backend.utils.logger import setup_logger
+
+除非特殊情况无法使用或者不方便使用

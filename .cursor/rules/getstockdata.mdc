@@ -1,0 +1,18 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+想要用股票数据来测试的话可以如下：
+from backend.business.data.data_fetcher import StockDataFetcher
+import datetime
+
+fetcher = StockDataFetcher()
+df = fetcher.fetch_stock_data('sz.301383', start_date=(datetime.date.today() - datetime.timedelta(days=1000)).strftime("%Y-%m-%d"))
+
+df就是股票数据，columns如下：
+Index(['code', 'trade_date', 'open', 'high', 'low', 'close', 'preclose',
+       'volume', 'amount', 'turn', 'tradestatus', 'pct_chg', 'pe_ttm',
+       'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm', 'is_st', 'vwap'],
+      dtype='object')
