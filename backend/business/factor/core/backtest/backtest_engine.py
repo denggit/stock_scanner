@@ -44,6 +44,11 @@ class FactorBacktestEngine:
         self._backtest_results = {}
         self._portfolio_stats = {}
 
+    # 新增：统一的结果保存方法，便于日志追踪
+    def add_backtest_result(self, result_key: str, result: Dict[str, Any]) -> None:
+        self._backtest_results[result_key] = result
+        logger.info(f"回测结果已添加: {result_key}")
+
     def run_topn_backtest(self,
                           factor_name: str,
                           n: int = 10,
@@ -88,6 +93,14 @@ class FactorBacktestEngine:
 
         # 计算统计指标
         stats = self._calculate_portfolio_stats(portfolio)
+
+        # ---> INSERT THIS BLOCK <---
+        result_key = f'topn_{factor_name}'
+        self.add_backtest_result(result_key, {
+            'portfolio': portfolio,
+            'stats': stats
+        })
+        # ---> END OF BLOCK <---
 
         # 保存结果
         result_key = f"topn_{factor_name}_{n}"
@@ -175,6 +188,14 @@ class FactorBacktestEngine:
 
         # 合并统计结果
         combined_stats = pd.DataFrame(stats_list)
+
+        # ---> INSERT THIS BLOCK <---
+        result_key = f'group_{factor_name}'
+        self.add_backtest_result(result_key, {
+            'portfolios': portfolios,
+            'stats': combined_stats
+        })
+        # ---> END OF BLOCK <---
 
         # 保存结果
         result_key = f"group_{factor_name}_{n_groups}"
