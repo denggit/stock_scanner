@@ -352,20 +352,22 @@ class FactorResearchFramework:
             factor_names, output_dir=self.output_dir
         )
 
-    def generate_merged_comprehensive_report(self,
-                                             factor_names: List[str],
-                                             merged_results: Dict[str, Any],
-                                             start_date: str = DEFAULT_START_DATE,
-                                             end_date: str = DEFAULT_END_DATE,
-                                             stock_pool: str = DEFAULT_STOCK_POOL,
-                                             top_n: int = DEFAULT_TOP_N,
-                                             n_groups: int = DEFAULT_N_GROUPS) -> str:
+    def generate_comprehensive_report(self,
+                                     factor_names: List[str],
+                                     merged_results: Optional[Dict[str, Any]] = None,
+                                     analysis_summary: Optional[Dict[str, Any]] = None,
+                                     start_date: str = DEFAULT_START_DATE,
+                                     end_date: str = DEFAULT_END_DATE,
+                                     stock_pool: str = DEFAULT_STOCK_POOL,
+                                     top_n: int = DEFAULT_TOP_N,
+                                     n_groups: int = DEFAULT_N_GROUPS) -> str:
         """
-        生成合并的综合报告（包含分析总结）
+        生成综合分析报告（统一交互式版本）
         
         Args:
             factor_names: 因子名称列表
-            merged_results: 合并的结果字典
+            merged_results: 合并的回测结果字典（用于多因子）
+            analysis_summary: 分析总结字典（用于多因子）
             start_date: 开始日期
             end_date: 结束日期
             stock_pool: 股票池
@@ -375,40 +377,19 @@ class FactorResearchFramework:
         Returns:
             报告路径
         """
-        logger.info(f"开始生成合并的综合报告，包含 {len(factor_names)} 个因子")
-
-        # 创建输出目录
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_dir = os.path.join(self.output_dir, f"comprehensive_report_总_{timestamp}")
-        os.makedirs(report_dir, exist_ok=True)
-
-        # 生成报告文件名
-        report_filename = f"comprehensive_report_{timestamp}.html"
-        report_path = os.path.join(report_dir, report_filename)
-
-        # 生成分析总结
-        analysis_summary = self._generate_factor_analysis_summary(factor_names, merged_results)
-
-        # 生成合并报告
-        try:
-            self.report_generator.generate_merged_comprehensive_report(
-                factor_names=factor_names,
-                merged_results=merged_results,
-                analysis_summary=analysis_summary,
-                report_path=report_path,
-                start_date=start_date,
-                end_date=end_date,
-                stock_pool=stock_pool,
-                top_n=top_n,
-                n_groups=n_groups
-            )
-
-            logger.info(f"合并综合报告生成成功: {report_path}")
-            return report_path
-
-        except Exception as e:
-            logger.error(f"生成合并报告失败: {e}")
-            raise
+        logger.info(f"开始生成综合分析报告: {factor_names}")
+        
+        return self.report_generator.generate_comprehensive_report(
+            factor_names=factor_names,
+            merged_results=merged_results,
+            analysis_summary=analysis_summary,
+            output_dir=self.output_dir,
+            start_date=start_date,
+            end_date=end_date,
+            stock_pool=stock_pool,
+            top_n=top_n,
+            n_groups=n_groups
+        )
 
     def _generate_factor_analysis_summary(self, factor_names: List[str], merged_results: Dict[str, Any]) -> Dict[
         str, Any]:

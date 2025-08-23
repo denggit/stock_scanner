@@ -6,9 +6,9 @@
 @Author     : Zijun Deng
 @Date       : 2025-08-20
 """
-from datetime import datetime, date
 import os
 import sys
+from datetime import date
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
 
@@ -25,8 +25,8 @@ from backend.utils.logger import setup_logger
 logger = setup_logger("backtest_factor")
 
 
-def run_momentum_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE, 
-                        stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS):
+def run_momentum_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE,
+                         stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS):
     """运行动量类因子"""
     logger.info("=== 运行动量类因子 ===")
 
@@ -47,8 +47,8 @@ def run_momentum_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DAT
     return results
 
 
-def run_volatility_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE, 
-                          stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS):
+def run_volatility_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE,
+                           stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS):
     """运行波动率类因子"""
     logger.info("=== 运行波动率类因子 ===")
 
@@ -69,8 +69,8 @@ def run_volatility_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_D
     return results
 
 
-def run_technical_indicators(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE, 
-                           stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS):
+def run_technical_indicators(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE,
+                             stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS):
     """运行技术指标因子"""
     logger.info("=== 运行技术指标因子 ===")
 
@@ -91,8 +91,8 @@ def run_technical_indicators(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END
     return results
 
 
-def run_volume_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE, 
-                      stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS):
+def run_volume_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE,
+                       stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS):
     """运行成交量类因子"""
     logger.info("=== 运行成交量类因子 ===")
 
@@ -113,8 +113,8 @@ def run_volume_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE,
     return results
 
 
-def run_channel_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE, 
-                       stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS):
+def run_channel_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE,
+                        stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS):
     """运行通道分析因子"""
     logger.info("=== 运行通道分析因子 ===")
 
@@ -135,9 +135,9 @@ def run_channel_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE
     return results
 
 
-def run_worldquant_factors(start_date: str = DEFAULT_START_DATE, end_date: str = None, 
-                          stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS,
-                          optimize_data_fetch=DEFAULT_OPTIMIZE_DATA_FETCH_FOR_WORLDQUANT):
+def run_worldquant_factors(start_date: str = DEFAULT_START_DATE, end_date: str = None,
+                           stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS,
+                           optimize_data_fetch=DEFAULT_OPTIMIZE_DATA_FETCH_FOR_WORLDQUANT):
     """运行WorldQuant Alpha因子"""
     logger.info("=== 运行WorldQuant Alpha因子 ===")
 
@@ -182,10 +182,10 @@ def run_worldquant_factors(start_date: str = DEFAULT_START_DATE, end_date: str =
     return all_results
 
 
-def run_worldquant_factors_merged(start_date: str = DEFAULT_START_DATE, end_date: str = None, 
-                                 batch_size: int = DEFAULT_BATCH_SIZE, stock_pool=DEFAULT_STOCK_POOL, 
-                                 top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS,
-                                 optimize_data_fetch=DEFAULT_OPTIMIZE_DATA_FETCH_FOR_WORLDQUANT):
+def run_worldquant_factors_merged(start_date: str = DEFAULT_START_DATE, end_date: str = None,
+                                  batch_size: int = DEFAULT_BATCH_SIZE, stock_pool=DEFAULT_STOCK_POOL,
+                                  top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS,
+                                  optimize_data_fetch=DEFAULT_OPTIMIZE_DATA_FETCH_FOR_WORLDQUANT):
     """运行WorldQuant Alpha因子并合并为单一报告"""
     logger.info("=== 运行WorldQuant Alpha因子（合并报告模式） ===")
 
@@ -256,9 +256,10 @@ def run_worldquant_factors_merged(start_date: str = DEFAULT_START_DATE, end_date
 
     # 生成合并报告
     try:
-        report_path = framework.generate_merged_comprehensive_report(
+        report_path = framework.generate_comprehensive_report(
             factor_names=successful_factors,
             merged_results=merged_results,
+            analysis_summary=merged_results,
             start_date=start_date,
             end_date=end_date,
             stock_pool=stock_pool,
@@ -284,8 +285,8 @@ def run_worldquant_factors_merged(start_date: str = DEFAULT_START_DATE, end_date
         raise
 
 
-def run_fundamental_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE, 
-                           stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS):
+def run_fundamental_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE,
+                            stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS):
     """运行基本面因子"""
     logger.info("=== 运行基本面因子 ===")
 
@@ -306,8 +307,8 @@ def run_fundamental_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_
     return results
 
 
-def run_single_factor(factor_name: str, start_date: str = DEFAULT_START_DATE, end_date: str = None, 
-                     stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS):
+def run_single_factor(factor_name: str, start_date: str = DEFAULT_START_DATE, end_date: str = None,
+                      stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS):
     """运行单个因子"""
     logger.info(f"=== 运行单个因子: {factor_name} ===")
 
@@ -329,8 +330,8 @@ def run_single_factor(factor_name: str, start_date: str = DEFAULT_START_DATE, en
     return results
 
 
-def run_all_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE, 
-                   stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS):
+def run_all_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE,
+                    stock_pool=DEFAULT_STOCK_POOL, top_n=DEFAULT_TOP_N, n_groups=DEFAULT_N_GROUPS):
     """运行所有因子"""
     logger.info("=== 运行所有因子 ===")
 
@@ -367,9 +368,6 @@ def run_all_factors(start_date=DEFAULT_START_DATE, end_date=DEFAULT_END_DATE,
     return all_results
 
 
-
-
-
 if __name__ == "__main__":
     import argparse
 
@@ -395,8 +393,6 @@ if __name__ == "__main__":
     parser.add_argument('--n_groups', type=int, default=DEFAULT_N_GROUPS,
                         help='分组数量')
 
-
-
     args = parser.parse_args()
 
     try:
@@ -412,7 +408,8 @@ if __name__ == "__main__":
             run_channel_factors(args.start_date, args.end_date, args.stock_pool, args.top_n, args.n_groups)
         elif args.factor_type == 'worldquant':
             if args.merged:
-                run_worldquant_factors_merged(args.start_date, args.end_date, args.batch_size, args.stock_pool, args.top_n, args.n_groups)
+                run_worldquant_factors_merged(args.start_date, args.end_date, args.batch_size, args.stock_pool,
+                                              args.top_n, args.n_groups)
             else:
                 run_worldquant_factors(args.start_date, args.end_date, args.stock_pool, args.top_n, args.n_groups)
         elif args.factor_type == 'fundamental':
@@ -421,7 +418,8 @@ if __name__ == "__main__":
             if args.factor_name is None:
                 logger.error("运行单个因子时必须指定factor_name参数")
                 sys.exit(1)
-            run_single_factor(args.factor_name, args.start_date, args.end_date, args.stock_pool, args.top_n, args.n_groups)
+            run_single_factor(args.factor_name, args.start_date, args.end_date, args.stock_pool, args.top_n,
+                              args.n_groups)
         elif args.factor_type == 'all':
             run_all_factors(args.start_date, args.end_date, args.stock_pool, args.top_n, args.n_groups)
         else:
