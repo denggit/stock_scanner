@@ -277,7 +277,82 @@ class FactorReportGenerator:
                         used_key = result_key
                         break
                 
-                if backtest_result and 'portfolio' in backtest_result:
+                if backtest_result and 'stats' in backtest_result:
+                    # 直接使用回测引擎已经计算好的stats
+                    stats = backtest_result['stats']
+                    total_return = stats.get('total_return', 0.0)
+                    max_drawdown = stats.get('max_drawdown', 0.0)
+                    
+                    # 确保total_return是标量值
+                    if hasattr(total_return, 'iloc'):
+                        total_return = total_return.iloc[0] if len(total_return) > 0 else 0.0
+                    elif hasattr(total_return, 'item'):
+                        total_return = total_return.item()
+                    else:
+                        total_return = float(total_return) if total_return is not None else 0.0
+                    
+                    # 确保max_drawdown是标量值
+                    if hasattr(max_drawdown, 'iloc'):
+                        max_drawdown = max_drawdown.iloc[0] if len(max_drawdown) > 0 else 0.0
+                    elif hasattr(max_drawdown, 'item'):
+                        max_drawdown = max_drawdown.item()
+                    else:
+                        max_drawdown = float(max_drawdown) if max_drawdown is not None else 0.0
+                    
+                    # 计算其他指标（如果需要）
+                    if 'portfolio' in backtest_result:
+                        portfolio = backtest_result['portfolio']
+                        returns = portfolio.returns()
+                        if returns is not None and not returns.empty:
+                            # 处理returns数据
+                            if isinstance(returns, pd.Series):
+                                returns_series = returns.dropna()
+                            elif isinstance(returns, pd.DataFrame):
+                                if returns.shape[1] == 1:
+                                    returns_series = returns.iloc[:, 0].dropna()
+                                else:
+                                    returns_series = returns.mean(axis=1).dropna()
+                            elif isinstance(returns, np.ndarray):
+                                if returns.ndim == 1:
+                                    returns_series = pd.Series(returns).dropna()
+                                else:
+                                    returns_series = pd.Series(returns.mean(axis=1)).dropna()
+                            else:
+                                returns_series = pd.Series(returns).dropna()
+
+                            if len(returns_series) > 0:
+                                annual_return = total_return * 252 / len(returns_series) if len(returns_series) > 0 else 0
+                                volatility = returns_series.std() * np.sqrt(252) if len(returns_series) > 0 else 0
+                                sharpe_ratio = annual_return / volatility if volatility > 0 else 0
+
+                                summary_data['topn_results'][factor_name] = {
+                                    'total_return': total_return,
+                                    'annual_return': annual_return,
+                                    'volatility': volatility,
+                                    'sharpe_ratio': sharpe_ratio,
+                                    'max_drawdown': max_drawdown,
+                                    'trading_days': len(returns_series),
+                                    'returns': returns_series
+                                }
+                                logger.info(f"成功收集因子 {factor_name} TopN结果，使用键: {used_key}")
+                            else:
+                                logger.warning(f"因子 {factor_name} TopN结果returns_series为空")
+                        else:
+                            logger.warning(f"因子 {factor_name} TopN结果portfolio.returns()为空或None")
+                    else:
+                        # 如果没有portfolio，只使用stats中的基本指标
+                        summary_data['topn_results'][factor_name] = {
+                            'total_return': total_return,
+                            'annual_return': 0.0,
+                            'volatility': 0.0,
+                            'sharpe_ratio': 0.0,
+                            'max_drawdown': max_drawdown,
+                            'trading_days': 0,
+                            'returns': pd.Series()
+                        }
+                        logger.info(f"成功收集因子 {factor_name} TopN结果（仅stats），使用键: {used_key}")
+                elif backtest_result and 'portfolio' in backtest_result:
+                    # 如果没有stats，使用原来的计算方法
                     portfolio = backtest_result['portfolio']
                     returns = portfolio.returns()
                     if returns is not None and not returns.empty:
@@ -317,7 +392,7 @@ class FactorReportGenerator:
                                 'trading_days': len(returns_series),
                                 'returns': returns_series
                             }
-                            logger.info(f"成功收集因子 {factor_name} TopN结果，使用键: {used_key}")
+                            logger.info(f"成功收集因子 {factor_name} TopN结果（重新计算），使用键: {used_key}")
                         else:
                             logger.warning(f"因子 {factor_name} TopN结果returns_series为空")
                     else:
@@ -351,7 +426,90 @@ class FactorReportGenerator:
                         used_key = result_key
                         break
                 
-                if backtest_result and 'portfolios' in backtest_result:
+                if backtest_result and 'stats' in backtest_result:
+                    # 直接使用回测引擎已经计算好的stats
+                    stats = backtest_result['stats']
+                    total_return = stats.get('total_return', 0.0)
+                    max_drawdown = stats.get('max_drawdown', 0.0)
+                    
+                    # 确保total_return是标量值
+                    if hasattr(total_return, 'iloc'):
+                        total_return = total_return.iloc[0] if len(total_return) > 0 else 0.0
+                    elif hasattr(total_return, 'item'):
+                        total_return = total_return.item()
+                    else:
+                        total_return = float(total_return) if total_return is not None else 0.0
+                    
+                    # 确保max_drawdown是标量值
+                    if hasattr(max_drawdown, 'iloc'):
+                        max_drawdown = max_drawdown.iloc[0] if len(max_drawdown) > 0 else 0.0
+                    elif hasattr(max_drawdown, 'item'):
+                        max_drawdown = max_drawdown.item()
+                    else:
+                        max_drawdown = float(max_drawdown) if max_drawdown is not None else 0.0
+                    
+                    # 计算其他指标（如果需要）
+                    if 'portfolios' in backtest_result:
+                        portfolios = backtest_result['portfolios']
+                        group_stats = {}
+
+                        for group_name, portfolio in portfolios.items():
+                            try:
+                                returns = portfolio.returns()
+                                if returns is not None and not returns.empty:
+                                    # 处理returns数据
+                                    if isinstance(returns, pd.Series):
+                                        returns_series = returns.dropna()
+                                    elif isinstance(returns, pd.DataFrame):
+                                        if returns.shape[1] == 1:
+                                            returns_series = returns.iloc[:, 0].dropna()
+                                        else:
+                                            returns_series = returns.mean(axis=1).dropna()
+                                    elif isinstance(returns, np.ndarray):
+                                        if returns.ndim == 1:
+                                            returns_series = pd.Series(returns).dropna()
+                                        else:
+                                            returns_series = pd.Series(returns.mean(axis=1)).dropna()
+                                    else:
+                                        returns_series = pd.Series(returns).dropna()
+
+                                    if len(returns_series) > 0:
+                                        annual_return = total_return * 252 / len(returns_series) if len(
+                                            returns_series) > 0 else 0
+                                        volatility = returns_series.std() * np.sqrt(252) if len(returns_series) > 0 else 0
+                                        sharpe_ratio = annual_return / volatility if volatility > 0 else 0
+
+                                        group_stats[group_name] = {
+                                            'total_return': total_return,
+                                            'annual_return': annual_return,
+                                            'volatility': volatility,
+                                            'sharpe_ratio': sharpe_ratio,
+                                            'max_drawdown': max_drawdown,
+                                            'trading_days': len(returns_series)
+                                        }
+                            except Exception as e:
+                                logger.warning(f"收集分组 {group_name} 结果失败: {e}")
+
+                        if group_stats:
+                            summary_data['group_results'][factor_name] = group_stats
+                            logger.info(f"成功收集因子 {factor_name} 分组结果，使用键: {used_key}")
+                        else:
+                            logger.warning(f"因子 {factor_name} 分组结果group_stats为空")
+                    else:
+                        # 如果没有portfolios，只使用stats中的基本指标
+                        summary_data['group_results'][factor_name] = {
+                            'group_1': {
+                                'total_return': total_return,
+                                'annual_return': 0.0,
+                                'volatility': 0.0,
+                                'sharpe_ratio': 0.0,
+                                'max_drawdown': max_drawdown,
+                                'trading_days': 0
+                            }
+                        }
+                        logger.info(f"成功收集因子 {factor_name} 分组结果（仅stats），使用键: {used_key}")
+                elif backtest_result and 'portfolios' in backtest_result:
+                    # 如果没有stats，使用原来的计算方法
                     portfolios = backtest_result['portfolios']
                     group_stats = {}
 
@@ -399,7 +557,7 @@ class FactorReportGenerator:
 
                     if group_stats:
                         summary_data['group_results'][factor_name] = group_stats
-                        logger.info(f"成功收集因子 {factor_name} 分组结果，使用键: {used_key}")
+                        logger.info(f"成功收集因子 {factor_name} 分组结果（重新计算），使用键: {used_key}")
                     else:
                         logger.warning(f"因子 {factor_name} 分组结果group_stats为空")
                 else:

@@ -6,7 +6,7 @@
 @Author     : Zijun Deng
 @Date       : 2025-08-21
 """
-
+import datetime
 import os
 from datetime import date
 from typing import Dict, Any
@@ -20,7 +20,7 @@ DEFAULT_START_DATE = '2025-01-01'
 DEFAULT_END_DATE = date.today().strftime("%Y-%m-%d")
 
 # 默认股票池配置
-DEFAULT_STOCK_POOL = 'no_st'
+DEFAULT_STOCK_POOL = 'sz50'
 AVAILABLE_STOCK_POOLS = [
     'full', '全量股票',
     'no_st', '非ST股票', 
@@ -39,8 +39,8 @@ DEFAULT_TOP_N = 10
 DEFAULT_N_GROUPS = 5
 
 # 回测时间配置
-DEFAULT_BACKTEST_START_DATE = '2024-01-01'
-DEFAULT_BACKTEST_END_DATE = '2024-12-31'
+DEFAULT_BACKTEST_START_DATE = '2020-01-01'
+DEFAULT_BACKTEST_END_DATE = datetime.date.today().strftime("%Y-%m-%d")
 
 # 回测频率配置
 DEFAULT_REBALANCE_FREQ = 'daily'  # daily, weekly, monthly
@@ -62,8 +62,8 @@ MAX_WORKERS_LIMIT = 16
 
 # 数据获取配置
 DEFAULT_OPTIMIZE_DATA_FETCH = True  # 重新启用智能优化
-# 对于WorldQuant因子，建议设置为False以确保获取所有必要字段
-DEFAULT_OPTIMIZE_DATA_FETCH_FOR_WORLDQUANT = False
+# 对于WorldQuant因子，也使用智能数据获取
+DEFAULT_OPTIMIZE_DATA_FETCH_FOR_WORLDQUANT = True
 DEFAULT_DATA_FIELDS = [
     'code', 'trade_date', 'open', 'high', 'low', 'close', 'preclose',
     'volume', 'amount', 'turn', 'tradestatus', 'pct_chg', 'pe_ttm',

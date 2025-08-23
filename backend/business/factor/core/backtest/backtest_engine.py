@@ -297,6 +297,9 @@ class FactorBacktestEngine:
         # 转换为因子矩阵
         factor_matrix = factor_data.pivot(index='trade_date', columns='code', values=factor_name)
 
+        # 填充NaN值，确保信号矩阵完整
+        factor_matrix = factor_matrix.fillna(0)
+
         # 计算排名
         rank_matrix = factor_matrix.rank(axis=1, ascending=False)
 

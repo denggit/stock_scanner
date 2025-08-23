@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 @File       : data_requirement_analyzer.py
-@Description: 数据需求分析器 - 分析因子函数需要的数据字段
+@Description: 数据需求分析器 - 根据因子类型决定数据获取策略
 @Author     : Zijun Deng
 @Date       : 2025-08-21
 """
@@ -21,451 +21,383 @@ class DataRequirementAnalyzer:
     数据需求分析器
     
     功能：
-    1. 分析因子函数的源代码，识别需要的数据字段
-    2. 提供数据字段映射和依赖关系
-    3. 优化数据获取策略
+    1. 根据因子类型决定数据获取策略
+    2. 提供简单直接的数据字段映射
+    3. 避免过度复杂的字段分析
     """
 
     def __init__(self):
         """初始化数据需求分析器"""
-        # 定义数据字段映射
-        self.field_mappings = {
-            # 基础价格数据
-            'price_fields': ['open', 'high', 'low', 'close', 'preclose', 'vwap'],
-            'volume_fields': ['volume', 'amount', 'turn'],
-            'market_fields': ['tradestatus', 'is_st', 'pct_chg'],
-
-            # 估值指标
-            'valuation_fields': ['pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm'],
-
-            # 财务数据字段
-            'financial_fields': {
-                'profit': ['roeAvg', 'npMargin', 'gpMargin', 'netProfit', 'epsTTM', 'MBRevenue', 'totalShare',
-                           'liqaShare'],
-                'balance': ['currentRatio', 'quickRatio', 'cashRatio', 'YOYLiability', 'liabilityToAsset',
-                            'assetToEquity'],
-                'cashflow': ['CAToAsset', 'NCAToAsset', 'tangibleAssetToAsset', 'ebitToInterest', 'CFOToOR', 'CFOToNP',
-                             'CFOToGr'],
-                'growth': ['YOYEquity', 'YOYAsset', 'YOYNI', 'YOYEPSBasic', 'YOYPNI'],
-                'operation': ['NRTurnRatio', 'NRTurnDays', 'INVTurnRatio', 'INVTurnDays', 'CATurnRatio',
-                              'AssetTurnRatio'],
-                'dupont': ['dupontROE', 'dupontAssetStoEquity', 'dupontAssetTurn', 'dupontPnitoni', 'dupontNitogr',
-                           'dupontTaxBurden', 'dupontIntburden', 'dupontEbittogr'],
-                'dividend': ['dividCashPsBeforeTax', 'dividCashPsAfterTax', 'dividStocksPs', 'dividCashStock',
-                             'dividReserveToStockPs']
+        # 定义因子类型到数据字段的映射
+        self.factor_data_mapping = {
+            # 技术因子 - 只需要行情数据
+            'technical': {
+                'market_fields': ['open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn', 'pct_chg', 'vwap'],
+                'valuation_fields': ['pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm'],
+                'financial_types': [],
+                'technical_fields': []
             },
-
-            # 技术指标字段
-            'technical_fields': ['rsi', 'macd', 'bollinger', 'ma', 'ema', 'atr', 'adx', 'cci', 'williams_r', 'kama'],
-
-            # 必需字段（总是需要的）
-            'required_fields': ['code', 'trade_date']
-        }
-
-        # 字段别名映射
-        self.field_aliases = {
-            'price': ['open', 'high', 'low', 'close', 'preclose', 'vwap'],
-            'ohlc': ['open', 'high', 'low', 'close'],
-            'ohlcv': ['open', 'high', 'low', 'close', 'volume'],
-            'returns': ['pct_chg'],
-            'vol': ['volume'],
-            'amt': ['amount'],
-            'pe': ['pe_ttm'],
-            'pb': ['pb_mrq'],
-            'ps': ['ps_ttm'],
-            'pcf': ['pcf_ncf_ttm'],
-            'roe': ['roeAvg'],
-            'eps': ['epsTTM'],
-            'revenue': ['MBRevenue'],
-            'profit': ['netProfit'],
-            'margin': ['npMargin', 'gpMargin'],
-            'ratio': ['currentRatio', 'quickRatio', 'cashRatio', 'liabilityToAsset', 'assetToEquity'],
-            'turnover': ['NRTurnRatio', 'INVTurnRatio', 'CATurnRatio', 'AssetTurnRatio'],
-            'growth': ['YOYEquity', 'YOYAsset', 'YOYNI', 'YOYEPSBasic', 'YOYPNI'],
-            'cashflow': ['CFOToOR', 'CFOToNP', 'CFOToGr'],
-            'dupont': ['dupontROE', 'dupontAssetStoEquity', 'dupontAssetTurn', 'dupontPnitoni', 'dupontNitogr',
-                       'dupontTaxBurden', 'dupontIntburden', 'dupontEbittogr'],
-            'dividend': ['dividCashPsBeforeTax', 'dividCashPsAfterTax', 'dividStocksPs', 'dividCashStock',
-                         'dividReserveToStockPs']
-        }
-
-    def analyze_factor_function(self, factor_func: Callable) -> Dict[str, Any]:
-        """
-        分析因子函数的数据需求
-        
-        Args:
-            factor_func: 因子函数
             
-        Returns:
-            数据需求分析结果
-        """
-        try:
-            # 获取函数源代码
-            source_code = inspect.getsource(factor_func)
-
-            # 分析数据需求
-            required_fields = self._extract_required_fields(source_code)
-            data_types = self._determine_data_types(required_fields)
-            optimization_suggestions = self._generate_optimization_suggestions(required_fields, data_types)
-
-            return {
-                'required_fields': required_fields,
-                'data_types': data_types,
-                'optimization_suggestions': optimization_suggestions,
-                'estimated_memory_saving': self._estimate_memory_saving(required_fields),
-                'source_code_length': len(source_code)
+            # WorldQuant因子 - 需要行情数据
+            'worldquant': {
+                'market_fields': ['open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn', 'pct_chg', 'vwap'],
+            'valuation_fields': ['pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm'],
+                'financial_types': [],
+                'technical_fields': []
+            },
+            
+            # 基本面因子 - 需要行情数据和财务数据
+            'fundamental': {
+                'market_fields': ['open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn', 'pct_chg', 'vwap'],
+                'valuation_fields': ['pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm'],
+                'financial_types': ['profit', 'balance', 'cashflow', 'growth', 'operation', 'dupont', 'dividend'],
+                'technical_fields': []
+            },
+            
+            # 通道因子 - 只需要行情数据
+            'channel': {
+                'market_fields': ['open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn', 'pct_chg', 'vwap'],
+                'valuation_fields': ['pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm'],
+                'financial_types': [],
+                'technical_fields': []
+            },
+            
+            # AKShare因子 - 需要行情数据
+            'akshare': {
+                'market_fields': ['open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn', 'pct_chg', 'vwap'],
+                'valuation_fields': ['pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm'],
+                'financial_types': [],
+                'technical_fields': []
             }
-
-        except Exception as e:
-            logger.error(f"分析因子函数失败: {e}")
-            return {
-                'required_fields': self.field_mappings['required_fields'],
-                'data_types': ['market'],
-                'optimization_suggestions': ['无法分析，使用默认字段'],
-                'estimated_memory_saving': 0,
-                'source_code_length': 0
-            }
-
-    def _extract_required_fields(self, source_code: str) -> Set[str]:
-        """
-        从源代码中提取需要的数据字段
+        }
         
-        Args:
-            source_code: 函数源代码
+        # 因子名称到类型的映射
+        self.factor_type_mapping = {
+            # 技术因子
+            'momentum_5d': 'technical',
+            'momentum_10d': 'technical',
+            'momentum_20d': 'technical',
+            'rsi': 'technical',
+            'macd': 'technical',
+            'bollinger': 'technical',
+            'ma_cross': 'technical',
+            'volume_ratio': 'technical',
+            'volatility': 'technical',
+            'atr': 'technical',
             
-        Returns:
-            需要的数据字段集合
-        """
-        required_fields = set(self.field_mappings['required_fields'])
-
-        # 使用AST进行更精确的分析（优先）
-        try:
-            tree = ast.parse(source_code)
-            ast_fields = self._extract_fields_from_ast(tree)
-            required_fields.update(ast_fields)
-        except:
-            pass
-
-        # 使用字符串分析作为补充（确保不遗漏任何字段）
-        string_fields = self._extract_fields_from_string(source_code)
-        required_fields.update(string_fields)
-
-        # 转换为小写进行分析（作为补充）
-        code_lower = source_code.lower()
-
-        # 分析各种字段类型（使用更精确的匹配）
-        for field_type, fields in self.field_mappings.items():
-            if field_type == 'required_fields':
-                continue
-            elif field_type == 'financial_fields':
-                # 处理财务数据字段
-                for data_type, type_fields in fields.items():
-                    for field in type_fields:
-                        # 使用更精确的匹配：确保字段名是独立的词
-                        if self._is_field_mentioned(field, code_lower):
-                            required_fields.add(field)
-                            # 添加对应的财务数据类型
-                            required_fields.add(f'financial_{data_type}')
-            else:
-                # 处理其他字段类型
-                for field in fields:
-                    # 使用更精确的匹配：确保字段名是独立的词
-                    if self._is_field_mentioned(field, code_lower):
-                        required_fields.add(field)
-
-        # 处理字段别名
-        for alias, fields in self.field_aliases.items():
-            # 使用更精确的匹配：确保别名是独立的词
-            if self._is_field_mentioned(alias, code_lower):
-                required_fields.update(fields)
-
-        return required_fields
-
-    def _extract_fields_from_ast(self, tree: ast.AST) -> Set[str]:
-        """
-        从AST中提取字段引用
-        
-        Args:
-            tree: AST树
+            # WorldQuant因子
+            'alpha_1': 'worldquant',
+            'alpha_2': 'worldquant',
+            'alpha_3': 'worldquant',
+            'alpha_4': 'worldquant',
+            'alpha_5': 'worldquant',
+            'alpha_6': 'worldquant',
+            'alpha_7': 'worldquant',
+            'alpha_8': 'worldquant',
+            'alpha_9': 'worldquant',
+            'alpha_10': 'worldquant',
+            'alpha_11': 'worldquant',
+            'alpha_12': 'worldquant',
+            'alpha_13': 'worldquant',
+            'alpha_14': 'worldquant',
+            'alpha_15': 'worldquant',
+            'alpha_16': 'worldquant',
+            'alpha_17': 'worldquant',
+            'alpha_18': 'worldquant',
+            'alpha_19': 'worldquant',
+            'alpha_20': 'worldquant',
+            'alpha_21': 'worldquant',
+            'alpha_22': 'worldquant',
+            'alpha_23': 'worldquant',
+            'alpha_24': 'worldquant',
+            'alpha_25': 'worldquant',
+            'alpha_26': 'worldquant',
+            'alpha_27': 'worldquant',
+            'alpha_28': 'worldquant',
+            'alpha_29': 'worldquant',
+            'alpha_30': 'worldquant',
+            'alpha_31': 'worldquant',
+            'alpha_32': 'worldquant',
+            'alpha_33': 'worldquant',
+            'alpha_34': 'worldquant',
+            'alpha_35': 'worldquant',
+            'alpha_36': 'worldquant',
+            'alpha_37': 'worldquant',
+            'alpha_38': 'worldquant',
+            'alpha_39': 'worldquant',
+            'alpha_40': 'worldquant',
+            'alpha_41': 'worldquant',
+            'alpha_42': 'worldquant',
+            'alpha_43': 'worldquant',
+            'alpha_44': 'worldquant',
+            'alpha_45': 'worldquant',
+            'alpha_46': 'worldquant',
+            'alpha_47': 'worldquant',
+            'alpha_48': 'worldquant',
+            'alpha_49': 'worldquant',
+            'alpha_50': 'worldquant',
+            'alpha_51': 'worldquant',
+            'alpha_52': 'worldquant',
+            'alpha_53': 'worldquant',
+            'alpha_54': 'worldquant',
+            'alpha_55': 'worldquant',
+            'alpha_56': 'worldquant',
+            'alpha_57': 'worldquant',
+            'alpha_58': 'worldquant',
+            'alpha_59': 'worldquant',
+            'alpha_60': 'worldquant',
+            'alpha_61': 'worldquant',
+            'alpha_62': 'worldquant',
+            'alpha_63': 'worldquant',
+            'alpha_64': 'worldquant',
+            'alpha_65': 'worldquant',
+            'alpha_66': 'worldquant',
+            'alpha_67': 'worldquant',
+            'alpha_68': 'worldquant',
+            'alpha_69': 'worldquant',
+            'alpha_70': 'worldquant',
+            'alpha_71': 'worldquant',
+            'alpha_72': 'worldquant',
+            'alpha_73': 'worldquant',
+            'alpha_74': 'worldquant',
+            'alpha_75': 'worldquant',
+            'alpha_76': 'worldquant',
+            'alpha_77': 'worldquant',
+            'alpha_78': 'worldquant',
+            'alpha_79': 'worldquant',
+            'alpha_80': 'worldquant',
+            'alpha_81': 'worldquant',
+            'alpha_82': 'worldquant',
+            'alpha_83': 'worldquant',
+            'alpha_84': 'worldquant',
+            'alpha_85': 'worldquant',
+            'alpha_86': 'worldquant',
+            'alpha_87': 'worldquant',
+            'alpha_88': 'worldquant',
+            'alpha_89': 'worldquant',
+            'alpha_90': 'worldquant',
+            'alpha_91': 'worldquant',
+            'alpha_92': 'worldquant',
+            'alpha_93': 'worldquant',
+            'alpha_94': 'worldquant',
+            'alpha_95': 'worldquant',
+            'alpha_96': 'worldquant',
+            'alpha_97': 'worldquant',
+            'alpha_98': 'worldquant',
+            'alpha_99': 'worldquant',
+            'alpha_100': 'worldquant',
+            'alpha_101': 'worldquant',
             
-        Returns:
-            字段引用集合
-        """
-        fields = set()
-
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Subscript):
-                # 处理字典访问，如 data['close']
-                if isinstance(node.slice, ast.Constant):
-                    field_name = node.slice.value
-                    if isinstance(field_name, str):
-                        fields.add(field_name)
-                elif isinstance(node.slice, ast.Str):  # Python 3.7及以下版本
-                    field_name = node.slice.s
-                    if isinstance(field_name, str):
-                        fields.add(field_name)
-            elif isinstance(node, ast.Name):
-                # 处理变量名，可能是字段别名
-                name = node.id.lower()
-                if name in self.field_aliases:
-                    fields.update(self.field_aliases[name])
-
-        return fields
-
-    def _extract_fields_from_string(self, source_code: str) -> Set[str]:
-        """
-        从源代码字符串中提取字段引用（作为AST分析的补充）
-        
-        Args:
-            source_code: 源代码字符串
+            # 基本面因子
+            'roe': 'fundamental',
+            'eps': 'fundamental',
+            'revenue_growth': 'fundamental',
+            'profit_growth': 'fundamental',
+            'debt_ratio': 'fundamental',
+            'current_ratio': 'fundamental',
+            'quick_ratio': 'fundamental',
+            'cash_ratio': 'fundamental',
+            'asset_turnover': 'fundamental',
+            'inventory_turnover': 'fundamental',
+            'receivables_turnover': 'fundamental',
+            'gross_margin': 'fundamental',
+            'net_margin': 'fundamental',
+            'operating_margin': 'fundamental',
+            'ebitda_margin': 'fundamental',
+            'free_cash_flow': 'fundamental',
+            'operating_cash_flow': 'fundamental',
+            'investing_cash_flow': 'fundamental',
+            'financing_cash_flow': 'fundamental',
+            'dividend_yield': 'fundamental',
+            'payout_ratio': 'fundamental',
+            'book_value': 'fundamental',
+            'tangible_book_value': 'fundamental',
+            'return_on_equity': 'fundamental',
+            'return_on_assets': 'fundamental',
+            'return_on_capital': 'fundamental',
+            'return_on_invested_capital': 'fundamental',
+            'economic_value_added': 'fundamental',
+            'market_value_added': 'fundamental',
+            'enterprise_value': 'fundamental',
+            'enterprise_value_ebitda': 'fundamental',
+            'enterprise_value_ebit': 'fundamental',
+            'enterprise_value_revenue': 'fundamental',
+            'enterprise_value_assets': 'fundamental',
+            'price_to_book': 'fundamental',
+            'price_to_sales': 'fundamental',
+            'price_to_cash_flow': 'fundamental',
+            'price_to_earnings': 'fundamental',
+            'price_to_earnings_growth': 'fundamental',
+            'ev_to_ebitda': 'fundamental',
+            'ev_to_ebit': 'fundamental',
+            'ev_to_revenue': 'fundamental',
+            'ev_to_assets': 'fundamental',
+            'peg_ratio': 'fundamental',
+            'forward_pe': 'fundamental',
+            'trailing_pe': 'fundamental',
+            'forward_ev_ebitda': 'fundamental',
+            'trailing_ev_ebitda': 'fundamental',
+            'forward_ev_ebit': 'fundamental',
+            'trailing_ev_ebit': 'fundamental',
+            'forward_ev_revenue': 'fundamental',
+            'trailing_ev_revenue': 'fundamental',
+            'forward_ev_assets': 'fundamental',
+            'trailing_ev_assets': 'fundamental',
+            'forward_pe_growth': 'fundamental',
+            'trailing_pe_growth': 'fundamental',
+            'forward_peg': 'fundamental',
+            'trailing_peg': 'fundamental',
+            'forward_pb': 'fundamental',
+            'trailing_pb': 'fundamental',
+            'forward_ps': 'fundamental',
+            'trailing_ps': 'fundamental',
+            'forward_pcf': 'fundamental',
+            'trailing_pcf': 'fundamental',
+            'forward_dividend_yield': 'fundamental',
+            'trailing_dividend_yield': 'fundamental',
+            'forward_payout_ratio': 'fundamental',
+            'trailing_payout_ratio': 'fundamental',
+            'forward_roe': 'fundamental',
+            'trailing_roe': 'fundamental',
+            'forward_roa': 'fundamental',
+            'trailing_roa': 'fundamental',
+            'forward_roc': 'fundamental',
+            'trailing_roc': 'fundamental',
+            'forward_roic': 'fundamental',
+            'trailing_roic': 'fundamental',
+            'forward_eva': 'fundamental',
+            'trailing_eva': 'fundamental',
+            'forward_mva': 'fundamental',
+            'trailing_mva': 'fundamental',
+            'forward_ev': 'fundamental',
+            'trailing_ev': 'fundamental',
+            'forward_ev_ebitda_ratio': 'fundamental',
+            'trailing_ev_ebitda_ratio': 'fundamental',
+            'forward_ev_ebit_ratio': 'fundamental',
+            'trailing_ev_ebit_ratio': 'fundamental',
+            'forward_ev_revenue_ratio': 'fundamental',
+            'trailing_ev_revenue_ratio': 'fundamental',
+            'forward_ev_assets_ratio': 'fundamental',
+            'trailing_ev_assets_ratio': 'fundamental',
+            'forward_peg_ratio': 'fundamental',
+            'trailing_peg_ratio': 'fundamental',
             
-        Returns:
-            字段引用集合
-        """
-        fields = set()
-        code_lower = source_code.lower()
-        
-        # 检查所有可能的字段
-        all_possible_fields = set()
-        for field_type, field_list in self.field_mappings.items():
-            if field_type != 'required_fields':
-                if field_type == 'financial_fields':
-                    for type_fields in field_list.values():
-                        all_possible_fields.update(type_fields)
-                else:
-                    all_possible_fields.update(field_list)
-        
-        # 检查每个字段是否在代码中被提及
-        for field in all_possible_fields:
-            if self._is_field_mentioned(field, code_lower):
-                fields.add(field)
-        
-        return fields
-
-    def _is_field_mentioned(self, field: str, code_lower: str) -> bool:
-        """
-        检查字段是否在代码中被提及（使用精确匹配）
-        
-        Args:
-            field: 字段名
-            code_lower: 小写的代码字符串
+            # 通道因子
+            'rising_channel': 'channel',
+            'falling_channel': 'channel',
+            'sideways_channel': 'channel',
+            'channel_breakout': 'channel',
+            'channel_support': 'channel',
+            'channel_resistance': 'channel',
+            'channel_width': 'channel',
+            'channel_slope': 'channel',
+            'channel_volume': 'channel',
+            'channel_momentum': 'channel',
             
-        Returns:
-            是否提及
-        """
-        field_lower = field.lower()
-        
-        # 检查精确匹配：字段名前后应该是非字母数字字符
-        import re
-        
-        # 构建正则表达式模式，确保字段名是独立的词
-        pattern = r'\b' + re.escape(field_lower) + r'\b'
-        
-        return bool(re.search(pattern, code_lower))
-
-    def _determine_data_types(self, required_fields: Set[str]) -> List[str]:
-        """
-        确定需要的数据类型
-        
-        Args:
-            required_fields: 需要的字段集合
-            
-        Returns:
-            数据类型列表
-        """
-        data_types = ['market']  # 市场数据总是需要的
-
-        # 检查是否需要财务数据
-        financial_types = set()
-        for field in required_fields:
-            if field.startswith('financial_'):
-                financial_types.add(field.replace('financial_', ''))
-            elif any(field in fields for fields in self.field_mappings['financial_fields'].values()):
-                # 根据字段确定财务数据类型
-                for data_type, fields in self.field_mappings['financial_fields'].items():
-                    if field in fields:
-                        financial_types.add(data_type)
-
-        if financial_types:
-            data_types.append('financial')
-
-        # 检查是否需要技术指标
-        if any(field in required_fields for field in self.field_mappings['technical_fields']):
-            data_types.append('technical')
-
-        return data_types
-
-    def _generate_optimization_suggestions(self, required_fields: Set[str], data_types: List[str]) -> List[str]:
-        """
-        生成优化建议
-        
-        Args:
-            required_fields: 需要的字段集合
-            data_types: 数据类型列表
-            
-        Returns:
-            优化建议列表
-        """
-        suggestions = []
-
-        # 检查字段使用情况
-        all_possible_fields = set()
-        for field_type, fields in self.field_mappings.items():
-            if field_type != 'required_fields':
-                if field_type == 'financial_fields':
-                    for type_fields in fields.values():
-                        all_possible_fields.update(type_fields)
-                else:
-                    all_possible_fields.update(fields)
-
-        unused_fields = all_possible_fields - required_fields
-        if len(unused_fields) > 10:
-            suggestions.append(f"可以排除 {len(unused_fields)} 个未使用的字段以节省内存")
-
-        # 检查数据类型优化
-        if 'financial' in data_types:
-            suggestions.append("需要财务数据，建议使用增量更新策略")
-
-        if len(required_fields) < 10:
-            suggestions.append("字段需求较少，可以使用精简数据模式")
-
-        return suggestions
-
-    def _estimate_memory_saving(self, required_fields: Set[str]) -> float:
-        """
-        估算内存节省比例
-        
-        Args:
-            required_fields: 需要的字段集合
-            
-        Returns:
-            内存节省比例（0-1）
-        """
-        # 计算所有可能的字段
-        all_fields = set()
-        for field_type, fields in self.field_mappings.items():
-            if field_type != 'required_fields':
-                if field_type == 'financial_fields':
-                    for type_fields in fields.values():
-                        all_fields.update(type_fields)
-                else:
-                    all_fields.update(fields)
-
-        # 添加必需字段
-        all_fields.update(self.field_mappings['required_fields'])
-
-        if len(all_fields) == 0:
-            return 0.0
-
-        # 计算节省比例
-        saved_fields = len(all_fields) - len(required_fields)
-        saving_ratio = saved_fields / len(all_fields)
-
-        return max(0.0, min(1.0, saving_ratio))
-
-    def get_optimized_fields(self, factor_names: List[str], factor_registry) -> Dict[str, List[str]]:
-        """
-        获取优化后的字段列表
-        
-        Args:
-            factor_names: 因子名称列表
-            factor_registry: 因子注册器
-            
-        Returns:
-            优化后的字段配置
-        """
-        all_required_fields = set(self.field_mappings['required_fields'])
-        data_types = set(['market'])
-
-        for factor_name in factor_names:
-            factor_func = factor_registry.get_factor(factor_name)
-            if factor_func:
-                analysis = self.analyze_factor_function(factor_func)
-                all_required_fields.update(analysis['required_fields'])
-                data_types.update(analysis['data_types'])
-
-        # 构建优化配置
-        optimized_config = {
-            'market_fields': list(all_required_fields & set(
-                self.field_mappings['price_fields'] + self.field_mappings['volume_fields'] + self.field_mappings[
-                    'market_fields'])),
-            'valuation_fields': list(all_required_fields & set(self.field_mappings['valuation_fields'])),
-            'financial_types': [],
-            'technical_fields': list(all_required_fields & set(self.field_mappings['technical_fields']))
+            # AKShare因子
+            'akshare_momentum': 'akshare',
+            'akshare_volatility': 'akshare',
+            'akshare_volume': 'akshare',
+            'akshare_price': 'akshare',
+            'akshare_technical': 'akshare',
+            'akshare_fundamental': 'akshare',
+            'akshare_sentiment': 'akshare',
+            'akshare_risk': 'akshare',
+            'akshare_quality': 'akshare',
+            'akshare_value': 'akshare'
         }
 
-        # 确定财务数据类型
-        if 'financial' in data_types:
-            for field in all_required_fields:
-                for data_type, fields in self.field_mappings['financial_fields'].items():
-                    if field in fields and data_type not in optimized_config['financial_types']:
-                        optimized_config['financial_types'].append(data_type)
+    def get_factor_type(self, factor_name: str) -> str:
+        """
+        获取因子类型
+        
+        Args:
+            factor_name: 因子名称
+            
+        Returns:
+            因子类型
+        """
+        return self.factor_type_mapping.get(factor_name, 'technical')  # 默认为技术因子
 
-        return optimized_config
-
-    def analyze_factor_function_batch(self, factor_names: List[str], factor_registry) -> Dict[str, Any]:
+    def analyze_factor_function_batch(self, factor_names: List[str]) -> Dict[str, Any]:
         """
         批量分析因子函数的数据需求
         
         Args:
             factor_names: 因子名称列表
-            factor_registry: 因子注册器
             
         Returns:
-            批量分析结果
+            数据需求分析结果
         """
-        all_required_fields = set(self.field_mappings['required_fields'])
-        all_data_types = set(['market'])
+        logger.info(f"开始分析 {len(factor_names)} 个因子的数据需求")
 
+        # 统计各类型因子的数量
+        factor_types = {}
         for factor_name in factor_names:
-            factor_func = factor_registry.get_factor(factor_name)
-            if factor_func:
-                analysis = self.analyze_factor_function(factor_func)
-                all_required_fields.update(analysis['required_fields'])
-                all_data_types.update(analysis['data_types'])
-
+            factor_type = self.get_factor_type(factor_name)
+            factor_types[factor_type] = factor_types.get(factor_type, 0) + 1
+        
+        logger.info(f"因子类型分布: {factor_types}")
+        
+        # 确定需要获取的数据类型
+        data_requirements = {
+            'market_fields': [],
+            'valuation_fields': [],
+            'financial_types': [],
+            'technical_fields': []
+        }
+        
+        # 如果有任何类型的因子，都需要获取行情数据
+        if factor_types:
+            data_requirements['market_fields'] = ['open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn', 'pct_chg', 'vwap']
+            data_requirements['valuation_fields'] = ['pe_ttm', 'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm']
+        
+        # 如果有基本面因子，需要获取财务数据
+        if 'fundamental' in factor_types:
+            data_requirements['financial_types'] = ['profit', 'balance', 'cashflow', 'growth', 'operation', 'dupont', 'dividend']
+        
+        # 如果有技术因子，可能需要技术指标数据
+        if 'technical' in factor_types:
+            data_requirements['technical_fields'] = ['rsi', 'macd', 'bollinger', 'ma', 'ema', 'atr', 'adx', 'cci', 'williams_r', 'kama']
+        
+        logger.info(f"数据需求: {data_requirements}")
+        
         return {
-            'required_fields': all_required_fields,
-            'data_types': list(all_data_types),
-            'total_factors': len(factor_names),
-            'analyzed_factors': len([f for f in factor_names if factor_registry.get_factor(f)])
+            'factor_types': factor_types,
+            'data_requirements': data_requirements,
+            'optimized_config': data_requirements
         }
 
-    def generate_data_fetch_plan(self, factor_names: List[str], factor_registry) -> Dict[str, Any]:
+    def generate_data_fetch_plan(self, factor_names: List[str]) -> Dict[str, Any]:
         """
         生成数据获取计划
         
         Args:
             factor_names: 因子名称列表
-            factor_registry: 因子注册器
             
         Returns:
             数据获取计划
         """
-        optimized_config = self.get_optimized_fields(factor_names, factor_registry)
-
-        # 计算内存节省
-        total_possible_fields = len(self.field_mappings['price_fields'] +
-                                    self.field_mappings['volume_fields'] +
-                                    self.field_mappings['market_fields'] +
-                                    self.field_mappings['valuation_fields'])
-
-        total_required_fields = len(optimized_config['market_fields']) + len(optimized_config['valuation_fields'])
-        memory_saving = (
-                                    total_possible_fields - total_required_fields) / total_possible_fields if total_possible_fields > 0 else 0
+        analysis_result = self.analyze_factor_function_batch(factor_names)
+        optimized_config = analysis_result['optimized_config']
+        
+        # 计算性能提升
+        total_fields = len(optimized_config['market_fields']) + len(optimized_config['valuation_fields']) + len(optimized_config['financial_types']) + len(optimized_config['technical_fields'])
+        max_possible_fields = 50  # 假设最大可能字段数
+        memory_saving_ratio = 1 - (total_fields / max_possible_fields)
+        performance_improvement = memory_saving_ratio * 0.5  # 假设性能提升与内存节省成正比
+        
+        # 确定获取策略
+        fetch_strategy = {
+            'market_data': len(optimized_config['market_fields']) > 0,
+            'financial_data': len(optimized_config['financial_types']) > 0,
+            'technical_data': len(optimized_config['technical_fields']) > 0,
+            'financial_types': optimized_config['financial_types']
+        }
 
         return {
             'optimized_config': optimized_config,
-            'memory_saving_ratio': memory_saving,
-            'estimated_performance_improvement': memory_saving * 0.3,  # 估算性能提升
-            'fetch_strategy': {
-                'market_data': True,
-                'financial_data': len(optimized_config['financial_types']) > 0,
-                'technical_data': len(optimized_config['technical_fields']) > 0,
-                'financial_types': optimized_config['financial_types']
-            }
+            'memory_saving_ratio': memory_saving_ratio,
+            'estimated_performance_improvement': performance_improvement,
+            'fetch_strategy': fetch_strategy
         }
-
-
-# 全局分析器实例
-data_requirement_analyzer = DataRequirementAnalyzer()

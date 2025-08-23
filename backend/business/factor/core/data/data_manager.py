@@ -43,20 +43,19 @@ class FactorDataManager:
         self._processed_data = None
 
     def get_market_data(self,
-                        start_date: str,
-                        end_date: str,
-                        stock_codes: Optional[List[str]] = None,
-                        stock_pool: str = "hs300",
-                        fields: Optional[List[str]] = None,
-                        optimize_data_fetch: bool = True) -> pd.DataFrame:
+                          start_date: str,
+                          end_date: str,
+                          stock_codes: Optional[List[str]] = None,
+                          stock_pool: str = "hs300",
+                          fields: Optional[List[str]] = None) -> pd.DataFrame:
         """
         获取市场行情数据
         
         Args:
-            start_date: 开始日期 (YYYY-MM-DD)
-            end_date: 结束日期 (YYYY-MM-DD)
-            stock_codes: 股票代码列表，优先使用此参数
-            stock_pool: 股票池名称，当stock_codes为None时使用
+            start_date: 开始日期
+            end_date: 结束日期
+            stock_codes: 股票代码列表
+            stock_pool: 股票池名称
             fields: 需要的字段列表
             
         Returns:
@@ -65,17 +64,14 @@ class FactorDataManager:
         logger.info(f"开始获取市场行情数据: {start_date} 到 {end_date}")
 
         if fields is None:
-            if optimize_data_fetch:
-                # 使用数据需求分析器优化字段选择
-                from .data_requirement_analyzer import data_requirement_analyzer
-                logger.info("使用智能数据获取优化，只获取必要的字段")
-                # 默认获取基础字段，具体优化在prepare_factor_data中实现
-                fields = ['code', 'trade_date', 'close']
-            else:
-                # 使用实际数据库中的字段
-                fields = ['code', 'trade_date', 'open', 'high', 'low', 'close', 'preclose',
-                          'volume', 'amount', 'turn', 'tradestatus', 'pct_chg', 'pe_ttm',
-                          'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm', 'is_st', 'vwap']
+            # 如果未指定字段，则获取所有默认字段
+            # 优化逻辑（选择字段子集）应由调用者（如prepare_factor_data）处理
+            logger.info("未指定字段列表，将获取所有默认行情字段")
+            fields = ['code', 'trade_date', 'open', 'high', 'low', 'close', 'preclose',
+                      'volume', 'amount', 'turn', 'tradestatus', 'pct_chg', 'pe_ttm',
+                      'pb_mrq', 'ps_ttm', 'pcf_ncf_ttm', 'is_st', 'vwap']
+
+        logger.info(f"将要获取的字段: {fields}")
 
         # 获取股票列表
         if stock_codes is None:
@@ -109,10 +105,25 @@ class FactorDataManager:
                     df = df[mask]
 
                     if not df.empty:
-                        # 只选择存在的字段
-                        available_fields = [field for field in fields if field in df.columns]
-                        if available_fields:
-                            market_data_list.append(df[available_fields])
+                        # 检查必需字段是否存在
+                        required_fields = ['code', 'trade_date', 'close']  # 基本必需字段
+                        missing_required = [field for field in required_fields if field not in df.columns]
+                        
+                        if missing_required:
+                            logger.warning(f"股票 {code} 缺少必需字段: {missing_required}")
+                            continue
+                        
+                        # 对于其他字段，如果不存在则用NaN填充
+                        for field in fields:
+                            if field not in df.columns:
+                                logger.debug(f"股票 {code} 缺少字段 {field}，用NaN填充")
+                                df[field] = np.nan
+                        
+                        # 选择所有请求的字段（包括用NaN填充的字段）
+                        if fields:
+                            market_data_list.append(df[fields])
+                        else:
+                            logger.warning(f"股票 {code} 没有可用的字段")
 
             except Exception as e:
                 failed_count += 1
@@ -327,11 +338,11 @@ class FactorDataManager:
 
         # 智能数据获取优化
         if optimize_data_fetch and factor_names:
-            from .data_requirement_analyzer import data_requirement_analyzer
-            from ..factor.factor_registry import factor_registry
+            from .data_requirement_analyzer import DataRequirementAnalyzer
 
             logger.info("使用智能数据获取优化...")
-            fetch_plan = data_requirement_analyzer.generate_data_fetch_plan(factor_names, factor_registry)
+            analyzer = DataRequirementAnalyzer()
+            fetch_plan = analyzer.generate_data_fetch_plan(factor_names)
 
             logger.info(f"数据获取计划: {fetch_plan}")
             logger.info(f"预计内存节省: {fetch_plan['memory_saving_ratio']:.2%}")
@@ -353,8 +364,7 @@ class FactorDataManager:
             end_date=end_date,
             stock_codes=stock_codes,
             stock_pool=stock_pool,
-            fields=required_fields,
-            optimize_data_fetch=optimize_data_fetch
+            fields=required_fields
         )
 
         if market_data.empty:

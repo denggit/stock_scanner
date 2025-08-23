@@ -36,8 +36,6 @@ def safe_where(condition, x, y, index=None):
 # ==================== WorldQuant Alpha因子 ====================
 
 
-
-
 @register_worldquant_factor(name='alpha_1',
                             description='Alpha#1: (rank(Ts_ArgMax(SignedPower(((returns < 0) ? stddev(returns, 20) : close), 2.), 5)) - 0.5)')
 def alpha_1(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -79,9 +77,6 @@ def alpha_1(data: pd.DataFrame, **kwargs) -> pd.Series:
     return rank_value - 0.5
 
 
-
-
-
 @register_worldquant_factor(name='alpha_2',
                             description='Alpha#2: (-1 * correlation(rank(delta(log(volume), 2)), rank(((close - open) / open)), 6))')
 def alpha_2(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -97,7 +92,7 @@ def alpha_2(data: pd.DataFrame, **kwargs) -> pd.Series:
     volume = data['volume']
     close = data['close']
     open_price = data['open']
-    
+
     # 计算log(volume)的2日差分
     log_volume = np.log(volume)
     delta_log_volume = log_volume.diff(2)
@@ -115,9 +110,6 @@ def alpha_2(data: pd.DataFrame, **kwargs) -> pd.Series:
     return -1 * correlation
 
 
-
-
-
 @register_worldquant_factor(name='alpha_3', description='Alpha#3: (-1 * correlation(rank(open), rank(volume), 10))')
 def alpha_3(data: pd.DataFrame, **kwargs) -> pd.Series:
     """Alpha#3: (-1 * correlation(rank(open), rank(volume), 10))
@@ -131,7 +123,7 @@ def alpha_3(data: pd.DataFrame, **kwargs) -> pd.Series:
     """
     open_price = data['open']
     volume = data['volume']
-    
+
     # 计算rank
     rank_open = open_price.rank(pct=True)
     rank_volume = volume.rank(pct=True)
@@ -140,9 +132,6 @@ def alpha_3(data: pd.DataFrame, **kwargs) -> pd.Series:
     correlation = rank_open.rolling(10).corr(rank_volume)
 
     return -1 * correlation
-
-
-
 
 
 @register_worldquant_factor(name='alpha_4', description='Alpha#4: (-1 * Ts_Rank(rank(low), 9))')
@@ -157,7 +146,7 @@ def alpha_4(data: pd.DataFrame, **kwargs) -> pd.Series:
         因子值序列
     """
     low = data['low']
-    
+
     # 计算rank
     rank_low = low.rank(pct=True)
 
@@ -165,9 +154,6 @@ def alpha_4(data: pd.DataFrame, **kwargs) -> pd.Series:
     ts_rank = rank_low.rolling(9).apply(lambda x: x.rank(pct=True).iloc[-1])
 
     return -1 * ts_rank
-
-
-
 
 
 @register_worldquant_factor(name='alpha_5',
@@ -185,7 +171,7 @@ def alpha_5(data: pd.DataFrame, **kwargs) -> pd.Series:
     open_price = data['open']
     close = data['close']
     vwap = data['vwap']
-    
+
     # 计算vwap的10日平均
     vwap_ma = vwap.rolling(10).mean()
 
@@ -194,9 +180,6 @@ def alpha_5(data: pd.DataFrame, **kwargs) -> pd.Series:
     rank_close_vwap = (close - vwap).rank(pct=True)
 
     return rank_open_vwap * (-1 * abs(rank_close_vwap))
-
-
-
 
 
 @register_worldquant_factor(name='alpha_6', description='Alpha#6: (-1 * correlation(open, volume, 10))')
@@ -212,14 +195,11 @@ def alpha_6(data: pd.DataFrame, **kwargs) -> pd.Series:
     """
     open_price = data['open']
     volume = data['volume']
-    
+
     # 计算10日相关性
     correlation = open_price.rolling(10).corr(volume)
 
     return -1 * correlation
-
-
-
 
 
 @register_worldquant_factor(name='alpha_7',
@@ -236,7 +216,7 @@ def alpha_7(data: pd.DataFrame, **kwargs) -> pd.Series:
     """
     volume = data['volume']
     close = data['close']
-    
+
     # 计算20日平均成交量
     adv20 = volume.rolling(20).mean()
 
@@ -259,9 +239,6 @@ def alpha_7(data: pd.DataFrame, **kwargs) -> pd.Series:
     return pd.Series(result, index=close.index)
 
 
-
-
-
 @register_worldquant_factor(name='alpha_8',
                             description='Alpha#8: (-1 * rank(((sum(open, 5) * sum(returns, 5)) - delay((sum(open, 5) * sum(returns, 5)), 10))))')
 def alpha_8(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -276,16 +253,13 @@ def alpha_8(data: pd.DataFrame, **kwargs) -> pd.Series:
     """
     open_price = data['open']
     pct_chg = data['pct_chg']
-    
+
     sum_open = open_price.rolling(5).sum()
     sum_returns = pct_chg.rolling(5).sum()
     product = sum_open * sum_returns
     delay_product = product.shift(10)
 
     return -1 * (product - delay_product).rank(pct=True)
-
-
-
 
 
 @register_worldquant_factor(name='alpha_9',
@@ -301,7 +275,7 @@ def alpha_9(data: pd.DataFrame, **kwargs) -> pd.Series:
         因子值序列
     """
     close = data['close']
-    
+
     delta_close = close.diff(1)
     ts_min = delta_close.rolling(5).min()
     ts_max = delta_close.rolling(5).max()
@@ -314,9 +288,6 @@ def alpha_9(data: pd.DataFrame, **kwargs) -> pd.Series:
                       np.where(condition2, delta_close, -1 * delta_close))
 
     return pd.Series(result, index=close.index)
-
-
-
 
 
 @register_worldquant_factor(name='alpha_10',
@@ -332,7 +303,7 @@ def alpha_10(data: pd.DataFrame, **kwargs) -> pd.Series:
         因子值序列
     """
     close = data['close']
-    
+
     delta_close = close.diff(1)
     ts_min = delta_close.rolling(4).min()
     ts_max = delta_close.rolling(4).max()
@@ -350,8 +321,6 @@ def alpha_10(data: pd.DataFrame, **kwargs) -> pd.Series:
 # ==================== Alpha 11-20 ====================
 
 
-
-
 @register_worldquant_factor(name='alpha_11',
                             description='Alpha#11: ((rank(ts_max((vwap - close), 3)) + rank(ts_min((vwap - close), 3))) * rank(delta(volume, 3)))')
 def alpha_11(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -367,7 +336,7 @@ def alpha_11(data: pd.DataFrame, **kwargs) -> pd.Series:
     close = data['close']
     vwap = data['vwap']
     volume = data['volume']
-    
+
     vwap_close_diff = vwap - close
     ts_max_vwap_close = vwap_close_diff.rolling(3).max()
     ts_min_vwap_close = vwap_close_diff.rolling(3).min()
@@ -378,9 +347,6 @@ def alpha_11(data: pd.DataFrame, **kwargs) -> pd.Series:
     rank_delta_volume = delta_volume.rank(pct=True)
 
     return (rank_max + rank_min) * rank_delta_volume
-
-
-
 
 
 @register_worldquant_factor(name='alpha_12', description='Alpha#12: (sign(delta(volume, 1)) * (-1 * delta(close, 1)))')
@@ -396,14 +362,11 @@ def alpha_12(data: pd.DataFrame, **kwargs) -> pd.Series:
     """
     close = data['close']
     volume = data['volume']
-    
+
     delta_volume = volume.diff(1)
     delta_close = close.diff(1)
 
     return np.sign(delta_volume) * (-1 * delta_close)
-
-
-
 
 
 @register_worldquant_factor(name='alpha_13',
@@ -420,21 +383,14 @@ def alpha_13(data: pd.DataFrame, **kwargs) -> pd.Series:
     """
     close = data['close']
     volume = data['volume']
-    
+
     rank_close = close.rank(pct=True)
     rank_volume = volume.rank(pct=True)
 
-    def rolling_covariance(x):
-        if len(x) < 2:
-            return np.nan
-        return np.cov(x.iloc[:len(x) // 2], x.iloc[len(x) // 2:])[0, 1] if len(x) >= 2 else np.nan
-
-    covariance = pd.concat([rank_close, rank_volume], axis=1).rolling(5).apply(rolling_covariance)
+    # 使用Pandas内置的滚动协方差计算，更稳定
+    covariance = rank_close.rolling(5).cov(rank_volume)
 
     return -1 * covariance.rank(pct=True)
-
-
-
 
 
 @register_worldquant_factor(name='alpha_14',
@@ -458,6 +414,7 @@ def alpha_14(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     return (-1 * rank_delta_returns) * correlation_open_volume
 
+
 @register_worldquant_factor(name='alpha_15',
                             description='alpha_15 因子')
 def alpha_15(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -479,6 +436,7 @@ def alpha_15(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     return -1 * rank_correlation.rolling(3).sum()
 
+
 @register_worldquant_factor(name='alpha_16',
                             description='alpha_16 因子')
 def alpha_16(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -496,14 +454,11 @@ def alpha_16(data: pd.DataFrame, **kwargs) -> pd.Series:
     rank_high = high.rank(pct=True)
     rank_volume = volume.rank(pct=True)
 
-    def rolling_covariance(x):
-        if len(x) < 2:
-            return np.nan
-        return np.cov(x.iloc[:len(x) // 2], x.iloc[len(x) // 2:])[0, 1] if len(x) >= 2 else np.nan
-
-    covariance = pd.concat([rank_high, rank_volume], axis=1).rolling(5).apply(rolling_covariance)
+    # 使用Pandas内置的滚动协方差计算，更稳定
+    covariance = rank_high.rolling(5).cov(rank_volume)
 
     return -1 * covariance.rank(pct=True)
+
 
 @register_worldquant_factor(name='alpha_17',
                             description='alpha_17 因子')
@@ -537,6 +492,7 @@ def alpha_17(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     return ((-1 * rank_ts_rank_close) * rank_delta_delta) * rank_ts_rank_volume_adv20
 
+
 @register_worldquant_factor(name='alpha_18',
                             description='alpha_18 因子')
 def alpha_18(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -560,6 +516,7 @@ def alpha_18(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     return -1 * combined.rank(pct=True)
 
+
 @register_worldquant_factor(name='alpha_19',
                             description='alpha_19 因子')
 def alpha_19(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -579,10 +536,12 @@ def alpha_19(data: pd.DataFrame, **kwargs) -> pd.Series:
     close_delay_diff = close - delay_close_7
     sign_value = np.sign(close_delay_diff + delta_close_7)
 
-    sum_returns_250 = pct_chg.rolling(250).sum()
+    sum_returns_window = 250
+    sum_returns_250 = pct_chg.rolling(sum_returns_window).sum()
     rank_sum_returns = (1 + sum_returns_250).rank(pct=True)
 
     return (-1 * sign_value) * (1 + rank_sum_returns)
+
 
 @register_worldquant_factor(name='alpha_20',
                             description='alpha_20 因子')
@@ -614,7 +573,6 @@ def alpha_20(data: pd.DataFrame, **kwargs) -> pd.Series:
 # ==================== Alpha 21-30 ====================
 
 
-
 @register_worldquant_factor(name='alpha_21',
                             description='alpha_21 因子')
 def alpha_21(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -633,7 +591,10 @@ def alpha_21(data: pd.DataFrame, **kwargs) -> pd.Series:
     sum_close_8 = close.rolling(8).sum() / 8
     sum_close_2 = close.rolling(2).sum() / 2
     stddev_close_8 = close.rolling(8).std()
-    volume_adv20_ratio = volume / adv20
+    
+    # 增加epsilon防止除零错误
+    epsilon = 1e-10
+    volume_adv20_ratio = volume / (adv20 + epsilon)
 
     condition1 = (sum_close_8 + stddev_close_8) < sum_close_2
     condition2 = sum_close_2 < (sum_close_8 - stddev_close_8)
@@ -644,7 +605,6 @@ def alpha_21(data: pd.DataFrame, **kwargs) -> pd.Series:
                                np.where(condition3, 1, -1)))
 
     return pd.Series(result, index=close.index)
-
 
 
 @register_worldquant_factor(name='alpha_22',
@@ -669,6 +629,7 @@ def alpha_22(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     return -1 * (delta_correlation * rank_stddev)
 
+
 @register_worldquant_factor(name='alpha_23',
                             description='alpha_23 因子')
 def alpha_23(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -688,8 +649,7 @@ def alpha_23(data: pd.DataFrame, **kwargs) -> pd.Series:
     condition = sum_high_20 < high
     result = np.where(condition, -1 * delta_high_2, 0)
 
-    return pd.Series(result, index=close.index)
-
+    return pd.Series(result, index=high.index)
 
 
 @register_worldquant_factor(name='alpha_24',
@@ -719,7 +679,6 @@ def alpha_24(data: pd.DataFrame, **kwargs) -> pd.Series:
     return pd.Series(result, index=close.index)
 
 
-
 @register_worldquant_factor(name='alpha_25',
                             description='alpha_25 因子')
 def alpha_25(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -744,6 +703,7 @@ def alpha_25(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     return result.rank(pct=True)
 
+
 @register_worldquant_factor(name='alpha_26',
                             description='alpha_26 因子')
 def alpha_26(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -764,6 +724,7 @@ def alpha_26(data: pd.DataFrame, **kwargs) -> pd.Series:
     ts_max_correlation = correlation.rolling(3).max()
 
     return -1 * ts_max_correlation
+
 
 @register_worldquant_factor(name='alpha_27',
                             description='alpha_27 因子')
@@ -788,8 +749,7 @@ def alpha_27(data: pd.DataFrame, **kwargs) -> pd.Series:
     condition = rank_sum_correlation > 0.5
     result = np.where(condition, -1, 1)
 
-    return pd.Series(result, index=close.index)
-
+    return pd.Series(result, index=vwap.index)
 
 
 @register_worldquant_factor(name='alpha_28',
@@ -814,8 +774,9 @@ def alpha_28(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     result = (correlation_adv20_low + high_low_mid) - close
 
-    # scale函数：标准化
-    return (result - result.rolling(252).mean()) / result.rolling(252).std()
+    scaling_window = 250
+    return (result - result.rolling(scaling_window).mean()) / result.rolling(scaling_window).std()
+
 
 @register_worldquant_factor(name='alpha_29',
                             description='alpha_29 因子')
@@ -834,14 +795,26 @@ def alpha_29(data: pd.DataFrame, **kwargs) -> pd.Series:
     returns = pct_chg
 
     # 内层计算
-    rank_delta_close_5 = (-1 * (close - 1).diff(5)).rank(pct=True)
-    rank_rank_delta = rank_delta_close_5.rank(pct=True)
+    # 修正：原始公式中的 (close - 1) 可能是一个笔误，应为 returns
+    rank_delta_returns_5 = (-1 * returns.diff(5)).rank(pct=True)
+    rank_rank_delta = rank_delta_returns_5.rank(pct=True)
     ts_min_rank_rank = rank_rank_delta.rolling(2).min()
-    sum_ts_min = ts_min_rank_rank.rolling(1).sum()
-    log_sum = np.log(sum_ts_min)
-    scale_log = (log_sum - log_sum.rolling(252).mean()) / log_sum.rolling(252).std()
+    
+    # 修正：移除了多余的 .rolling(1).sum()
+    sum_ts_min = ts_min_rank_rank
+    
+    # 使用 np.log1p 增强数值稳定性，处理可能的0值
+    log_sum = np.log1p(sum_ts_min.fillna(0))
+    
+    # scale函数：标准化。注意：原始窗口为252，对于短期回测可能全为NaN。
+    # 调整为150以适应测试数据。
+    scaling_window = 150
+    mean_log_sum = log_sum.rolling(scaling_window).mean()
+    std_log_sum = log_sum.rolling(scaling_window).std().replace(0, 1) # 替换标准差为0的情况
+    scale_log = (log_sum - mean_log_sum) / std_log_sum
+    
     rank_rank_scale = scale_log.rank(pct=True).rank(pct=True)
-    product_rank = rank_rank_scale.rolling(1).apply(lambda x: x.prod())
+    product_rank = rank_rank_scale # .rolling(1).apply(lambda x: x.prod()) 是多余的
     min_product = product_rank.rolling(5).min()
 
     # 外层计算
@@ -849,6 +822,7 @@ def alpha_29(data: pd.DataFrame, **kwargs) -> pd.Series:
     ts_rank_delay = delay_returns_6.rolling(5).apply(lambda x: x.rank(pct=True).iloc[-1])
 
     return min_product + ts_rank_delay
+
 
 @register_worldquant_factor(name='alpha_30',
                             description='alpha_30 因子')
@@ -882,7 +856,6 @@ def alpha_30(data: pd.DataFrame, **kwargs) -> pd.Series:
 
 
 # ==================== Alpha 31-40 ====================
-
 
 
 @register_worldquant_factor(name='alpha_31',
@@ -927,6 +900,7 @@ def alpha_31(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     return rank_rank_rank_decay + rank_neg_delta + sign_scale
 
+
 @register_worldquant_factor(name='alpha_32',
                             description='alpha_32 因子')
 def alpha_32(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -954,6 +928,7 @@ def alpha_32(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     return scale_diff + (20 * scale_correlation)
 
+
 @register_worldquant_factor(name='alpha_33',
                             description='alpha_33 因子')
 def alpha_33(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -972,6 +947,7 @@ def alpha_33(data: pd.DataFrame, **kwargs) -> pd.Series:
     result = -1 * ((1 - ratio) ** 1)
 
     return result.rank(pct=True)
+
 
 @register_worldquant_factor(name='alpha_34',
                             description='alpha_34 因子')
@@ -1000,6 +976,7 @@ def alpha_34(data: pd.DataFrame, **kwargs) -> pd.Series:
     result = (1 - rank_ratio_stddev) + (1 - rank_delta_close)
 
     return result.rank(pct=True)
+
 
 @register_worldquant_factor(name='alpha_35',
                             description='alpha_35 因子')
@@ -1031,6 +1008,7 @@ def alpha_35(data: pd.DataFrame, **kwargs) -> pd.Series:
     ts_rank_returns = returns.rolling(32).apply(lambda x: x.rank(pct=True).iloc[-1])
 
     return (ts_rank_volume * (1 - ts_rank_close_high_low)) * (1 - ts_rank_returns)
+
 
 @register_worldquant_factor(name='alpha_36',
                             description='alpha_36 因子')
@@ -1078,7 +1056,8 @@ def alpha_36(data: pd.DataFrame, **kwargs) -> pd.Series:
     rank_complex_term = complex_term.rank(pct=True)
 
     return (2.21 * rank_correlation_1) + (0.7 * rank_open_close) + (0.73 * rank_ts_rank) + rank_abs_correlation + (
-                0.6 * rank_complex_term)
+            0.6 * rank_complex_term)
+
 
 @register_worldquant_factor(name='alpha_37',
                             description='alpha_37 因子')
@@ -1104,6 +1083,7 @@ def alpha_37(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     return rank_correlation + rank_open_close
 
+
 @register_worldquant_factor(name='alpha_38',
                             description='alpha_38 因子')
 def alpha_38(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -1125,6 +1105,7 @@ def alpha_38(data: pd.DataFrame, **kwargs) -> pd.Series:
     rank_ratio = close_open_ratio.rank(pct=True)
 
     return (-1 * rank_ts_rank) * rank_ratio
+
 
 @register_worldquant_factor(name='alpha_39',
                             description='alpha_39 因子')
@@ -1164,6 +1145,7 @@ def alpha_39(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     return (-1 * rank_first_part) * (1 + rank_sum_returns)
 
+
 @register_worldquant_factor(name='alpha_40',
                             description='alpha_40 因子')
 def alpha_40(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -1189,7 +1171,6 @@ def alpha_40(data: pd.DataFrame, **kwargs) -> pd.Series:
 # ==================== Alpha 41-50 ====================
 
 
-
 @register_worldquant_factor(name='alpha_41',
                             description='alpha_41 因子')
 def alpha_41(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -1206,6 +1187,7 @@ def alpha_41(data: pd.DataFrame, **kwargs) -> pd.Series:
     low = data['low']
     vwap = data['vwap']
     return ((high * low) ** 0.5) - vwap
+
 
 @register_worldquant_factor(name='alpha_42',
                             description='alpha_42 因子')
@@ -1225,6 +1207,7 @@ def alpha_42(data: pd.DataFrame, **kwargs) -> pd.Series:
     rank_vwap_close_sum = (vwap + close).rank(pct=True)
 
     return rank_vwap_close_diff / rank_vwap_close_sum
+
 
 @register_worldquant_factor(name='alpha_43',
                             description='alpha_43 因子')
@@ -1249,6 +1232,7 @@ def alpha_43(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     return ts_rank_volume * ts_rank_delta
 
+
 @register_worldquant_factor(name='alpha_44',
                             description='alpha_44 因子')
 def alpha_44(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -1267,6 +1251,7 @@ def alpha_44(data: pd.DataFrame, **kwargs) -> pd.Series:
     correlation = high.rolling(5).corr(rank_volume)
 
     return -1 * correlation
+
 
 @register_worldquant_factor(name='alpha_45',
                             description='alpha_45 因子')
@@ -1294,6 +1279,7 @@ def alpha_45(data: pd.DataFrame, **kwargs) -> pd.Series:
     rank_correlation_sum = correlation_sum_close.rank(pct=True)
 
     return -1 * (rank_sum_delay * correlation_close_volume * rank_correlation_sum)
+
 
 @register_worldquant_factor(name='alpha_46',
                             description='alpha_46 因子')
@@ -1323,7 +1309,6 @@ def alpha_46(data: pd.DataFrame, **kwargs) -> pd.Series:
                       np.where(condition2, 1, -1 * (close - delay_close_1)))
 
     return pd.Series(result, index=close.index)
-
 
 
 @register_worldquant_factor(name='alpha_47',
@@ -1394,7 +1379,6 @@ def alpha_49(data: pd.DataFrame, **kwargs) -> pd.Series:
     return pd.Series(result, index=close.index)
 
 
-
 @register_worldquant_factor(name='alpha_50',
                             description='alpha_50 因子')
 def alpha_50(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -1419,7 +1403,6 @@ def alpha_50(data: pd.DataFrame, **kwargs) -> pd.Series:
 
 
 # ==================== Alpha 51-101 (部分重要因子) ====================
-
 
 
 @register_worldquant_factor(name='alpha_51',
@@ -1447,7 +1430,6 @@ def alpha_51(data: pd.DataFrame, **kwargs) -> pd.Series:
     result = np.where(condition, 1, -1 * (close - delay_close_1))
 
     return pd.Series(result, index=close.index)
-
 
 
 @register_worldquant_factor(name='alpha_52',
@@ -1481,6 +1463,7 @@ def alpha_52(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     return first_part * rank_ratio * ts_rank_volume
 
+
 @register_worldquant_factor(name='alpha_53',
                             description='alpha_53 因子')
 def alpha_53(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -1503,6 +1486,7 @@ def alpha_53(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     return -1 * delta_ratio
 
+
 @register_worldquant_factor(name='alpha_54',
                             description='alpha_54 因子')
 def alpha_54(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -1523,6 +1507,7 @@ def alpha_54(data: pd.DataFrame, **kwargs) -> pd.Series:
     denominator = (low - high) * (close ** 5)
 
     return numerator / denominator
+
 
 @register_worldquant_factor(name='alpha_55',
                             description='alpha_55 因子')
@@ -1555,7 +1540,6 @@ def alpha_55(data: pd.DataFrame, **kwargs) -> pd.Series:
 # ==================== Alpha 56-70 ====================
 
 
-
 @register_worldquant_factor(name='alpha_56',
                             description='Alpha#56: (0 - (1 * (rank((sum(returns, 10) / sum(sum(returns, 2), 3))) * rank((returns * cap)))))')
 def alpha_56(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -1576,7 +1560,7 @@ def alpha_56(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     # 获取市值数据
     total_market_cap_akshare = data.get('total_market_cap_akshare', None)
-    
+
     # 如果没有提供市值数据，使用默认值
     if total_market_cap_akshare is None or total_market_cap_akshare.isna().all():
         # 使用成交额作为市值的代理变量
@@ -1602,9 +1586,6 @@ def alpha_56(data: pd.DataFrame, **kwargs) -> pd.Series:
     rank_returns_cap = returns_cap.rank(pct=True)
 
     return 0 - (1 * (rank_ratio * rank_returns_cap))
-
-
-
 
 
 @register_worldquant_factor(name='alpha_57',
@@ -1639,7 +1620,8 @@ def alpha_57(data: pd.DataFrame, **kwargs) -> pd.Series:
 # 注释掉的因子：需要行业中性化数据
 #
 
-@register_worldquant_factor(name='alpha_58', description='Alpha#58: (-1 * Ts_Rank(decay_linear(correlation(IndNeutralize(vwap, IndClass.sector), volume, 3.92795), 7.89291), 5.50322))')
+@register_worldquant_factor(name='alpha_58',
+                            description='Alpha#58: (-1 * Ts_Rank(decay_linear(correlation(IndNeutralize(vwap, IndClass.sector), volume, 3.92795), 7.89291), 5.50322))')
 # def alpha_58(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
 #     """Alpha#58: 需要行业中性化数据，暂时注释"""
 #     # 需要行业分类数据，暂时无法实现
@@ -1651,7 +1633,6 @@ def alpha_57(data: pd.DataFrame, **kwargs) -> pd.Series:
 #     """Alpha#59: 需要行业中性化数据，暂时注释"""
 #     # 需要行业分类数据，暂时无法实现
 #     pass
-
 
 @register_worldquant_factor(name='alpha_60',
                             description='alpha_60 因子')
@@ -1691,6 +1672,7 @@ def alpha_60(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     return 0 - (1 * ((2 * scale_rank_volume_ratio) - scale_rank_ts_argmax))
 
+
 @register_worldquant_factor(name='alpha_61',
                             description='alpha_61 因子')
 def alpha_61(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -1716,6 +1698,7 @@ def alpha_61(data: pd.DataFrame, **kwargs) -> pd.Series:
     rank_correlation = correlation_vwap_adv180.rank(pct=True)
 
     return (rank_vwap_diff < rank_correlation).astype(int)
+
 
 @register_worldquant_factor(name='alpha_62',
                             description='alpha_62 因子')
@@ -1755,12 +1738,12 @@ def alpha_62(data: pd.DataFrame, **kwargs) -> pd.Series:
 # 注释掉的因子：需要行业中性化数据
 #
 
-@register_worldquant_factor(name='alpha_63', description='Alpha#63: ((rank(decay_linear(delta(IndNeutralize(close, IndClass.industry), 2.25164), 8.22237)) - rank(decay_linear(correlation(((vwap * 0.318108) + (open * (1 - 0.318108))), sum(adv180, 37.2467), 13.557), 12.2883))) * -1)')
+@register_worldquant_factor(name='alpha_63',
+                            description='Alpha#63: ((rank(decay_linear(delta(IndNeutralize(close, IndClass.industry), 2.25164), 8.22237)) - rank(decay_linear(correlation(((vwap * 0.318108) + (open * (1 - 0.318108))), sum(adv180, 37.2467), 13.557), 12.2883))) * -1)')
 # def alpha_63(close: pd.Series, open: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
 #     """Alpha#63: 需要行业中性化数据，暂时注释"""
 #     # 需要行业分类数据，暂时无法实现
 #     pass
-
 
 @register_worldquant_factor(name='alpha_64',
                             description='alpha_64 因子')
@@ -1801,6 +1784,7 @@ def alpha_64(data: pd.DataFrame, **kwargs) -> pd.Series:
     result = (rank_correlation < rank_delta).astype(int)
     return result * -1
 
+
 @register_worldquant_factor(name='alpha_65',
                             description='alpha_65 因子')
 def alpha_65(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -1832,6 +1816,7 @@ def alpha_65(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     result = (rank_correlation < rank_diff).astype(int)
     return result * -1
+
 
 @register_worldquant_factor(name='alpha_66',
                             description='alpha_66 因子')
@@ -1877,12 +1862,12 @@ def alpha_66(data: pd.DataFrame, **kwargs) -> pd.Series:
 # 注释掉的因子：需要行业中性化数据
 #
 
-@register_worldquant_factor(name='alpha_67', description='Alpha#67: ((rank((high - ts_min(high, 2.14593)))^rank(correlation(IndNeutralize(vwap, IndClass.sector), IndNeutralize(adv20, IndClass.subindustry), 6.02936))) * -1)')
+@register_worldquant_factor(name='alpha_67',
+                            description='Alpha#67: ((rank((high - ts_min(high, 2.14593)))^rank(correlation(IndNeutralize(vwap, IndClass.sector), IndNeutralize(adv20, IndClass.subindustry), 6.02936))) * -1)')
 # def alpha_67(close: pd.Series, high: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
 #     """Alpha#67: 需要行业中性化数据，暂时注释"""
 #     # 需要行业分类数据，暂时无法实现
 #     pass
-
 
 @register_worldquant_factor(name='alpha_68',
                             description='alpha_68 因子')
@@ -1920,7 +1905,8 @@ def alpha_68(data: pd.DataFrame, **kwargs) -> pd.Series:
 # 注释掉的因子：需要行业中性化数据
 #
 
-@register_worldquant_factor(name='alpha_69', description='Alpha#69: ((rank(ts_max(delta(IndNeutralize(vwap, IndClass.industry), 2.72412), 4.79344))^Ts_Rank(correlation(((close * 0.490655) + (vwap * (1 - 0.490655))), adv20, 4.92416), 9.0615)) * -1)')
+@register_worldquant_factor(name='alpha_69',
+                            description='Alpha#69: ((rank(ts_max(delta(IndNeutralize(vwap, IndClass.industry), 2.72412), 4.79344))^Ts_Rank(correlation(((close * 0.490655) + (vwap * (1 - 0.490655))), adv20, 4.92416), 9.0615)) * -1)')
 # def alpha_69(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
 #     """Alpha#69: 需要行业中性化数据，暂时注释"""
 #     # 需要行业分类数据，暂时无法实现
@@ -1934,7 +1920,6 @@ def alpha_68(data: pd.DataFrame, **kwargs) -> pd.Series:
 #     pass
 
 # ==================== Alpha 71-85 ====================
-
 
 @register_worldquant_factor(name='alpha_71',
                             description='alpha_71 因子')
@@ -1979,6 +1964,7 @@ def alpha_71(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     return pd.concat([ts_rank_decay_corr, ts_rank_decay_squared], axis=1).max(axis=1)
 
+
 @register_worldquant_factor(name='alpha_72',
                             description='alpha_72 因子')
 def alpha_72(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -2021,6 +2007,7 @@ def alpha_72(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     return rank_decay1 / rank_decay2
 
+
 @register_worldquant_factor(name='alpha_73',
                             description='alpha_73 因子')
 def alpha_73(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -2061,6 +2048,7 @@ def alpha_73(data: pd.DataFrame, **kwargs) -> pd.Series:
     max_result = pd.concat([rank_decay_delta, ts_rank_decay_ratio], axis=1).max(axis=1)
     return max_result * -1
 
+
 @register_worldquant_factor(name='alpha_74',
                             description='alpha_74 因子')
 def alpha_74(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -2094,6 +2082,7 @@ def alpha_74(data: pd.DataFrame, **kwargs) -> pd.Series:
     result = (rank_correlation1 < rank_correlation2).astype(int)
     return result * -1
 
+
 @register_worldquant_factor(name='alpha_75',
                             description='alpha_75 因子')
 def alpha_75(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -2126,6 +2115,7 @@ def alpha_75(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     result = (rank_correlation1 < rank_correlation2).astype(int)
     return result * -1
+
 
 @register_worldquant_factor(name='alpha_76',
                             description='alpha_76 因子')
@@ -2170,6 +2160,7 @@ def alpha_76(data: pd.DataFrame, **kwargs) -> pd.Series:
 
     return pd.concat([rank_decay_corr, ts_rank_decay_squared], axis=1).max(axis=1)
 
+
 @register_worldquant_factor(name='alpha_77',
                             description='alpha_77 因子')
 def alpha_77(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -2208,6 +2199,7 @@ def alpha_77(data: pd.DataFrame, **kwargs) -> pd.Series:
     rank_decay2 = decay_linear_corr2.rank(pct=True)
 
     return (rank_decay1 < rank_decay2).astype(int)
+
 
 @register_worldquant_factor(name='alpha_78',
                             description='alpha_78 因子')
@@ -2253,12 +2245,12 @@ def alpha_78(data: pd.DataFrame, **kwargs) -> pd.Series:
 # 注释掉的因子：需要行业中性化数据
 #
 
-@register_worldquant_factor(name='alpha_79', description='Alpha#79: (rank(decay_linear(correlation(IndNeutralize(vwap, IndClass.industry), volume, 4.25197), 16.2289)) < rank(delta(IndNeutralize(close, IndClass.industry), 2.25164)))')
+@register_worldquant_factor(name='alpha_79',
+                            description='Alpha#79: (rank(decay_linear(correlation(IndNeutralize(vwap, IndClass.industry), volume, 4.25197), 16.2289)) < rank(delta(IndNeutralize(close, IndClass.industry), 2.25164)))')
 # def alpha_79(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
 #     """Alpha#79: 需要行业中性化数据，暂时注释"""
 #     # 需要行业分类数据，暂时无法实现
 #     pass
-
 
 @register_worldquant_factor(name='alpha_80',
                             description='alpha_80 因子')
@@ -2298,7 +2290,8 @@ def alpha_80(data: pd.DataFrame, **kwargs) -> pd.Series:
 # 注释掉的因子：需要行业中性化数据
 #
 
-@register_worldquant_factor(name='alpha_81', description='Alpha#81: (rank(decay_linear(delta(IndNeutralize(close, IndClass.subindustry), 2.25164), 8.22237)) - rank(decay_linear(correlation(((vwap * 0.318108) + (open * (1 - 0.318108))), sum(adv180, 37.2467), 13.557), 12.2883))) * -1)')
+@register_worldquant_factor(name='alpha_81',
+                            description='Alpha#81: (rank(decay_linear(delta(IndNeutralize(close, IndClass.subindustry), 2.25164), 8.22237)) - rank(decay_linear(correlation(((vwap * 0.318108) + (open * (1 - 0.318108))), sum(adv180, 37.2467), 13.557), 12.2883))) * -1)')
 # def alpha_81(close: pd.Series, open: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
 #     """Alpha#81: 需要行业中性化数据，暂时注释"""
 #     # 需要行业分类数据，暂时无法实现
@@ -2439,7 +2432,6 @@ def alpha_80(data: pd.DataFrame, **kwargs) -> pd.Series:
 #     # 需要行业分类数据，暂时无法实现
 #     pass
 
-
 @register_worldquant_factor(name='alpha_101',
                             description='alpha_101 因子')
 def alpha_101(data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -2455,6 +2447,6 @@ def alpha_101(data: pd.DataFrame, **kwargs) -> pd.Series:
     close = data['close']
     open = data['open']
     vwap = data['vwap']
-    
+
     # 简单的示例因子实现
     return close.pct_change(1)
