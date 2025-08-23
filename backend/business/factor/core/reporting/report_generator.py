@@ -1,767 +1,612 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-@Author     : Zijun Deng
-@Date       : 8/19/25 11:24 PM
 @File       : report_generator.py
-@Description: 报告生成器，负责生成完整的因子研究报告
+@Description: 因子报告生成器 - 基于Jinja2模板的交互式HTML报告系统
+@Author     : Zijun Deng
+@Date       : 2025-08-23
 """
 
 import os
+import json
 from datetime import datetime
-from typing import Dict, List, Optional, Any
-
-import numpy as np
+from typing import Dict, List, Any, Optional
 import pandas as pd
-import quantstats as qs
+import numpy as np
 
-from backend.business.factor.core.analysis.factor_analyzer import FactorAnalyzer
-from backend.business.factor.core.backtest.backtest_engine import FactorBacktestEngine
-from backend.business.factor.core.data.data_manager import FactorDataManager
-from backend.business.factor.core.factor.factor_engine import FactorEngine
-from backend.business.factor.core.reporting.templates import HTMLTemplateManager
-from backend.utils.logger import setup_logger
+from jinja2 import Environment, FileSystemLoader, Template
 
-logger = setup_logger("backtest_factor")
-
-# 设置QuantStats
-qs.extend_pandas()
+# 尝试导入logger，如果失败则使用简单的print
+try:
+    from backend.utils.logger import setup_logger
+    logger = setup_logger("factor_report_generator")
+except ImportError:
+    # 简单的logger替代
+    class SimpleLogger:
+        def __init__(self, name):
+            self.name = name
+        
+        def info(self, msg):
+            print(f"[INFO] {self.name}: {msg}")
+        
+        def error(self, msg):
+            print(f"[ERROR] {self.name}: {msg}")
+        
+        def warning(self, msg):
+            print(f"[WARNING] {self.name}: {msg}")
+    
+    logger = SimpleLogger("factor_report_generator")
 
 
 class FactorReportGenerator:
     """
-    报告生成器，负责生成完整的因子研究报告
+    因子报告生成器
     
-    功能：
-    1. 生成因子研究报告
-    2. 生成回测报告
-    3. 生成综合分析报告
-    4. 导出Excel和PDF报告
+    基于Jinja2模板系统，生成专业的交互式HTML因子分析报告
+    支持批量报告和合并报告两种模式
     """
-
-    def __init__(self,
-                 factor_engine: FactorEngine,
-                 backtest_engine: FactorBacktestEngine,
-                 analyzer: FactorAnalyzer,
-                 data_manager: FactorDataManager):
+    
+    def __init__(self, template_path: str = None):
         """
         初始化报告生成器
         
         Args:
-            factor_engine: 因子引擎实例
-            backtest_engine: 回测引擎实例
-            analyzer: 分析器实例
-            data_manager: 数据管理器实例
+            template_path: 模板文件路径，默认为当前目录下的templates文件夹
         """
-        self.factor_engine = factor_engine
-        self.backtest_engine = backtest_engine
-        self.analyzer = analyzer
-        self.data_manager = data_manager
-        self._reports = {}
-        self.template_manager = HTMLTemplateManager()
-
-    def generate_factor_report(self,
-                               factor_name: str,
-                               output_dir: str = "reports",
-                               **kwargs) -> str:
+        if template_path is None:
+            template_path = os.path.join(os.path.dirname(__file__), 'templates')
+        
+        self.template_path = template_path
+        self.env = Environment(
+            loader=FileSystemLoader(template_path),
+            autoescape=True,
+            trim_blocks=True,
+            lstrip_blocks=True
+        )
+        
+        # 添加自定义过滤器
+        self.env.filters['format_percentage'] = self._format_percentage
+        self.env.filters['format_number'] = self._format_number
+        self.env.filters['safe_json'] = self._safe_json
+        
+        logger.info(f"报告生成器初始化完成，模板路径: {template_path}")
+    
+    def generate_batch_report(self, 
+                             batch_name: str, 
+                             report_data: Dict[str, Any], 
+                             output_path: str,
+                             **kwargs) -> str:
         """
-        生成单个因子研究报告（交互式版本）
+        生成单个批次的HTML报告
         
         Args:
-            factor_name: 因子名称
-            output_dir: 输出目录
+            batch_name: 批次名称
+            report_data: 报告数据字典
+            output_path: 输出文件路径
             **kwargs: 其他参数
             
         Returns:
-            报告文件路径
+            生成的报告文件路径
         """
-        logger.info(f"开始生成单个因子交互式报告: {factor_name}")
-
-        # 创建输出目录
-        os.makedirs(output_dir, exist_ok=True)
-
-        # 生成报告文件名
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_filename = f"factor_report_{factor_name}_{timestamp}.html"
-        report_path = os.path.join(output_dir, report_filename)
-
+        logger.info(f"开始生成批次报告: {batch_name}")
+        
         try:
-            # 获取回测结果
-            result_key = f'topn_{factor_name}'
-            backtest_result = self.backtest_engine.get_backtest_results(result_key)
-
-            if backtest_result is None:
-                # 尝试从框架结果中获取
-                if hasattr(self, '_framework_results') and self._framework_results:
-                    backtest_results = self._framework_results.get('backtest_results', {})
-                    backtest_result = backtest_results.get(result_key)
-
-            if backtest_result is None:
-                logger.warning(f"因子 {factor_name} 的回测结果不存在，生成基础报告")
-                # 生成基础交互式报告
-                html_content = self.template_manager.render_template('single_factor_interactive', factor_name=factor_name)
-            else:
-                # 生成完整的交互式报告
-                html_content = self.template_manager.render_template('single_factor_interactive', factor_name=factor_name)
-
-            # 保存报告
-            with open(report_path, 'w', encoding='utf-8') as f:
+            # 准备模板上下文
+            context = self._prepare_batch_context(batch_name, report_data, **kwargs)
+            
+            # 渲染模板
+            template = self.env.get_template('base_template.html')
+            html_content = template.render(**context)
+            
+            # 确保输出目录存在
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
+            # 写入文件
+            with open(output_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
-
-            logger.info(f"单个因子交互式报告已生成: {report_path}")
-            return report_path
-
+            
+            logger.info(f"批次报告生成成功: {output_path}")
+            return output_path
+            
         except Exception as e:
-            logger.error(f"生成单个因子交互式报告失败: {e}")
+            logger.error(f"生成批次报告失败: {e}")
             raise
-
-    def generate_backtest_report(self,
-                                 result_key: str,
-                                 output_dir: str = "reports",
-                                 **kwargs) -> str:
+    
+    def generate_merged_report(self, 
+                              all_batches_data: List[Dict[str, Any]], 
+                              output_path: str,
+                              **kwargs) -> str:
         """
-        生成回测报告
+        生成合并的综合报告
         
         Args:
-            result_key: 回测结果键名
-            output_dir: 输出目录
+            all_batches_data: 所有批次的数据列表
+            output_path: 输出文件路径
             **kwargs: 其他参数
             
         Returns:
-            报告文件路径
+            生成的报告文件路径
         """
-        logger.info(f"开始生成回测报告: {result_key}")
-
-        # 创建输出目录
-        os.makedirs(output_dir, exist_ok=True)
-
-        # 获取回测结果
-        backtest_result = self.backtest_engine.get_backtest_results(result_key)
-        if backtest_result is None:
-            # 尝试从框架结果中获取
-            if hasattr(self, '_framework_results') and self._framework_results:
-                backtest_results = self._framework_results.get('backtest_results', {})
-                backtest_result = backtest_results.get(result_key)
-
-        if backtest_result is None:
-            raise ValueError(f"回测结果 {result_key} 不存在")
-
-        # 生成QuantStats HTML报告
-        report_path = self._generate_quantstats_report(backtest_result, result_key, output_dir, **kwargs)
-
-        logger.info(f"回测报告已生成: {report_path}")
-        return report_path
-
-    def generate_comprehensive_report(self,
-                                      factor_names: List[str],
-                                      output_dir: str = "reports",
-                                      backtest_results: Optional[Dict[str, Any]] = None,
-                                      merged_results: Optional[Dict[str, Any]] = None,
-                                      analysis_summary: Optional[Dict[str, Any]] = None,
-                                      **kwargs) -> str:
-        """
-        生成综合分析报告（统一交互式版本）
+        logger.info("开始生成合并报告")
         
-        Args:
-            factor_names: 因子名称列表
-            output_dir: 输出目录
-            backtest_results: 单个因子回测结果字典
-            merged_results: 合并的回测结果字典（用于多因子）
-            analysis_summary: 分析总结字典（用于多因子）
-            **kwargs: 其他参数
-            
-        Returns:
-            报告文件路径
-        """
-        logger.info(f"开始生成交互式综合分析报告: {factor_names}")
-
-        # 创建输出目录
-        os.makedirs(output_dir, exist_ok=True)
-
-        # 生成报告文件名 - 多因子报告添加"总"字
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        if merged_results and analysis_summary and len(factor_names) > 1:
-            # 多因子合并模式，添加"总"字
-            report_filename = f"总_comprehensive_report_{timestamp}.html"
-        else:
-            # 单个因子模式
-            report_filename = f"comprehensive_report_{timestamp}.html"
-        report_path = os.path.join(output_dir, report_filename)
-
-        # 准备数据 - 支持单个因子和多因子两种情况
-        if merged_results and analysis_summary:
-            # 多因子合并模式
-            results_data = merged_results
-            summary_data = analysis_summary
-        else:
-            # 单个因子模式
-            results_data = {'backtest_results': backtest_results} if backtest_results else {}
-            summary_data = {
-                'successful_factors': factor_names,
-                'success_rate': 1.0,
-                'best_factor': factor_names[0] if factor_names else 'N/A'
-            }
-
-        # 生成交互式HTML报告
         try:
-            html_content = self.template_manager.render_template('interactive_summary',
-                factor_names=factor_names,
-                merged_results=results_data,
-                analysis_summary=summary_data,
-                start_date=kwargs.get('start_date', 'N/A'),
-                end_date=kwargs.get('end_date', 'N/A'),
-                stock_pool=kwargs.get('stock_pool', 'no_st'),
-                top_n=kwargs.get('top_n', 10),
-                n_groups=kwargs.get('n_groups', 5)
-            )
-
-            with open(report_path, 'w', encoding='utf-8') as f:
+            # 合并所有批次数据
+            merged_data = self._merge_batch_data(all_batches_data)
+            
+            # 执行高级分析
+            analysis_results = self._perform_advanced_analysis(merged_data)
+            
+            # 准备模板上下文
+            context = self._prepare_merged_context(merged_data, analysis_results, **kwargs)
+            
+            # 渲染模板
+            template = self.env.get_template('base_template.html')
+            html_content = template.render(**context)
+            
+            # 确保输出目录存在
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
+            # 写入文件
+            with open(output_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
-
-            logger.info(f"交互式综合分析报告已生成: {report_path}")
-            return report_path
-
+            
+            logger.info(f"合并报告生成成功: {output_path}")
+            return output_path
+            
         except Exception as e:
-            logger.error(f"生成交互式综合分析报告失败: {e}")
+            logger.error(f"生成合并报告失败: {e}")
             raise
-
-    def _calculate_metrics_from_returns(self, returns_series: pd.Series) -> Dict[str, Any]:
-        """从收益率序列计算核心回测指标"""
-        if returns_series is None or returns_series.empty or len(returns_series) < 2:
-            return {
-                'total_return': 0.0, 'annual_return': 0.0, 'volatility': 0.0,
-                'sharpe_ratio': 0.0, 'max_drawdown': 0.0,
-                'trading_days': len(returns_series) if returns_series is not None else 0
-            }
-
-        # 计算累计收益率
-        total_return = (1 + returns_series).prod() - 1
-
-        # 计算年化收益率 (修正公式)
-        trading_days = len(returns_series)
-        annual_return = ((1 + total_return) ** (252 / trading_days)) - 1 if trading_days > 0 else 0
-
-        # 计算年化波动率
-        volatility = returns_series.std() * np.sqrt(252) if trading_days > 0 else 0
-
-        # 计算夏普比率
-        sharpe_ratio = annual_return / volatility if volatility > 0 else 0
-
-        # 计算最大回撤
-        cumulative = (1 + returns_series).cumprod()
-        running_max = cumulative.expanding().max()
-        drawdown = (cumulative - running_max) / running_max
-        max_drawdown = drawdown.min()
-
-        return {
-            'total_return': total_return,
-            'annual_return': annual_return,
-            'volatility': volatility,
-            'sharpe_ratio': sharpe_ratio,
-            'max_drawdown': max_drawdown,
-            'trading_days': trading_days
-        }
-
-    def _get_returns_from_portfolio(self, portfolio: Any) -> Optional[pd.Series]:
-        """从 portfolio 对象中安全地提取和处理收益率序列"""
-        if portfolio is None:
-            return None
-
-        returns = portfolio.returns()
-        if returns is None or returns.empty:
-            return None
-
-        # 标准化为 pd.Series
-        if isinstance(returns, pd.DataFrame):
-            returns_series = returns.iloc[:, 0]
-        elif isinstance(returns, np.ndarray):
-            returns_series = pd.Series(returns.flatten())
-        else:
-            returns_series = returns
-
-        # 确保返回的是Series
-        if not isinstance(returns_series, pd.Series):
-            returns_series = pd.Series(returns_series)
-
-        return returns_series.dropna()
-
-    def _collect_summary_data(self, factor_names: List[str]) -> Dict[str, Any]:
+    
+    def _prepare_batch_context(self, 
+                              batch_name: str, 
+                              report_data: Dict[str, Any], 
+                              **kwargs) -> Dict[str, Any]:
         """
-        收集所有分析数据 (重构和修正版本)
+        准备批次报告的模板上下文
         
         Args:
-            factor_names: 因子名称列表
+            batch_name: 批次名称
+            report_data: 报告数据
+            **kwargs: 其他参数
             
         Returns:
-            汇总数据字典
+            模板上下文字典
         """
-        summary_data = {
+        factor_names = report_data.get('factor_names', [])
+        
+        # 提取性能指标
+        performance_data = self._extract_performance_data(report_data)
+        
+        # 提取IC指标
+        ic_data = self._extract_ic_data(report_data)
+        
+        # 提取时间序列数据
+        chart_data = self._extract_chart_data(report_data)
+        
+        # 提取详细分析数据
+        detailed_data = self._extract_detailed_data(report_data)
+        
+        # 计算统计指标
+        stats = self._calculate_batch_statistics(performance_data, ic_data)
+        
+        context = {
+            # 报告基本信息
+            'report_title': f'因子分析报告 - {batch_name}',
+            'report_subtitle': f'批次分析报告，包含 {len(factor_names)} 个因子',
+            'generation_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'factor_count': len(factor_names),
+            'is_merged_report': False,
+            
+            # 因子列表
             'factor_names': factor_names,
-            'topn_results': {},
-            'group_results': {},
-            'multifactor_results': {},
-            'ic_results': {},
-            'effectiveness_results': {}
+            
+            # 数据
+            'performance_data': performance_data,
+            'ic_data': ic_data,
+            'chart_data': chart_data,
+            'detailed_data': detailed_data,
+            
+            # 统计信息
+            'total_factors': stats['total_factors'],
+            'positive_factors': stats['positive_factors'],
+            'avg_sharpe': stats['avg_sharpe'],
+            'avg_ic': stats['avg_ic'],
+            'best_sharpe': stats['best_sharpe'],
+            'worst_sharpe': stats['worst_sharpe'],
+            
+            # 分析配置
+            'start_date': kwargs.get('start_date', 'N/A'),
+            'end_date': kwargs.get('end_date', 'N/A'),
+            'stock_pool': kwargs.get('stock_pool', 'no_st'),
+            'top_n': kwargs.get('top_n', 10),
+            'n_groups': kwargs.get('n_groups', 5),
+            
+            # 推荐因子（批次报告为空）
+            'top_factors': [],
+            'bottom_factors': [],
         }
-
-        backtest_results_pool = self._framework_results.get('backtest_results', {}) if hasattr(self,
-                                                                                               '_framework_results') else {}
-        if not backtest_results_pool:
-            backtest_results_pool = self.backtest_engine._results  # Fallback
-
-        # 收集TopN回测结果
-        for factor_name in factor_names:
-            try:
-                result_key = f'topn_{factor_name}'  # 简化key的查找
-                backtest_result = backtest_results_pool.get(result_key)
-
-                if backtest_result and 'portfolio' in backtest_result:
-                    returns_series = self._get_returns_from_portfolio(backtest_result['portfolio'])
-                    stats = self._calculate_metrics_from_returns(returns_series)
-                    summary_data['topn_results'][factor_name] = stats
-                    logger.info(f"成功收集因子 {factor_name} TopN结果，使用键: {result_key}")
-                else:
-                    logger.warning(f"因子 {factor_name} TopN结果中未找到 'portfolio' 对象，无法计算指标。")
-            except Exception as e:
-                logger.error(f"收集因子 {factor_name} TopN结果失败: {e}")
-
-        # 收集分组回测结果
-        for factor_name in factor_names:
-            try:
-                result_key = f'group_{factor_name}'  # 简化key的查找
-                backtest_result = backtest_results_pool.get(result_key)
-
-                if backtest_result and 'portfolios' in backtest_result:
-                    group_stats = {}
-                    portfolios = backtest_result['portfolios']
-                    for group_name, portfolio in portfolios.items():
-                        returns_series = self._get_returns_from_portfolio(portfolio)
-                        stats = self._calculate_metrics_from_returns(returns_series)
-                        group_stats[group_name] = stats
-
-                    summary_data['group_results'][factor_name] = group_stats
-                    logger.info(f"成功收集因子 {factor_name} 分组结果，使用键: {result_key}")
-                else:
-                    logger.warning(f"因子 {factor_name} 分组结果中未找到 'portfolios' 对象，无法计算指标。")
-            except Exception as e:
-                logger.error(f"收集因子 {factor_name} 分组结果失败: {e}")
-
-        # 收集多因子回测结果
-        try:
-            result_key = 'multifactor'
-            backtest_result = backtest_results_pool.get(result_key)
-
-            if backtest_result and 'portfolio' in backtest_result:
-                returns_series = self._get_returns_from_portfolio(backtest_result['portfolio'])
-                stats = self._calculate_metrics_from_returns(returns_series)
-                summary_data['multifactor_results'] = stats
-            else:
-                logger.warning("多因子结果中未找到 'portfolio' 对象。")
-        except Exception as e:
-            logger.error(f"收集多因子结果失败: {e}")
-
-        # 收集IC和有效性分析结果 (保持不变)
-        for factor_name in factor_names:
-            try:
-                # IC结果
-                ic_key = f'ic_{factor_name}_pearson'
-                ic_result = self.analyzer.get_analysis_results(ic_key)
-                if ic_result is not None:
-                    summary_data['ic_results'][factor_name] = {
-                        'pearson_ic': ic_result.get('ic_stats', {}).get('mean_ic', 0),
-                        'ic_ir': ic_result.get('ic_stats', {}).get('ir', 0),
-                        'ic_win_rate': ic_result.get('ic_stats', {}).get('win_rate', 0)
-                    }
-
-                # 有效性分析结果
-                effectiveness_key = f'effectiveness_{factor_name}'
-                effectiveness_result = self.analyzer.get_analysis_results(effectiveness_key)
-                if effectiveness_result is not None:
-                    summary_data['effectiveness_results'][factor_name] = effectiveness_result
-            except Exception as e:
-                logger.warning(f"收集因子 {factor_name} IC和有效性结果失败: {e}")
-
-        return summary_data
-
-    def _generate_quantstats_report(self,
-                                    backtest_result: Dict[str, Any],
-                                    result_key: str,
-                                    output_dir: str,
-                                    **kwargs) -> str:
+        
+        return context
+    
+    def _prepare_merged_context(self, 
+                               merged_data: Dict[str, Any], 
+                               analysis_results: Dict[str, Any],
+                               **kwargs) -> Dict[str, Any]:
         """
-        使用QuantStats生成HTML回测报告
-
+        准备合并报告的模板上下文
+        
         Args:
-            backtest_result: 回测结果
-            result_key: 结果键名
-            output_dir: 输出目录
+            merged_data: 合并后的数据
+            analysis_results: 分析结果
             **kwargs: 其他参数
-
+            
         Returns:
-            HTML报告文件路径
+            模板上下文字典
         """
-        try:
-            # 检查是否是分组回测结果
-            if 'portfolios' in backtest_result:
-                # 分组回测结果，生成分组对比报告
-                return self._generate_group_backtest_report(backtest_result, result_key, output_dir, **kwargs)
-
-            # 获取portfolio对象
-            portfolio = backtest_result.get('portfolio')
-            if portfolio is None:
-                raise ValueError(f"回测结果 {result_key} 中没有portfolio对象")
-
-            # 获取收益率序列
-            returns = portfolio.returns()
-            if returns is None or returns.empty:
-                raise ValueError("收益率数据为空")
-
-            # 确保收益率数据格式正确
-            if isinstance(returns, pd.Series):
-                # 确保索引是datetime类型
-                if not isinstance(returns.index, pd.DatetimeIndex):
-                    try:
-                        returns.index = pd.to_datetime(returns.index)
-                    except:
-                        pass
-
-                # 转换为DataFrame，确保列名为'Strategy'
-                returns = returns.to_frame('Strategy')
-
-            # 确保数据不为空且有效
-            if returns.empty or returns.isnull().all().all():
-                raise ValueError("收益率数据为空或全为NaN")
-
-            # 移除全为NaN的行
-            returns = returns.dropna()
-
-            if returns.empty:
-                raise ValueError("处理后收益率数据为空")
-
-            # 确保至少有一些非零收益率
-            if (returns == 0).all().all():
-                logger.warning("所有收益率都为0，可能影响报告质量")
-
-            # 生成报告文件名
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            report_filename = f"backtest_report_{result_key}_{timestamp}.html"
-            report_path = os.path.join(output_dir, report_filename)
-
-            # 尝试生成QuantStats报告
-            try:
-                qs.reports.html(returns,
-                                output=report_path,
-                                title=f"因子回测报告 - {result_key}",
-                                download_filename=report_filename,
-                                benchmark=None)
-                logger.info(f"QuantStats HTML报告已生成: {report_path}")
-                return report_path
-            except Exception as qs_error:
-                logger.warning(f"QuantStats报告生成失败: {qs_error}，生成简单HTML报告")
-                return self._generate_simple_html_report(returns, result_key, report_path)
-
-        except Exception as e:
-            logger.error(f"报告生成失败: {e}")
-            # 生成一个简单的错误报告
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            report_filename = f"error_report_{result_key}_{timestamp}.html"
-            report_path = os.path.join(output_dir, report_filename)
-
-            error_html = self.template_manager.render_template('error_report',
-                result_key=result_key,
-                error_message=str(e),
-                report_type='回测报告'
-            )
-
-            with open(report_path, 'w', encoding='utf-8') as f:
-                f.write(error_html)
-
-            logger.info(f"错误报告已生成: {report_path}")
-            return report_path
-
-    def _generate_simple_html_report(self, returns: pd.DataFrame, result_key: str, report_path: str) -> str:
+        factor_names = merged_data.get('factor_names', [])
+        
+        # 提取各种数据
+        performance_data = merged_data.get('performance_data', {})
+        ic_data = merged_data.get('ic_data', {})
+        chart_data = merged_data.get('chart_data', {})
+        detailed_data = merged_data.get('detailed_data', {})
+        
+        # 计算统计指标
+        stats = self._calculate_merged_statistics(performance_data, ic_data)
+        
+        context = {
+            # 报告基本信息
+            'report_title': '因子分析综合报告',
+            'report_subtitle': f'综合分析报告，包含 {len(factor_names)} 个因子',
+            'generation_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'factor_count': len(factor_names),
+            'is_merged_report': True,
+            
+            # 因子列表
+            'factor_names': factor_names,
+            
+            # 数据
+            'performance_data': performance_data,
+            'ic_data': ic_data,
+            'chart_data': chart_data,
+            'detailed_data': detailed_data,
+            
+            # 统计信息
+            'total_factors': stats['total_factors'],
+            'positive_factors': stats['positive_factors'],
+            'avg_sharpe': stats['avg_sharpe'],
+            'avg_ic': stats['avg_ic'],
+            'best_sharpe': stats['best_sharpe'],
+            'worst_sharpe': stats['worst_sharpe'],
+            
+            # 分析配置
+            'start_date': kwargs.get('start_date', 'N/A'),
+            'end_date': kwargs.get('end_date', 'N/A'),
+            'stock_pool': kwargs.get('stock_pool', 'no_st'),
+            'top_n': kwargs.get('top_n', 10),
+            'n_groups': kwargs.get('n_groups', 5),
+            
+            # 推荐因子
+            'top_factors': analysis_results.get('top_factors', []),
+            'bottom_factors': analysis_results.get('bottom_factors', []),
+        }
+        
+        return context
+    
+    def _merge_batch_data(self, all_batches_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        生成简单的HTML回测报告
-
+        合并所有批次的数据
+        
         Args:
-            returns: 收益率数据
-            result_key: 结果键名
-            report_path: 报告文件路径
-
+            all_batches_data: 所有批次的数据列表
+            
         Returns:
-            报告文件路径
+            合并后的数据字典
         """
-        try:
-            # 确保returns是DataFrame格式
-            if isinstance(returns, pd.Series):
-                returns = returns.to_frame('Strategy')
-
-            # 获取第一列数据
-            returns_series = returns.iloc[:, 0]
-
-            # 计算基本统计指标
-            total_return = (1 + returns_series).prod() - 1
-            annual_return = total_return * 252 / len(returns_series) if len(returns_series) > 0 else 0
-            volatility = returns_series.std() * np.sqrt(252) if len(returns_series) > 0 else 0
-            sharpe_ratio = annual_return / volatility if volatility > 0 else 0
-
-            # 计算最大回撤
-            cumulative = (1 + returns_series).cumprod()
-            running_max = cumulative.expanding().max()
-            drawdown = (cumulative - running_max) / running_max
-            max_drawdown = drawdown.min()
-
-            # 使用模板生成HTML报告
-            html_content = self.template_manager.render_template('simple_html_report',
-                result_key=result_key,
-                total_return=total_return,
-                annual_return=annual_return,
-                volatility=volatility,
-                sharpe_ratio=sharpe_ratio,
-                max_drawdown=max_drawdown,
-                trading_days=len(returns_series),
-                returns_series=returns_series.tolist()
-            )
-
-            with open(report_path, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-
-            logger.info(f"简单HTML报告已生成: {report_path}")
-            return report_path
-
-        except Exception as e:
-            logger.error(f"简单HTML报告生成失败: {e}")
-            raise
-
-    def _generate_group_backtest_report(self,
-                                        backtest_result: Dict[str, Any],
-                                        result_key: str,
-                                        output_dir: str,
-                                        **kwargs) -> str:
+        merged_data = {
+            'factor_names': [],
+            'performance_data': {},
+            'ic_data': {},
+            'chart_data': {},
+            'detailed_data': {}
+        }
+        
+        for batch_data in all_batches_data:
+            # 合并因子名称
+            factor_names = batch_data.get('factor_names', [])
+            merged_data['factor_names'].extend(factor_names)
+            
+            # 合并性能数据
+            performance_data = batch_data.get('performance_metrics', {})
+            merged_data['performance_data'].update(performance_data)
+            
+            # 合并IC数据
+            ic_data = batch_data.get('ic_metrics', {})
+            merged_data['ic_data'].update(ic_data)
+            
+            # 合并图表数据
+            time_series_returns = batch_data.get('time_series_returns', {})
+            merged_data['chart_data'].update(time_series_returns)
+            
+            # 合并详细数据
+            detailed_analysis = batch_data.get('detailed_analysis', {})
+            merged_data['detailed_data'].update(detailed_analysis)
+        
+        # 去重因子名称
+        merged_data['factor_names'] = list(set(merged_data['factor_names']))
+        
+        return merged_data
+    
+    def _perform_advanced_analysis(self, merged_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        生成分组回测报告
-
+        执行高级分析，生成推荐因子和问题因子
+        
         Args:
-            backtest_result: 分组回测结果
-            result_key: 结果键名
-            output_dir: 输出目录
-            **kwargs: 其他参数
-
+            merged_data: 合并后的数据
+            
         Returns:
-            报告文件路径
+            分析结果字典
         """
-        try:
-            portfolios = backtest_result.get('portfolios', {})
-
-            if not portfolios:
-                raise ValueError("分组回测结果中没有portfolio数据")
-
-            # 收集各组的收益率数据
-            returns_dict = {}
-            for group_name, portfolio in portfolios.items():
-                try:
-                    returns = portfolio.returns()
-                    if returns is not None and not returns.empty:
-                        # 确保索引是datetime类型
-                        if not isinstance(returns.index, pd.DatetimeIndex):
-                            try:
-                                returns.index = pd.to_datetime(returns.index)
-                            except:
-                                pass
-
-                        # 清理数据
-                        returns = returns.dropna()
-                        if not returns.empty and len(returns) > 1:
-                            returns_dict[group_name] = returns
-                except Exception as e:
-                    logger.warning(f"获取分组 {group_name} 收益率数据失败: {e}")
-                    continue
-
-            if not returns_dict:
-                raise ValueError("没有可用的分组收益率数据")
-
-            # 生成报告文件名
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            report_filename = f"group_backtest_report_{result_key}_{timestamp}.html"
-            report_path = os.path.join(output_dir, report_filename)
-
-            # 尝试生成QuantStats对比报告
-            try:
-                # 创建收益率DataFrame
-                returns_df = pd.DataFrame(returns_dict)
-
-                # 确保数据不为空
-                if returns_df.empty:
-                    raise ValueError("分组收益率数据为空")
-
-                # 移除全为NaN的行
-                returns_df = returns_df.dropna()
-
-                if returns_df.empty:
-                    raise ValueError("处理后分组收益率数据为空")
-
-                qs.reports.html(returns_df,
-                                output=report_path,
-                                title=f"分组回测报告 - {result_key}",
-                                download_filename=report_filename,
-                                benchmark=None)
-                logger.info(f"分组QuantStats HTML报告已生成: {report_path}")
-                return report_path
-            except Exception as e:
-                logger.warning(f"分组QuantStats报告生成失败: {e}，生成简单分组报告")
-                return self._generate_simple_group_report(backtest_result, result_key, report_path)
-
-        except Exception as e:
-            logger.error(f"分组报告生成失败: {e}")
-            # 生成错误报告
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            report_filename = f"error_report_{result_key}_{timestamp}.html"
-            report_path = os.path.join(output_dir, report_filename)
-
-            error_html = self.template_manager.render_template('error_report',
-                result_key=result_key,
-                error_message=str(e),
-                report_type='分组回测报告'
-            )
-
-            with open(report_path, 'w', encoding='utf-8') as f:
-                f.write(error_html)
-
-            logger.info(f"分组错误报告已生成: {report_path}")
-            return report_path
-
-    def _generate_simple_group_report(self,
-                                      backtest_result: Dict[str, Any],
-                                      result_key: str,
-                                      report_path: str) -> str:
+        performance_data = merged_data.get('performance_data', {})
+        ic_data = merged_data.get('ic_data', {})
+        
+        # 创建因子评分表
+        factor_scores = []
+        
+        for factor_name in merged_data.get('factor_names', []):
+            performance = performance_data.get(factor_name, {})
+            ic = ic_data.get(factor_name, {})
+            
+            # 计算综合评分（基于夏普比率和IC IR）
+            sharpe_ratio = performance.get('sharpe_ratio', 0)
+            ic_ir = ic.get('ic_ir', 0)
+            
+            # 综合评分 = 夏普比率 * 0.6 + IC IR * 0.4
+            composite_score = sharpe_ratio * 0.6 + ic_ir * 0.4
+            
+            factor_scores.append({
+                'name': factor_name,
+                'sharpe_ratio': sharpe_ratio,
+                'ic_ir': ic_ir,
+                'annual_return': performance.get('annual_return', 0),
+                'composite_score': composite_score
+            })
+        
+        # 按综合评分排序
+        factor_scores.sort(key=lambda x: x['composite_score'], reverse=True)
+        
+        # 提取前5名和后5名
+        top_factors = []
+        bottom_factors = []
+        
+        for i, factor in enumerate(factor_scores[:5]):
+            top_factors.append({
+                'rank': i + 1,
+                'name': factor['name'],
+                'sharpe_ratio': factor['sharpe_ratio'],
+                'annual_return': factor['annual_return'],
+                'composite_score': factor['composite_score']
+            })
+        
+        for i, factor in enumerate(factor_scores[-5:]):
+            bottom_factors.append({
+                'rank': len(factor_scores) - 4 + i,
+                'name': factor['name'],
+                'sharpe_ratio': factor['sharpe_ratio'],
+                'annual_return': factor['annual_return'],
+                'composite_score': factor['composite_score']
+            })
+        
+        return {
+            'top_factors': top_factors,
+            'bottom_factors': bottom_factors,
+            'factor_scores': factor_scores
+        }
+    
+    def _extract_performance_data(self, report_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        生成简单的分组回测报告
-
+        从报告数据中提取性能指标
+        
         Args:
-            backtest_result: 分组回测结果
-            result_key: 结果键名
-            report_path: 报告文件路径
-
+            report_data: 报告数据
+            
         Returns:
-            报告文件路径
+            性能指标字典
+        """
+        performance_metrics = report_data.get('performance_metrics', {})
+        
+        # 如果performance_metrics是DataFrame，转换为字典
+        if isinstance(performance_metrics, pd.DataFrame):
+            return performance_metrics.to_dict('index')
+        
+        return performance_metrics
+    
+    def _extract_ic_data(self, report_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        从报告数据中提取IC指标
+        
+        Args:
+            report_data: 报告数据
+            
+        Returns:
+            IC指标字典
+        """
+        ic_metrics = report_data.get('ic_metrics', {})
+        
+        # 如果ic_metrics是DataFrame，转换为字典
+        if isinstance(ic_metrics, pd.DataFrame):
+            return ic_metrics.to_dict('index')
+        
+        return ic_metrics
+    
+    def _extract_chart_data(self, report_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        从报告数据中提取图表数据
+        
+        Args:
+            report_data: 报告数据
+            
+        Returns:
+            图表数据字典
+        """
+        time_series_returns = report_data.get('time_series_returns', {})
+        chart_data = {}
+        
+        for factor_name, returns_series in time_series_returns.items():
+            if isinstance(returns_series, pd.Series):
+                # 计算累计收益率
+                cumulative_returns = (1 + returns_series).cumprod()
+                
+                chart_data[factor_name] = {
+                    'dates': returns_series.index.strftime('%Y-%m-%d').tolist(),
+                    'values': cumulative_returns.tolist()
+                }
+        
+        return chart_data
+    
+    def _extract_detailed_data(self, report_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        从报告数据中提取详细分析数据
+        
+        Args:
+            report_data: 报告数据
+            
+        Returns:
+            详细数据字典
+        """
+        detailed_analysis = report_data.get('detailed_analysis', {})
+        processed_data = {}
+        
+        for factor_name, factor_data in detailed_analysis.items():
+            processed_data[factor_name] = {
+                'metrics': factor_data.get('metrics', {}),
+                'group_results': factor_data.get('group_results', {}),
+                'ic_stats': factor_data.get('ic_stats', {}),
+                'returns_series': factor_data.get('returns_series'),
+                'drawdown_series': factor_data.get('drawdown_series'),
+                'ic_series': factor_data.get('ic_series'),
+                'monthly_returns': factor_data.get('monthly_returns', []),
+                'risk_metrics': factor_data.get('risk_metrics', {})
+            }
+        
+        return processed_data
+    
+    def _calculate_batch_statistics(self, 
+                                   performance_data: Dict[str, Any], 
+                                   ic_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        计算批次统计指标
+        
+        Args:
+            performance_data: 性能数据
+            ic_data: IC数据
+            
+        Returns:
+            统计指标字典
+        """
+        if not performance_data:
+            return {
+                'total_factors': 0,
+                'positive_factors': 0,
+                'avg_sharpe': 0,
+                'avg_ic': 0,
+                'best_sharpe': 0,
+                'worst_sharpe': 0
+            }
+        
+        # 计算统计指标
+        sharpe_ratios = [p.get('sharpe_ratio', 0) for p in performance_data.values()]
+        annual_returns = [p.get('annual_return', 0) for p in performance_data.values()]
+        ic_means = [ic.get('mean_ic', 0) for ic in ic_data.values()]
+        
+        return {
+            'total_factors': len(performance_data),
+            'positive_factors': sum(1 for r in annual_returns if r > 0),
+            'avg_sharpe': np.mean(sharpe_ratios) if sharpe_ratios else 0,
+            'avg_ic': np.mean(ic_means) if ic_means else 0,
+            'best_sharpe': max(sharpe_ratios) if sharpe_ratios else 0,
+            'worst_sharpe': min(sharpe_ratios) if sharpe_ratios else 0
+        }
+    
+    def _calculate_merged_statistics(self, 
+                                    performance_data: Dict[str, Any], 
+                                    ic_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        计算合并报告统计指标
+        
+        Args:
+            performance_data: 性能数据
+            ic_data: IC数据
+            
+        Returns:
+            统计指标字典
+        """
+        return self._calculate_batch_statistics(performance_data, ic_data)
+    
+    def _format_percentage(self, value: float) -> str:
+        """
+        格式化百分比
+        
+        Args:
+            value: 数值
+            
+        Returns:
+            格式化后的百分比字符串
+        """
+        if pd.isna(value) or value is None:
+            return "N/A"
+        return f"{value:.2%}"
+    
+    def _format_number(self, value: float, decimals: int = 4) -> str:
+        """
+        格式化数字
+        
+        Args:
+            value: 数值
+            decimals: 小数位数
+            
+        Returns:
+            格式化后的数字字符串
+        """
+        if pd.isna(value) or value is None:
+            return "N/A"
+        return f"{value:.{decimals}f}"
+    
+    def _safe_json(self, obj: Any) -> str:
+        """
+        安全地将对象转换为JSON字符串
+        
+        Args:
+            obj: 要转换的对象
+            
+        Returns:
+            JSON字符串
         """
         try:
-            portfolios = backtest_result.get('portfolios', {})
-
-            # 收集各组的统计信息
-            group_stats = []
-            for group_name, portfolio in portfolios.items():
-                try:
-                    returns = portfolio.returns()
-                    if returns is not None and not returns.empty:
-                        # 处理returns数据，确保是1D Series
-                        if isinstance(returns, pd.Series):
-                            returns_series = returns.dropna()
-                        elif isinstance(returns, pd.DataFrame):
-                            # 如果是DataFrame，取第一列或计算平均值
-                            if returns.shape[1] == 1:
-                                returns_series = returns.iloc[:, 0].dropna()
-                            else:
-                                # 多列数据，计算平均值作为组合收益率
-                                returns_series = returns.mean(axis=1).dropna()
-                        elif isinstance(returns, np.ndarray):
-                            # 如果是numpy数组，转换为Series
-                            if returns.ndim == 1:
-                                returns_series = pd.Series(returns).dropna()
-                            else:
-                                # 2D数组，计算平均值
-                                returns_series = pd.Series(returns.mean(axis=1)).dropna()
-                        else:
-                            returns_series = pd.Series(returns).dropna()
-
-                        if len(returns_series) > 0:
-                            # 计算基本统计指标
-                            total_return = (1 + returns_series).prod() - 1
-                            annual_return = total_return * 252 / len(returns_series) if len(returns_series) > 0 else 0
-                            volatility = returns_series.std() * np.sqrt(252) if len(returns_series) > 0 else 0
-                            sharpe_ratio = annual_return / volatility if volatility > 0 else 0
-
-                            # 计算最大回撤
-                            cumulative = (1 + returns_series).cumprod()
-                            running_max = cumulative.expanding().max()
-                            drawdown = (cumulative - running_max) / running_max
-                            max_drawdown = drawdown.min()
-
-                            group_stats.append({
-                                '分组名称': group_name,
-                                '总收益率': f"{total_return:.2%}",
-                                '年化收益率': f"{annual_return:.2%}",
-                                '年化波动率': f"{volatility:.2%}",
-                                '夏普比率': f"{sharpe_ratio:.2f}",
-                                '最大回撤': f"{max_drawdown:.2%}",
-                                '交易天数': len(returns_series)
-                            })
-                        else:
-                            group_stats.append({
-                                '分组名称': group_name,
-                                '总收益率': 'N/A',
-                                '年化收益率': 'N/A',
-                                '年化波动率': 'N/A',
-                                '夏普比率': 'N/A',
-                                '最大回撤': 'N/A',
-                                '交易天数': 0
-                            })
-                    else:
-                        group_stats.append({
-                            '分组名称': group_name,
-                            '总收益率': 'N/A',
-                            '年化收益率': 'N/A',
-                            '年化波动率': 'N/A',
-                            '夏普比率': 'N/A',
-                            '最大回撤': 'N/A',
-                            '交易天数': 0
-                        })
-                except Exception as e:
-                    logger.warning(f"计算分组 {group_name} 统计信息失败: {e}")
-                    group_stats.append({
-                        '分组名称': group_name,
-                        '总收益率': 'N/A',
-                        '年化收益率': 'N/A',
-                        '年化波动率': 'N/A',
-                        '夏普比率': 'N/A',
-                        '最大回撤': 'N/A',
-                        '交易天数': 0
-                    })
-
-            # 使用模板生成HTML报告
-            html_content = self.template_manager.render_template('simple_group_report',
-                result_key=result_key,
-                group_stats=group_stats
-            )
-
-            with open(report_path, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-
-            logger.info(f"简单分组回测报告已生成: {report_path}")
-            return report_path
-
+            return json.dumps(obj, default=str, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"简单分组报告生成失败: {e}")
-            raise
-
-
-
-    def get_report_summary(self) -> pd.DataFrame:
+            logger.warning(f"JSON序列化失败: {e}")
+            return "{}"
+    
+    def get_template_list(self) -> List[str]:
         """
-        获取报告摘要
-
+        获取可用模板列表
+        
         Returns:
-            报告摘要DataFrame
+            模板名称列表
         """
-        summary_data = []
-
-        for report_type, reports in self._reports.items():
-            for report_name, report_info in reports.items():
-                summary_data.append({
-                    '报告类型': report_type,
-                    '报告名称': report_name,
-                    '生成时间': report_info.get('timestamp', ''),
-                    '文件路径': report_info.get('file_path', '')
-                })
-
-        return pd.DataFrame(summary_data)
+        return self.env.list_templates()
+    
+    def render_template(self, template_name: str, context: Dict[str, Any]) -> str:
+        """
+        渲染指定模板
+        
+        Args:
+            template_name: 模板名称
+            context: 模板上下文
+            
+        Returns:
+            渲染后的HTML内容
+        """
+        template = self.env.get_template(template_name)
+        return template.render(**context)

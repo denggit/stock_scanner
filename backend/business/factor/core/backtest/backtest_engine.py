@@ -148,8 +148,17 @@ class FactorBacktestEngine:
             group_exits = group_signals[f'group_{group_id}_exits']
 
             # 确保信号矩阵与价格数据对齐
-            group_entries = group_entries.reindex_like(price_data).fillna(False).infer_objects(copy=False)
-            group_exits = group_exits.reindex_like(price_data).fillna(True).infer_objects(copy=False)
+            group_entries = group_entries.reindex_like(price_data).fillna(False)
+            group_exits = group_exits.reindex_like(price_data).fillna(True)
+            
+            # 兼容不同版本的pandas
+            try:
+                group_entries = group_entries.infer_objects(copy=False)
+                group_exits = group_exits.infer_objects(copy=False)
+            except TypeError:
+                # 较新版本的pandas不支持copy参数
+                group_entries = group_entries.infer_objects()
+                group_exits = group_exits.infer_objects()
 
             portfolio = vbt.Portfolio.from_signals(
                 close=price_data,

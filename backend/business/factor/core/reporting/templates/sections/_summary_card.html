@@ -1,0 +1,130 @@
+<!-- 执行摘要部分 (仅在合并报告中显示) -->
+{% if is_merged_report %}
+<div class="card success">
+    <h3><i class="fas fa-star"></i> 推荐因子 (Top 5)</h3>
+    <div class="metrics-grid">
+        {% for factor in top_factors %}
+        <div class="metric-card">
+            <div class="metric-value positive">{{ factor.rank }}</div>
+            <div class="metric-label">{{ factor.name }}</div>
+            <div style="font-size: 0.8em; margin-top: 5px;">
+                夏普比率: {{ "%.2f"|format(factor.sharpe_ratio) }}<br>
+                年化收益: {{ "%.2f"|format(factor.annual_return * 100) }}%
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="card danger">
+    <h3><i class="fas fa-exclamation-triangle"></i> 问题因子 (Bottom 5)</h3>
+    <div class="metrics-grid">
+        {% for factor in bottom_factors %}
+        <div class="metric-card">
+            <div class="metric-value negative">{{ factor.rank }}</div>
+            <div class="metric-label">{{ factor.name }}</div>
+            <div style="font-size: 0.8em; margin-top: 5px;">
+                夏普比率: {{ "%.2f"|format(factor.sharpe_ratio) }}<br>
+                年化收益: {{ "%.2f"|format(factor.annual_return * 100) }}%
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- 总体统计指标 -->
+<div class="card info">
+    <h3><i class="fas fa-chart-bar"></i> 总体统计</h3>
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <div class="metric-value neutral">{{ total_factors }}</div>
+            <div class="metric-label">总因子数</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-value positive">{{ positive_factors }}</div>
+            <div class="metric-label">正收益因子</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-value neutral">{{ "%.2f"|format(avg_sharpe) }}</div>
+            <div class="metric-label">平均夏普比率</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-value neutral">{{ "%.2f"|format(avg_ic) }}</div>
+            <div class="metric-label">平均IC</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-value positive">{{ "%.2f"|format(best_sharpe) }}</div>
+            <div class="metric-label">最佳夏普比率</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-value negative">{{ "%.2f"|format(worst_sharpe) }}</div>
+            <div class="metric-label">最差夏普比率</div>
+        </div>
+    </div>
+</div>
+
+<!-- 分析配置信息 -->
+<div class="card warning">
+    <h3><i class="fas fa-cog"></i> 分析配置</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+        <div>
+            <strong>分析期间:</strong><br>
+            {{ start_date }} 至 {{ end_date }}
+        </div>
+        <div>
+            <strong>股票池:</strong><br>
+            {{ stock_pool }}
+        </div>
+        <div>
+            <strong>选股数量:</strong><br>
+            {{ top_n }}
+        </div>
+        <div>
+            <strong>分组数量:</strong><br>
+            {{ n_groups }}
+        </div>
+    </div>
+</div>
+
+<!-- 快速操作按钮 -->
+<div class="card">
+    <h3><i class="fas fa-tools"></i> 快速操作</h3>
+    <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+        <button onclick="exportToCSV()" class="chart-controls button">
+            <i class="fas fa-download"></i> 导出CSV
+        </button>
+        <button onclick="printReport()" class="chart-controls button">
+            <i class="fas fa-print"></i> 打印报告
+        </button>
+        <button onclick="showAllFactors()" class="chart-controls button">
+            <i class="fas fa-chart-line"></i> 显示所有因子
+        </button>
+        <button onclick="clearChart()" class="chart-controls button">
+            <i class="fas fa-trash"></i> 清空图表
+        </button>
+    </div>
+</div>
+
+<script>
+// 显示所有因子到图表
+function showAllFactors() {
+    if (chartData) {
+        Object.keys(chartData).forEach(factor => {
+            addFactorToChart(factor);
+        });
+    }
+}
+
+// 清空图表
+function clearChart() {
+    Plotly.newPlot('cumulative-chart', [], {
+        title: '因子累计收益率对比',
+        xaxis: { title: '时间' },
+        yaxis: { title: '累计收益率' }
+    });
+    
+    // 重置所有按钮状态
+    $('.chart-btn').removeClass('active').text('添加');
+}
+</script>

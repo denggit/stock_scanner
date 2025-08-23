@@ -51,9 +51,8 @@ class FactorResearchFramework:
         self.factor_engine = FactorEngine(self.data_manager)
         self.backtest_engine = FactorBacktestEngine(self.factor_engine, self.data_manager)
         self.analyzer = FactorAnalyzer(self.factor_engine, self.data_manager)
-        self.report_generator = FactorReportGenerator(
-            self.factor_engine, self.backtest_engine, self.analyzer, self.data_manager
-        )
+        # 修复：新的FactorReportGenerator只接受template_path参数
+        self.report_generator = FactorReportGenerator()
 
         logger.info("因子研究框架初始化完成")
 
@@ -140,8 +139,26 @@ class FactorResearchFramework:
 
             # 6. 生成报告
             logger.info("步骤6: 生成报告")
-            report_path = self.report_generator.generate_comprehensive_report(
-                factor_names, output_dir=self.output_dir, backtest_results=backtest_results
+            
+            # 准备报告数据
+            report_data = {
+                'factor_names': factor_names,
+                'performance_metrics': backtest_results,
+                'ic_metrics': effectiveness_results,
+                'time_series_returns': {},  # 需要从回测结果中提取
+                'detailed_analysis': {}     # 需要从回测结果中提取
+            }
+            
+            # 生成批次报告
+            report_path = self.report_generator.generate_batch_report(
+                batch_name="因子分析报告",
+                report_data=report_data,
+                output_path=os.path.join(self.output_dir, f"factor_analysis_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"),
+                start_date=start_date,
+                end_date=end_date,
+                stock_pool=stock_pool,
+                top_n=kwargs.get('top_n', DEFAULT_TOP_N),
+                n_groups=kwargs.get('n_groups', DEFAULT_N_GROUPS)
             )
 
             # 7. 汇总结果
@@ -348,8 +365,20 @@ class FactorResearchFramework:
             报告路径
         """
         factor_names = results.get('factor_names', [])
-        return self.report_generator.generate_comprehensive_report(
-            factor_names, output_dir=self.output_dir
+        
+        # 准备报告数据
+        report_data = {
+            'factor_names': factor_names,
+            'performance_metrics': results.get('backtest_results', {}),
+            'ic_metrics': results.get('effectiveness_results', {}),
+            'time_series_returns': {},
+            'detailed_analysis': {}
+        }
+        
+        return self.report_generator.generate_batch_report(
+            batch_name="汇总报告",
+            report_data=report_data,
+            output_path=os.path.join(self.output_dir, "summary_report.html")
         )
 
     def generate_comprehensive_report(self,
@@ -379,11 +408,19 @@ class FactorResearchFramework:
         """
         logger.info(f"开始生成综合分析报告: {factor_names}")
         
-        return self.report_generator.generate_comprehensive_report(
-            factor_names=factor_names,
-            merged_results=merged_results,
-            analysis_summary=analysis_summary,
-            output_dir=self.output_dir,
+        # 准备报告数据
+        report_data = {
+            'factor_names': factor_names,
+            'performance_metrics': merged_results.get('backtest_results', {}) if merged_results else {},
+            'ic_metrics': merged_results.get('effectiveness_results', {}) if merged_results else {},
+            'time_series_returns': {},
+            'detailed_analysis': {}
+        }
+        
+        return self.report_generator.generate_batch_report(
+            batch_name="综合分析报告",
+            report_data=report_data,
+            output_path=os.path.join(self.output_dir, f"comprehensive_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"),
             start_date=start_date,
             end_date=end_date,
             stock_pool=stock_pool,

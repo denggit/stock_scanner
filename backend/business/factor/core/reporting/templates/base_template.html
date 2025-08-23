@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ report_title }}</title>
+    
+    <!-- CSS Libraries -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/responsive/2.5.0/css/responsive.dataTables.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- JavaScript Libraries -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/responsive/2.5.0/js/dataTables.responsive.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    
+    <style>
+        /* 全局样式 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            border-radius: 20px;
+            overflow: hidden;
+        }
+        
+        /* 头部样式 */
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+        
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .header .meta-info {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .meta-info .info-item {
+            background: rgba(255,255,255,0.1);
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-size: 0.9em;
+        }
+        
+        /* 导航栏样式 */
+        .navbar {
+            background: #f8f9fa;
+            padding: 15px 40px;
+            border-bottom: 1px solid #e9ecef;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 30px;
+            justify-content: center;
+        }
+        
+        .nav-link {
+            color: #667eea;
+            text-decoration: none;
+            padding: 10px 20px;
+            border-radius: 25px;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+        
+        .nav-link:hover, .nav-link.active {
+            background: #667eea;
+            color: white;
+        }
+        
+        /* 内容区域样式 */
+        .content {
+            padding: 40px;
+        }
+        
+        .section {
+            margin-bottom: 50px;
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 30px;
+            border-left: 5px solid #667eea;
+            transition: transform 0.3s ease;
+        }
+        
+        .section:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        
+        .section h2 {
+            color: #2c3e50;
+            margin-bottom: 25px;
+            font-size: 1.8em;
+            border-bottom: 2px solid #e9ecef;
+            padding-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .section h2 i {
+            color: #667eea;
+        }
+        
+        /* 卡片样式 */
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            margin-bottom: 20px;
+            transition: transform 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-3px);
+        }
+        
+        .card.success {
+            border-left: 5px solid #28a745;
+        }
+        
+        .card.warning {
+            border-left: 5px solid #ffc107;
+        }
+        
+        .card.danger {
+            border-left: 5px solid #dc3545;
+        }
+        
+        .card.info {
+            border-left: 5px solid #17a2b8;
+        }
+        
+        /* 指标网格样式 */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .metric-card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            transition: transform 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-3px);
+        }
+        
+        .metric-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        
+        .metric-label {
+            color: #6c757d;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .positive { color: #28a745; }
+        .negative { color: #dc3545; }
+        .neutral { color: #6c757d; }
+        
+        /* 表格样式 */
+        .table-container {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            overflow-x: auto;
+        }
+        
+        .dataTables_wrapper {
+            margin-top: 20px;
+        }
+        
+        .dataTables_filter input {
+            border: 2px solid #e9ecef;
+            border-radius: 25px;
+            padding: 8px 15px;
+            margin-left: 10px;
+        }
+        
+        .dataTables_length select {
+            border: 2px solid #e9ecef;
+            border-radius: 25px;
+            padding: 5px 10px;
+        }
+        
+        /* 图表容器样式 */
+        .chart-container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            margin-bottom: 30px;
+        }
+        
+        .chart-controls {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .chart-controls button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9em;
+        }
+        
+        .chart-controls button:hover {
+            background: #5a6fd8;
+            transform: translateY(-2px);
+        }
+        
+        .chart-controls button.active {
+            background: #28a745;
+        }
+        
+        /* 详情面板样式 */
+        .details-panel {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+        }
+        
+        .factor-selector {
+            margin-bottom: 20px;
+        }
+        
+        .factor-selector select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 1em;
+        }
+        
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #e9ecef;
+            margin-bottom: 20px;
+        }
+        
+        .tab {
+            padding: 15px 25px;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+        }
+        
+        .tab:hover {
+            background: #f8f9fa;
+        }
+        
+        .tab.active {
+            border-bottom-color: #667eea;
+            color: #667eea;
+            font-weight: bold;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 10px;
+            }
+            
+            .header {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 1.8em;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+            
+            .section {
+                padding: 20px;
+            }
+            
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .nav-links {
+                flex-direction: column;
+                gap: 10px;
+            }
+        }
+        
+        /* 加载动画 */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* 工具提示样式 */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 200px;
+            background-color: #555;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -100px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <div class="header">
+            <h1><i class="fas fa-chart-line"></i> {{ report_title }}</h1>
+            <p>{{ report_subtitle }}</p>
+            <div class="meta-info">
+                <div class="info-item">
+                    <i class="fas fa-calendar"></i> 生成时间: {{ generation_time }}
+                </div>
+                <div class="info-item">
+                    <i class="fas fa-layer-group"></i> 因子数量: {{ factor_count }}
+                </div>
+                {% if analysis_period %}
+                <div class="info-item">
+                    <i class="fas fa-clock"></i> 分析期间: {{ analysis_period }}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- 导航栏 -->
+        <div class="navbar">
+            <div class="nav-links">
+                <a href="#summary" class="nav-link active" data-section="summary">
+                    <i class="fas fa-chart-pie"></i> 总览
+                </a>
+                <a href="#performance" class="nav-link" data-section="performance">
+                    <i class="fas fa-trophy"></i> 表现对比
+                </a>
+                <a href="#charts" class="nav-link" data-section="charts">
+                    <i class="fas fa-chart-area"></i> 图表分析
+                </a>
+                <a href="#details" class="nav-link" data-section="details">
+                    <i class="fas fa-search"></i> 详细分析
+                </a>
+            </div>
+        </div>
+        
+        <!-- 内容区域 -->
+        <div class="content">
+            <!-- 加载动画 -->
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>正在加载数据...</p>
+            </div>
+            
+            <!-- 总览部分 -->
+            <div class="section" id="summary">
+                {% include 'sections/_summary_card.html' %}
+            </div>
+            
+            <!-- 表现对比部分 -->
+            <div class="section" id="performance">
+                {% include 'sections/_factor_table.html' %}
+            </div>
+            
+            <!-- 图表分析部分 -->
+            <div class="section" id="charts">
+                {% include 'sections/_charts.html' %}
+            </div>
+            
+            <!-- 详细分析部分 -->
+            <div class="section" id="details">
+                {% include 'sections/_details.html' %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- 全局JavaScript -->
+    <script>
+        // 全局变量
+        let chartData = {{ chart_data | safe }};
+        let performanceData = {{ performance_data | safe }};
+        let icData = {{ ic_data | safe }};
+        let detailedData = {{ detailed_data | safe }};
+        let isMergedReport = {{ 'true' if is_merged_report else 'false' }};
+        
+        // 页面加载完成后初始化
+        $(document).ready(function() {
+            initializeNavigation();
+            initializeDataTables();
+            initializeCharts();
+            initializeDetails();
+            hideLoading();
+        });
+        
+        // 导航功能
+        function initializeNavigation() {
+            $('.nav-link').click(function(e) {
+                e.preventDefault();
+                
+                // 更新活动状态
+                $('.nav-link').removeClass('active');
+                $(this).addClass('active');
+                
+                // 滚动到对应部分
+                const section = $(this).data('section');
+                $('html, body').animate({
+                    scrollTop: $('#' + section).offset().top - 100
+                }, 500);
+            });
+            
+            // 滚动监听
+            $(window).scroll(function() {
+                const scrollTop = $(window).scrollTop();
+                
+                $('.section').each(function() {
+                    const sectionTop = $(this).offset().top - 150;
+                    const sectionBottom = sectionTop + $(this).height();
+                    
+                    if (scrollTop >= sectionTop && scrollTop < sectionBottom) {
+                        const sectionId = $(this).attr('id');
+                        $('.nav-link').removeClass('active');
+                        $('.nav-link[data-section="' + sectionId + '"]').addClass('active');
+                    }
+                });
+            });
+        }
+        
+        // 数据表格初始化
+        function initializeDataTables() {
+            $('#performance-table').DataTable({
+                responsive: true,
+                pageLength: 25,
+                order: [[2, 'desc']], // 默认按年化收益率排序
+                language: {
+                    url: 'https://cdn.datatables.net/plug-ins/1.13.7/i18n/zh.json'
+                },
+                columnDefs: [
+                    {
+                        targets: [0],
+                        orderable: true,
+                        searchable: true
+                    }
+                ]
+            });
+        }
+        
+        // 图表初始化
+        function initializeCharts() {
+            if (chartData && Object.keys(chartData).length > 0) {
+                const layout = {
+                    title: '因子累计收益率对比',
+                    xaxis: { title: '时间' },
+                    yaxis: { title: '累计收益率' },
+                    hovermode: 'x unified',
+                    showlegend: true,
+                    legend: {
+                        orientation: 'h',
+                        y: -0.2
+                    }
+                };
+                
+                Plotly.newPlot('cumulative-chart', [], layout);
+                
+                // 默认显示排名第一的因子
+                const firstFactor = Object.keys(chartData)[0];
+                if (firstFactor) {
+                    addFactorToChart(firstFactor);
+                }
+            }
+        }
+        
+        // 添加因子到图表
+        function addFactorToChart(factorName) {
+            if (!chartData[factorName]) return;
+            
+            const trace = {
+                x: chartData[factorName].dates,
+                y: chartData[factorName].values,
+                type: 'scatter',
+                mode: 'lines',
+                name: factorName,
+                line: { width: 2 }
+            };
+            
+            Plotly.addTraces('cumulative-chart', trace);
+            
+            // 更新按钮状态
+            updateChartButtonState(factorName, true);
+        }
+        
+        // 从图表移除因子
+        function removeFactorFromChart(factorName) {
+            const traces = document.getElementById('cumulative-chart').data;
+            const traceIndex = traces.findIndex(trace => trace.name === factorName);
+            
+            if (traceIndex !== -1) {
+                Plotly.deleteTraces('cumulative-chart', traceIndex);
+            }
+            
+            // 更新按钮状态
+            updateChartButtonState(factorName, false);
+        }
+        
+        // 更新图表按钮状态
+        function updateChartButtonState(factorName, isActive) {
+            const button = $(`.chart-btn[data-factor="${factorName}"]`);
+            if (isActive) {
+                button.addClass('active').text('移除');
+            } else {
+                button.removeClass('active').text('添加');
+            }
+        }
+        
+        // 详细分析初始化
+        function initializeDetails() {
+            if (detailedData && Object.keys(detailedData).length > 0) {
+                const factorNames = Object.keys(detailedData);
+                const selector = $('#factor-selector');
+                
+                factorNames.forEach(factor => {
+                    selector.append(`<option value="${factor}">${factor}</option>`);
+                });
+                
+                // 默认选择第一个因子
+                if (factorNames.length > 0) {
+                    selector.val(factorNames[0]);
+                    updateFactorDetails(factorNames[0]);
+                }
+                
+                // 监听选择变化
+                selector.change(function() {
+                    updateFactorDetails($(this).val());
+                });
+            }
+        }
+        
+        // 更新因子详情
+        function updateFactorDetails(factorName) {
+            if (!detailedData[factorName]) return;
+            
+            const data = detailedData[factorName];
+            
+            // 更新指标卡片
+            updateMetricCards(data.metrics);
+            
+            // 更新分组回测表格
+            updateGroupTable(data.group_results);
+            
+            // 更新IC统计表格
+            updateICTable(data.ic_stats);
+            
+            // 更新分组图表
+            updateGroupChart(data.group_results);
+        }
+        
+        // 更新指标卡片
+        function updateMetricCards(metrics) {
+            Object.keys(metrics).forEach(key => {
+                const value = metrics[key];
+                const element = $(`#metric-${key}`);
+                if (element.length) {
+                    element.text(typeof value === 'number' ? value.toFixed(4) : value);
+                }
+            });
+        }
+        
+        // 更新分组表格
+        function updateGroupTable(groupResults) {
+            const tbody = $('#group-table tbody');
+            tbody.empty();
+            
+            Object.keys(groupResults).forEach(group => {
+                const result = groupResults[group];
+                const row = `
+                    <tr>
+                        <td>${group}</td>
+                        <td>${(result.total_return * 100).toFixed(2)}%</td>
+                        <td>${(result.annual_return * 100).toFixed(2)}%</td>
+                        <td>${result.sharpe_ratio.toFixed(2)}</td>
+                        <td>${(result.max_drawdown * 100).toFixed(2)}%</td>
+                    </tr>
+                `;
+                tbody.append(row);
+            });
+        }
+        
+        // 更新IC统计表格
+        function updateICTable(icStats) {
+            const tbody = $('#ic-table tbody');
+            tbody.empty();
+            
+            Object.keys(icStats).forEach(key => {
+                const value = icStats[key];
+                const row = `
+                    <tr>
+                        <td>${key}</td>
+                        <td>${typeof value === 'number' ? value.toFixed(4) : value}</td>
+                    </tr>
+                `;
+                tbody.append(row);
+            });
+        }
+        
+        // 更新分组图表
+        function updateGroupChart(groupResults) {
+            const groups = Object.keys(groupResults);
+            const returns = groups.map(group => groupResults[group].total_return);
+            
+            const trace = {
+                x: groups,
+                y: returns,
+                type: 'bar',
+                marker: {
+                    color: returns.map(r => r > 0 ? '#28a745' : '#dc3545')
+                }
+            };
+            
+            const layout = {
+                title: '分组回测收益率',
+                xaxis: { title: '分组' },
+                yaxis: { title: '总收益率' }
+            };
+            
+            Plotly.newPlot('group-chart', [trace], layout);
+        }
+        
+        // 显示/隐藏加载动画
+        function showLoading() {
+            $('#loading').addClass('show');
+        }
+        
+        function hideLoading() {
+            $('#loading').removeClass('show');
+        }
+        
+        // 工具函数
+        function formatPercentage(value) {
+            return (value * 100).toFixed(2) + '%';
+        }
+        
+        function formatNumber(value, decimals = 4) {
+            return value.toFixed(decimals);
+        }
+        
+        // 导出功能
+        function exportToCSV() {
+            const table = $('#performance-table').DataTable();
+            const data = table.data().toArray();
+            
+            let csv = '因子名称,总收益率,年化收益率,夏普比率,最大回撤,IC均值,IC IR\n';
+            data.forEach(row => {
+                csv += row.join(',') + '\n';
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'factor_analysis.csv';
+            link.click();
+        }
+        
+        // 打印功能
+        function printReport() {
+            window.print();
+        }
+    </script>
+</body>
+</html>

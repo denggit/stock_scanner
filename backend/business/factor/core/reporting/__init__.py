@@ -4,7 +4,7 @@
 @File       : __init__.py
 @Description: 报告生成模块
 @Author     : Zijun Deng
-@Date       : 2025-08-20
+@Date       : 2025-08-23
 """
 
 from .report_generator import FactorReportGenerator
