@@ -10,7 +10,7 @@
 import os
 import json
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 import pandas as pd
 import numpy as np
 
@@ -71,6 +71,104 @@ class FactorReportGenerator:
         
         logger.info(f"报告生成器初始化完成，模板路径: {template_path}")
     
+    def _get_metric(self, 
+                   stats: Dict[str, Any], 
+                   keys: List[str], 
+                   default: float = 0.0, 
+                   is_percent: bool = False) -> float:
+        """
+        健壮的指标提取方法
+        
+        安全地从统计字典中提取数值指标，支持各种数值类型包括NumPy类型
+        
+        Args:
+            stats: 统计字典
+            keys: 可能的键名列表，按优先级排序
+            default: 默认值
+            is_percent: 是否为百分比值（如果是，会除以100）
+            
+        Returns:
+            提取的数值，如果无法提取则返回默认值
+        """
+        if not isinstance(stats, dict):
+            logger.warning(f"stats不是字典类型: {type(stats)}")
+            return default
+        
+        # 尝试从keys中获取值
+        for key in keys:
+            if key in stats:
+                value = stats[key]
+                
+                # 检查是否为数值类型
+                if self._is_numeric(value):
+                    try:
+                        # 转换为float
+                        float_value = float(value)
+                        
+                        # 如果是百分比且值大于1，则除以100
+                        if is_percent and abs(float_value) > 1.0:
+                            float_value = float_value / 100.0
+                        
+                        return float_value
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"无法转换值 {value} 为float: {e}")
+                        continue
+                else:
+                    logger.warning(f"键 {key} 的值 {value} 不是数值类型: {type(value)}")
+                    continue
+        
+        logger.warning(f"在keys {keys} 中未找到有效的数值")
+        return default
+    
+    def _is_numeric(self, value: Any) -> bool:
+        """
+        检查值是否为数值类型
+        
+        支持Python内置数值类型和NumPy数值类型
+        
+        Args:
+            value: 要检查的值
+            
+        Returns:
+            是否为数值类型
+        """
+        # 检查Python内置数值类型
+        if isinstance(value, (int, float)):
+            return True
+        
+        # 检查NumPy数值类型
+        if isinstance(value, np.number):
+            return True
+        
+        # 检查pandas数值类型
+        if pd.api.types.is_numeric_dtype(type(value)):
+            return True
+        
+        # 检查是否可以转换为float
+        try:
+            float(value)
+            return True
+        except (ValueError, TypeError):
+            return False
+    
+    def _safe_convert_to_float(self, value: Any) -> float:
+        """
+        安全地将值转换为float
+        
+        Args:
+            value: 要转换的值
+            
+        Returns:
+            转换后的float值，如果转换失败则返回0.0
+        """
+        if self._is_numeric(value):
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                logger.warning(f"无法转换 {value} 为float")
+                return 0.0
+        return 0.0
+
     def generate_batch_report(self, 
                              batch_name: str, 
                              report_data: Dict[str, Any], 
@@ -357,9 +455,39 @@ class FactorReportGenerator:
             performance = performance_data.get(factor_name, {})
             ic = ic_data.get(factor_name, {})
             
-            # 计算综合评分（基于夏普比率和IC IR）
-            sharpe_ratio = performance.get('sharpe_ratio', 0)
-            ic_ir = ic.get('ic_ir', 0)
+            # 使用健壮的指标提取方法
+            sharpe_ratio = self._get_metric(
+                performance, 
+                ['sharpe_ratio', 'sharpe', 'sharpe_ratio_annual'], 
+                default=0.0
+            )
+            
+            # 提取IC IR - 支持嵌套结构
+            ic_ir = 0.0
+            if isinstance(ic, dict):
+                # 方法1: 直接查找
+                ic_ir = self._get_metric(
+                    ic, 
+                    ['ic_ir', 'ic_information_ratio', 'information_ratio', 'ir'], 
+                    default=0.0
+                )
+                
+                # 方法2: 查找嵌套结构 ic_analysis.ic_stats
+                if ic_ir == 0.0 and 'ic_analysis' in ic:
+                    ic_analysis = ic['ic_analysis']
+                    if isinstance(ic_analysis, dict) and 'ic_stats' in ic_analysis:
+                        ic_stats_nested = ic_analysis['ic_stats']
+                        ic_ir = self._get_metric(
+                            ic_stats_nested, 
+                            ['ic_ir', 'ic_information_ratio', 'information_ratio', 'ir'], 
+                            default=0.0
+                        )
+            
+            annual_return = self._get_metric(
+                performance, 
+                ['annual_return', 'annual_ret', 'return_annual'], 
+                default=0.0
+            )
             
             # 综合评分 = 夏普比率 * 0.6 + IC IR * 0.4
             composite_score = sharpe_ratio * 0.6 + ic_ir * 0.4
@@ -368,7 +496,7 @@ class FactorReportGenerator:
                 'name': factor_name,
                 'sharpe_ratio': sharpe_ratio,
                 'ic_ir': ic_ir,
-                'annual_return': performance.get('annual_return', 0),
+                'annual_return': annual_return,
                 'composite_score': composite_score
             })
         
@@ -415,11 +543,35 @@ class FactorReportGenerator:
         """
         performance_metrics = report_data.get('performance_metrics', {})
         
-        # 如果performance_metrics是DataFrame，转换为字典
-        if isinstance(performance_metrics, pd.DataFrame):
-            return performance_metrics.to_dict('index')
-        
-        return performance_metrics
+        try:
+            # 如果performance_metrics是DataFrame，转换为字典
+            if isinstance(performance_metrics, pd.DataFrame):
+                logger.info(f"性能指标数据是DataFrame，形状: {performance_metrics.shape}")
+                
+                # 确保索引是字符串类型
+                if not performance_metrics.index.dtype == 'object':
+                    performance_metrics.index = performance_metrics.index.astype(str)
+                
+                # 转换为字典，处理NaN值
+                performance_dict = {}
+                for factor_name, row in performance_metrics.iterrows():
+                    # 将NaN值替换为0
+                    clean_row = row.fillna(0.0)
+                    performance_dict[str(factor_name)] = clean_row.to_dict()
+                
+                logger.info(f"成功转换DataFrame为字典，包含 {len(performance_dict)} 个因子")
+                return performance_dict
+            
+            elif isinstance(performance_metrics, dict):
+                logger.info(f"性能指标数据是字典，包含 {len(performance_metrics)} 个因子")
+                return performance_metrics
+            else:
+                logger.warning(f"性能指标数据类型不支持: {type(performance_metrics)}")
+                return {}
+                
+        except Exception as e:
+            logger.error(f"提取性能指标数据时出错: {e}")
+            return {}
     
     def _extract_ic_data(self, report_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -433,11 +585,58 @@ class FactorReportGenerator:
         """
         ic_metrics = report_data.get('ic_metrics', {})
         
-        # 如果ic_metrics是DataFrame，转换为字典
-        if isinstance(ic_metrics, pd.DataFrame):
-            return ic_metrics.to_dict('index')
-        
-        return ic_metrics
+        try:
+            # 如果ic_metrics是DataFrame，转换为字典
+            if isinstance(ic_metrics, pd.DataFrame):
+                logger.info(f"IC指标数据是DataFrame，形状: {ic_metrics.shape}")
+                
+                # 确保索引是字符串类型
+                if not ic_metrics.index.dtype == 'object':
+                    ic_metrics.index = ic_metrics.index.astype(str)
+                
+                # 转换为字典，处理NaN值
+                ic_dict = {}
+                for factor_name, row in ic_metrics.iterrows():
+                    # 将NaN值替换为0
+                    clean_row = row.fillna(0.0)
+                    ic_dict[str(factor_name)] = clean_row.to_dict()
+                
+                logger.info(f"成功转换IC DataFrame为字典，包含 {len(ic_dict)} 个因子")
+                return ic_dict
+            
+            elif isinstance(ic_metrics, dict):
+                logger.info(f"IC指标数据是字典，包含 {len(ic_metrics)} 个因子")
+                
+                # 检查是否为嵌套结构，如果是，提取ic_stats
+                processed_ic_dict = {}
+                for factor_name, ic_data in ic_metrics.items():
+                    if isinstance(ic_data, dict):
+                        # 检查是否有嵌套的ic_analysis.ic_stats结构
+                        if 'ic_analysis' in ic_data and isinstance(ic_data['ic_analysis'], dict):
+                            ic_analysis = ic_data['ic_analysis']
+                            if 'ic_stats' in ic_analysis and isinstance(ic_analysis['ic_stats'], dict):
+                                # 提取嵌套的ic_stats
+                                processed_ic_dict[factor_name] = ic_analysis['ic_stats']
+                                logger.debug(f"提取因子 {factor_name} 的嵌套IC统计")
+                            else:
+                                # 使用原始数据
+                                processed_ic_dict[factor_name] = ic_data
+                        else:
+                            # 使用原始数据
+                            processed_ic_dict[factor_name] = ic_data
+                    else:
+                        # 非字典类型，保持原样
+                        processed_ic_dict[factor_name] = ic_data
+                
+                logger.info(f"处理后的IC指标数据包含 {len(processed_ic_dict)} 个因子")
+                return processed_ic_dict
+            else:
+                logger.warning(f"IC指标数据类型不支持: {type(ic_metrics)}")
+                return {}
+                
+        except Exception as e:
+            logger.error(f"提取IC指标数据时出错: {e}")
+            return {}
     
     def _extract_chart_data(self, report_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -453,15 +652,41 @@ class FactorReportGenerator:
         chart_data = {}
         
         for factor_name, returns_series in time_series_returns.items():
-            if isinstance(returns_series, pd.Series):
-                # 计算累计收益率
-                cumulative_returns = (1 + returns_series).cumprod()
-                
-                chart_data[factor_name] = {
-                    'dates': returns_series.index.strftime('%Y-%m-%d').tolist(),
-                    'values': cumulative_returns.tolist()
-                }
+            try:
+                if isinstance(returns_series, pd.Series):
+                    # 确保索引是datetime类型
+                    if not isinstance(returns_series.index, pd.DatetimeIndex):
+                        logger.warning(f"因子 {factor_name} 的时间序列索引不是DatetimeIndex")
+                        continue
+                    
+                    # 确保数据是数值类型
+                    if not pd.api.types.is_numeric_dtype(returns_series):
+                        logger.warning(f"因子 {factor_name} 的时间序列数据不是数值类型")
+                        continue
+                    
+                    # 移除NaN值
+                    clean_series = returns_series.dropna()
+                    
+                    if len(clean_series) == 0:
+                        logger.warning(f"因子 {factor_name} 的时间序列数据为空")
+                        continue
+                    
+                    # 计算累计收益率
+                    cumulative_returns = (1 + clean_series).cumprod()
+                    
+                    chart_data[factor_name] = {
+                        'dates': clean_series.index.strftime('%Y-%m-%d').tolist(),
+                        'values': cumulative_returns.tolist()
+                    }
+                    
+                    logger.info(f"成功提取因子 {factor_name} 的图表数据，数据点数量: {len(clean_series)}")
+                else:
+                    logger.warning(f"因子 {factor_name} 的时间序列数据不是pandas.Series类型: {type(returns_series)}")
+            except Exception as e:
+                logger.error(f"处理因子 {factor_name} 的图表数据时出错: {e}")
+                continue
         
+        logger.info(f"成功提取 {len(chart_data)} 个因子的图表数据")
         return chart_data
     
     def _extract_detailed_data(self, report_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -478,17 +703,75 @@ class FactorReportGenerator:
         processed_data = {}
         
         for factor_name, factor_data in detailed_analysis.items():
-            processed_data[factor_name] = {
-                'metrics': factor_data.get('metrics', {}),
-                'group_results': factor_data.get('group_results', {}),
-                'ic_stats': factor_data.get('ic_stats', {}),
-                'returns_series': factor_data.get('returns_series'),
-                'drawdown_series': factor_data.get('drawdown_series'),
-                'ic_series': factor_data.get('ic_series'),
-                'monthly_returns': factor_data.get('monthly_returns', []),
-                'risk_metrics': factor_data.get('risk_metrics', {})
-            }
+            try:
+                if not isinstance(factor_data, dict):
+                    logger.warning(f"因子 {factor_name} 的详细数据不是字典类型: {type(factor_data)}")
+                    continue
+                
+                # 处理指标数据
+                metrics = factor_data.get('metrics', {})
+                if not isinstance(metrics, dict):
+                    logger.warning(f"因子 {factor_name} 的指标数据不是字典类型")
+                    metrics = {}
+                
+                # 处理分组结果
+                group_results = factor_data.get('group_results', {})
+                if not isinstance(group_results, dict):
+                    logger.warning(f"因子 {factor_name} 的分组结果不是字典类型")
+                    group_results = {}
+                
+                # 处理IC统计
+                ic_stats = factor_data.get('ic_stats', {})
+                if not isinstance(ic_stats, dict):
+                    logger.warning(f"因子 {factor_name} 的IC统计不是字典类型")
+                    ic_stats = {}
+                
+                # 处理时间序列数据
+                returns_series = factor_data.get('returns_series')
+                if returns_series is not None and not isinstance(returns_series, pd.Series):
+                    logger.warning(f"因子 {factor_name} 的收益率序列不是pandas.Series类型")
+                    returns_series = None
+                
+                drawdown_series = factor_data.get('drawdown_series')
+                if drawdown_series is not None and not isinstance(drawdown_series, pd.Series):
+                    logger.warning(f"因子 {factor_name} 的回撤序列不是pandas.Series类型")
+                    drawdown_series = None
+                
+                ic_series = factor_data.get('ic_series')
+                if ic_series is not None and not isinstance(ic_series, pd.Series):
+                    logger.warning(f"因子 {factor_name} 的IC序列不是pandas.Series类型")
+                    ic_series = None
+                
+                # 处理月度收益数据
+                monthly_returns = factor_data.get('monthly_returns', [])
+                if not isinstance(monthly_returns, list):
+                    logger.warning(f"因子 {factor_name} 的月度收益数据不是列表类型")
+                    monthly_returns = []
+                
+                # 处理风险指标
+                risk_metrics = factor_data.get('risk_metrics', {})
+                if not isinstance(risk_metrics, dict):
+                    logger.warning(f"因子 {factor_name} 的风险指标不是字典类型")
+                    risk_metrics = {}
+                
+                processed_data[factor_name] = {
+                    'metrics': metrics,
+                    'group_results': group_results,
+                    'ic_stats': ic_stats,
+                    'returns_series': returns_series,
+                    'drawdown_series': drawdown_series,
+                    'ic_series': ic_series,
+                    'monthly_returns': monthly_returns,
+                    'risk_metrics': risk_metrics
+                }
+                
+                logger.info(f"成功处理因子 {factor_name} 的详细数据")
+                
+            except Exception as e:
+                logger.error(f"处理因子 {factor_name} 的详细数据时出错: {e}")
+                continue
         
+        logger.info(f"成功处理 {len(processed_data)} 个因子的详细数据")
         return processed_data
     
     def _calculate_batch_statistics(self, 
@@ -514,10 +797,53 @@ class FactorReportGenerator:
                 'worst_sharpe': 0
             }
         
-        # 计算统计指标
-        sharpe_ratios = [p.get('sharpe_ratio', 0) for p in performance_data.values()]
-        annual_returns = [p.get('annual_return', 0) for p in performance_data.values()]
-        ic_means = [ic.get('mean_ic', 0) for ic in ic_data.values()]
+        # 使用健壮的指标提取方法
+        sharpe_ratios = []
+        annual_returns = []
+        ic_means = []
+        
+        for factor_name, performance in performance_data.items():
+            # 提取夏普比率
+            sharpe_ratio = self._get_metric(
+                performance, 
+                ['sharpe_ratio', 'sharpe', 'sharpe_ratio_annual'], 
+                default=0.0
+            )
+            sharpe_ratios.append(sharpe_ratio)
+            
+            # 提取年化收益率
+            annual_return = self._get_metric(
+                performance, 
+                ['annual_return', 'annual_ret', 'return_annual'], 
+                default=0.0
+            )
+            annual_returns.append(annual_return)
+        
+        # 处理IC数据 - 支持嵌套结构
+        for factor_name, ic_stats in ic_data.items():
+            # 尝试多种IC数据结构
+            ic_mean = 0.0
+            
+            # 方法1: 直接查找
+            if isinstance(ic_stats, dict):
+                ic_mean = self._get_metric(
+                    ic_stats, 
+                    ['mean_ic', 'ic_mean', 'ic'], 
+                    default=0.0
+                )
+                
+                # 方法2: 查找嵌套结构 ic_analysis.ic_stats
+                if ic_mean == 0.0 and 'ic_analysis' in ic_stats:
+                    ic_analysis = ic_stats['ic_analysis']
+                    if isinstance(ic_analysis, dict) and 'ic_stats' in ic_analysis:
+                        ic_stats_nested = ic_analysis['ic_stats']
+                        ic_mean = self._get_metric(
+                            ic_stats_nested, 
+                            ['mean_ic', 'ic_mean', 'ic'], 
+                            default=0.0
+                        )
+            
+            ic_means.append(ic_mean)
         
         return {
             'total_factors': len(performance_data),
