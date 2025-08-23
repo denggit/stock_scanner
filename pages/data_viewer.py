@@ -64,9 +64,8 @@ def fetch_stock_data(code: str, period: str = 'daily', start_date: str = None, e
 
 
 def plot_candlestick(df: pd.DataFrame, ma_periods: list, show_volume: bool = True, show_macd: bool = False,
-                     show_ascending_channel: bool = False, ascending_channel_info: dict = None,
                      start_date: str = None, end_date: str = None) -> go.Figure:
-    """绘制K线图和副图 - 支持拖动和缩放，新增上升通道支持"""
+    """绘制K线图和副图 - 支持拖动和缩放"""
     # 多获取数据的df，用于计算均线
     df_extra = df.copy()
 
@@ -108,9 +107,6 @@ def plot_candlestick(df: pd.DataFrame, ma_periods: list, show_volume: bool = Tru
         'text': '#000000',  # 文字黑色
         'axis': '#000000',  # 坐标轴黑色
         'spike': '#666666',  # 悬停线深灰色
-        'channel_mid': '#ff6600',  # 上升通道中轴橙色
-        'channel_upper': '#ff0000',  # 上升通道上沿红色
-        'channel_lower': '#00ff00'  # 上升通道下沿绿色
     }
 
     # 绘制K线图 - 使用完整数据
@@ -182,154 +178,6 @@ def plot_candlestick(df: pd.DataFrame, ma_periods: list, show_volume: bool = Tru
                 hoverinfo='text'
             ), row=1, col=1
         )
-
-    # 添加上升通道线（如果启用）
-    if show_ascending_channel and ascending_channel_info:
-        try:
-            # 获取通道信息
-            mid_today = ascending_channel_info.get('mid_today')
-            mid_tomorrow = ascending_channel_info.get('mid_tomorrow')
-            upper_today = ascending_channel_info.get('upper_today')
-            lower_today = ascending_channel_info.get('lower_today')
-            anchor_date = ascending_channel_info.get('anchor_date')
-            anchor_price = ascending_channel_info.get('anchor_price')
-
-            if all([mid_today, mid_tomorrow, upper_today, lower_today, anchor_date, anchor_price]):
-                # 将anchor_date转换为datetime
-                if isinstance(anchor_date, str):
-                    anchor_date = pd.to_datetime(anchor_date)
-
-                # 获取最新日期
-                latest_date = pd.to_datetime(df_full.index[-1])
-
-                # 计算通道线的日期范围（从锚点日期到最新日期）
-                anchor_date_str = anchor_date.strftime('%Y-%m-%d')
-                channel_dates = df_full[df_full.index >= anchor_date_str].index.tolist()
-
-                if channel_dates:
-                    # 计算斜率（基于mid_today和mid_tomorrow）
-                    days_diff = 1  # 从今天到明天的天数差
-                    beta = (mid_tomorrow - mid_today) / days_diff
-
-                    # 计算每个日期距离锚点的天数
-                    days_since_anchor = []
-                    for date_str in channel_dates:
-                        date_obj = pd.to_datetime(date_str)
-                        days = (date_obj - anchor_date).days
-                        days_since_anchor.append(days)
-
-                    # 计算通道线价格
-                    # 中轴：从mid_today开始，使用计算出的斜率
-                    # 计算每个日期相对于今日的天数
-                    days_to_today = (latest_date - anchor_date).days
-                    days_relative_to_today = [days - days_to_today for days in days_since_anchor]
-
-                    # 确保今日对应的相对天数为0
-                    # 如果最后一个值不是0，需要调整
-                    if days_relative_to_today and days_relative_to_today[-1] != 0:
-                        # 找到今日对应的索引
-                        today_index = len(days_relative_to_today) - 1
-                        # 重新计算相对天数，确保今日为0
-                        days_relative_to_today = [i - today_index for i in range(len(days_relative_to_today))]
-
-                    mid_prices = [mid_today + beta * days_rel for days_rel in days_relative_to_today]
-
-                    # 上沿：从upper_today开始，保持相同斜率
-                    upper_prices = [upper_today + beta * days_rel for days_rel in days_relative_to_today]
-
-                    # 下沿：从lower_today开始，保持相同斜率
-                    lower_prices = [lower_today + beta * days_rel for days_rel in days_relative_to_today]
-
-                    # 准备通道线悬停文本
-                    mid_hover_texts = []
-                    upper_hover_texts = []
-                    lower_hover_texts = []
-
-                    for date_str, mid_price, upper_price, lower_price in zip(channel_dates, mid_prices, upper_prices,
-                                                                             lower_prices):
-                        mid_hover_text = f"<b>{date_str}</b><br>中轴: {mid_price:.2f}<br>斜率: {beta:.4f}"
-                        upper_hover_text = f"<b>{date_str}</b><br>上沿: {upper_price:.2f}<br>状态: {ascending_channel_info.get('channel_status', 'NORMAL')}"
-                        lower_hover_text = f"<b>{date_str}</b><br>下沿: {lower_price:.2f}<br>累计涨幅: {ascending_channel_info.get('cumulative_gain', 0):.2%}"
-
-                        mid_hover_texts.append(mid_hover_text)
-                        upper_hover_texts.append(upper_hover_text)
-                        lower_hover_texts.append(lower_hover_text)
-
-                    # 添加中轴线
-                    fig.add_trace(
-                        go.Scatter(
-                            x=channel_dates,
-                            y=mid_prices,
-                            mode='lines',
-                            name='上升通道中轴',
-                            line=dict(
-                                width=3,
-                                color=colors['channel_mid'],
-                                dash='solid'
-                            ),
-                            hovertext=mid_hover_texts,
-                            hoverinfo='text'
-                        ),
-                        row=1, col=1
-                    )
-
-                    # 添加上沿线
-                    fig.add_trace(
-                        go.Scatter(
-                            x=channel_dates,
-                            y=upper_prices,
-                            mode='lines',
-                            name='上升通道上沿',
-                            line=dict(
-                                width=2,
-                                color=colors['channel_upper'],
-                                dash='dash'
-                            ),
-                            hovertext=upper_hover_texts,
-                            hoverinfo='text'
-                        ),
-                        row=1, col=1
-                    )
-
-                    # 添加下沿线
-                    fig.add_trace(
-                        go.Scatter(
-                            x=channel_dates,
-                            y=lower_prices,
-                            mode='lines',
-                            name='上升通道下沿',
-                            line=dict(
-                                width=2,
-                                color=colors['channel_lower'],
-                                dash='dash'
-                            ),
-                            hovertext=lower_hover_texts,
-                            hoverinfo='text'
-                        ),
-                        row=1, col=1
-                    )
-
-                    # 添加锚点标记
-                    fig.add_trace(
-                        go.Scatter(
-                            x=[anchor_date_str],
-                            y=[anchor_price],
-                            mode='markers',
-                            name='锚点',
-                            marker=dict(
-                                size=10,
-                                color=colors['channel_mid'],
-                                symbol='diamond',
-                                line=dict(width=2, color='black')
-                            ),
-                            hovertext=f"<b>锚点</b><br>日期: {anchor_date_str}<br>价格: {anchor_price:.2f}",
-                            hoverinfo='text'
-                        ),
-                        row=1, col=1
-                    )
-
-        except Exception as e:
-            st.warning(f"绘制上升通道线时出错: {e}")
 
     # 添加成交量图（使用完整数据）
     if show_volume:
@@ -608,8 +456,6 @@ def main():
         st.session_state.stock_data = None
     if 'chart_params' not in st.session_state:
         st.session_state.chart_params = None
-    if 'ascending_channel_info' not in st.session_state:
-        st.session_state.ascending_channel_info = None
 
     # 获取URL参数
     query_params = st.query_params
@@ -650,7 +496,6 @@ def main():
             **⚠️ 注意事项：**
             - 股票代码必须是6位数字
             - 建议选择至少60天的数据范围
-            - 上升通道需要足够的历史数据才能准确计算
             """)
 
         # 显示股票信息（如果从策略扫描器跳转过来）
@@ -695,63 +540,6 @@ def main():
             ma_periods = []
         show_volume = st.checkbox('显示成交量', value=True, help="显示成交量柱状图")
         show_macd = st.checkbox('显示MACD', value=False, help="显示MACD指标")
-        show_ascending_channel = st.checkbox('显示上升通道', value=True,
-                                             help="显示上升通道回归分析结果")
-
-        # 上升通道参数配置
-        if show_ascending_channel:
-            st.header("上升通道参数")
-
-            # 使用expander来组织参数，避免侧边栏过长
-            with st.expander("⚙️ 通道参数设置", expanded=False):
-                # 基础参数
-                st.subheader("基础参数")
-                k = st.slider("通道宽度倍数 (k)", min_value=1.0, max_value=5.0, value=2.0, step=0.1,
-                              help="通道宽度倍数，影响通道的宽度 (±k·σ)")
-                L_max = st.slider("最大窗口长度 (L_max)", min_value=60, max_value=200, value=120, step=10,
-                                  help="窗口最长天数，超出后向右滑动")
-                delta_cut = st.slider("滑动剔除天数 (delta_cut)", min_value=1, max_value=10, value=5, step=1,
-                                      help="滑动时一次剔除最早的天数")
-                pivot_m = st.slider("锚点检测参数 (pivot_m)", min_value=2, max_value=10, value=3, step=1,
-                                    help="判断pivot low的宽度参数 (m左m右更高)")
-
-                # 触发参数（已简化：去除 gain_trigger/beta_delta/break_days/reanchor_fail_max）
-                st.subheader("触发参数（已简化）")
-
-                # 质量参数
-                st.subheader("质量参数")
-                min_data_points = st.slider("最小数据点数 (min_data_points)", min_value=30, max_value=100, value=60,
-                                            step=5,
-                                            help="最小有效数据点要求")
-                R2_min = st.slider("最小R²值 (R2_min)", min_value=0.1, max_value=0.5, value=0.20, step=0.05,
-                                   help="最小回归拟合优度，低于此视为无效通道")
-                width_pct_min = st.slider("通道宽度下限 (width_pct_min)", min_value=0.02, max_value=0.10, value=0.04,
-                                          step=0.01,
-                                          help="通道宽度下限，小于此视为过窄")
-                width_pct_max = st.slider("通道宽度上限 (width_pct_max)", min_value=0.08, max_value=0.20, value=0.12,
-                                          step=0.01,
-                                          help="通道宽度上限，超过此视为过宽")
-
-            # 参数说明
-            with st.expander("📖 参数说明", expanded=False):
-                st.markdown("""
-                **基础参数：**
-                - **k**: 通道宽度倍数，影响通道的宽度范围
-                - **L_max**: 最大窗口长度，控制计算窗口大小
-                - **delta_cut**: 滑动剔除天数，影响窗口滑动速度
-                - **pivot_m**: 锚点检测参数，影响锚点选择的敏感度
-                
-                **触发参数：**
-                - **gain_trigger**: 重锚涨幅触发阈值，影响重锚频率
-                - **beta_delta**: 斜率变化阈值，影响趋势判断
-                - **break_days**: 连续突破天数，影响通道失效判断
-                - **reanchor_fail_max**: 重锚失败次数，影响极端状态判断
-                
-                **质量参数：**
-                - **min_data_points**: 最小数据点数，确保计算可靠性
-                - **R2_min**: 最小R²值，确保回归质量
-                - **width_pct_min/max**: 通道宽度范围，避免过窄或过宽
-                """)
 
     # 转换日期为字符串格式
     start_date_str = start_date.strftime('%Y-%m-%d') if start_date else None
@@ -819,47 +607,11 @@ def main():
                     'ma_periods': ma_periods if show_ma else [],
                     'show_volume': show_volume,
                     'show_macd': show_macd,
-                    'show_ascending_channel': show_ascending_channel,
                     'start_date': start_date_str,
                     'end_date': end_date_str
                 }
 
-                # 如果启用了上升通道，计算上升通道信息
-                if show_ascending_channel:
-                    try:
-                        with st.spinner('计算上升通道中...'):
-                            # 准备数据格式（重置索引以便计算）
-                            df_for_calc = df.reset_index()
-                            df_for_calc['trade_date'] = pd.to_datetime(df_for_calc['trade_date'])
-
-                            # 构建上升通道参数
-                            channel_params = {
-                                'k': k,
-                                'L_max': L_max,
-                                'delta_cut': delta_cut,
-                                'pivot_m': pivot_m,
-                                'min_data_points': min_data_points,
-                                'R2_min': R2_min,
-                                'width_pct_min': width_pct_min,
-                                'width_pct_max': width_pct_max
-                            }
-
-                            # 计算上升通道，传递自定义参数
-                            channel_info = CalIndicators.ascending_channel(df_for_calc, **channel_params)
-                            st.session_state.ascending_channel_info = channel_info
-
-                            st.success("上升通道计算完成")
-                    except Exception as e:
-                        st.error(f"上升通道计算失败: {e}")
-                        st.session_state.ascending_channel_info = None
-                else:
-                    st.session_state.ascending_channel_info = None
-
                 st.success(f"✅ 成功获取 {code} 的数据，共 {len(df)} 条记录")
-
-                # 显示数据质量提示
-                if len(df) < 60:
-                    st.warning(f"⚠️ 数据量较少（{len(df)}条），可能影响技术指标和上升通道的计算准确性")
 
             else:
                 # 显示具体的错误信息
@@ -883,7 +635,6 @@ def main():
     if st.session_state.stock_data is not None:
         df = st.session_state.stock_data
         params = st.session_state.chart_params
-        ascending_channel_info = st.session_state.ascending_channel_info
 
         # 显示K线图和成交量副图
         st.plotly_chart(plot_candlestick(
@@ -891,105 +642,9 @@ def main():
             params['ma_periods'],
             show_volume=params['show_volume'],
             show_macd=params['show_macd'],
-            show_ascending_channel=params['show_ascending_channel'],
-            ascending_channel_info=ascending_channel_info,
             start_date=params['start_date'],
             end_date=params['end_date']
         ), use_container_width=True)
-
-        # 显示上升通道信息（如果启用）
-        if params['show_ascending_channel'] and ascending_channel_info:
-            st.subheader("📈 上升通道信息")
-
-            # 创建列布局显示通道信息
-            col1, col2, col3, col4 = st.columns(4)
-
-            with col1:
-                beta_value = ascending_channel_info.get('beta', 0)
-                st.metric("斜率", f"{beta_value:.4f}" if beta_value is not None else "N/A")
-                st.metric("通道状态", ascending_channel_info.get('channel_status', 'NORMAL'))
-                r2_value = ascending_channel_info.get('r2', 0)
-                st.metric("R²值", f"{r2_value:.3f}" if r2_value is not None else "N/A")
-
-            with col2:
-                mid_today = ascending_channel_info.get('mid_today', 0)
-                st.metric("今日中轴", f"￥{mid_today:.2f}" if mid_today is not None else "N/A")
-                upper_today = ascending_channel_info.get('upper_today', 0)
-                st.metric("今日上沿", f"￥{upper_today:.2f}" if upper_today is not None else "N/A")
-                width_pct = ascending_channel_info.get('width_pct', 0)
-                st.metric("通道宽度", f"{width_pct:.2%}" if width_pct is not None else "N/A")
-
-            with col3:
-                lower_today = ascending_channel_info.get('lower_today', 0)
-                st.metric("今日下沿", f"￥{lower_today:.2f}" if lower_today is not None else "N/A")
-                cumulative_gain = ascending_channel_info.get('cumulative_gain', 0)
-                st.metric("累计涨幅", f"{cumulative_gain:.2%}" if cumulative_gain is not None else "N/A")
-                slope_deg = ascending_channel_info.get('slope_deg', 0)
-                st.metric("斜率角度", f"{slope_deg:.2f}°" if slope_deg is not None else "N/A")
-
-            with col4:
-                anchor_price = ascending_channel_info.get('anchor_price', 0)
-                st.metric("锚点价格", f"￥{anchor_price:.2f}" if anchor_price is not None else "N/A")
-                anchor_date = ascending_channel_info.get('anchor_date', 'N/A')
-                st.metric("锚点日期", anchor_date[:10] if anchor_date and anchor_date != 'N/A' else 'N/A')
-                volatility = ascending_channel_info.get('volatility', 0)
-                st.metric("波动率", f"{volatility:.3f}" if volatility is not None else "N/A")
-
-            # 显示通道质量评估
-            st.subheader("📊 通道质量评估")
-            quality_col1, quality_col2, quality_col3, quality_col4 = st.columns(4)
-
-            with quality_col1:
-                r2_value = ascending_channel_info.get('r2', 0)
-                if r2_value is not None:
-                    if r2_value > 0.7:
-                        st.success(f"拟合质量: 优秀 ({r2_value:.3f})")
-                    elif r2_value > 0.5:
-                        st.info(f"拟合质量: 良好 ({r2_value:.3f})")
-                    else:
-                        st.warning(f"拟合质量: 一般 ({r2_value:.3f})")
-                else:
-                    st.warning("拟合质量: 未知")
-
-            with quality_col2:
-                width_pct = ascending_channel_info.get('width_pct', 0)
-                if width_pct is not None:
-                    if width_pct < 0.05:
-                        st.warning(f"通道宽度: 过窄 ({width_pct:.2%})")
-                    elif width_pct > 0.15:
-                        st.warning(f"通道宽度: 过宽 ({width_pct:.2%})")
-                    else:
-                        st.success(f"通道宽度: 适中 ({width_pct:.2%})")
-                else:
-                    st.warning("通道宽度: 未知")
-
-            with quality_col3:
-                slope_deg = ascending_channel_info.get('slope_deg', 0)
-                if slope_deg is not None:
-                    if slope_deg > 5:
-                        st.info(f"趋势强度: 强 ({slope_deg:.2f}°)")
-                    elif slope_deg > 1:
-                        st.success(f"趋势强度: 中 ({slope_deg:.2f}°)")
-                    else:
-                        st.warning(f"趋势强度: 弱 ({slope_deg:.2f}°)")
-                else:
-                    st.warning("趋势强度: 未知")
-
-            with quality_col4:
-                volatility = ascending_channel_info.get('volatility', 0)
-                if volatility is not None:
-                    if volatility < 0.02:
-                        st.success(f"波动率: 低 ({volatility:.3f})")
-                    elif volatility < 0.05:
-                        st.info(f"波动率: 中 ({volatility:.3f})")
-                    else:
-                        st.warning(f"波动率: 高 ({volatility:.3f})")
-                else:
-                    st.warning("波动率: 未知")
-
-            # 显示详细通道信息
-            with st.expander("📊 详细通道信息", expanded=False):
-                st.json(ascending_channel_info)
 
         # 添加使用说明
         with st.expander("📖 图表操作说明", expanded=False):
@@ -1013,16 +668,9 @@ def main():
             - 均线悬停显示：对应均线的价格
             - 成交量悬停显示：成交量和成交额
             - MACD悬停显示：MACD、DIF、DEA值
-            - 上升通道悬停显示：中轴、上沿、下沿价格和通道状态
             - 拖动到数据边界会自动停止，防止超出范围
             - 只能左右拖动，不能上下拖动
             
-            **📈 上升通道说明：**
-            - **中轴线**：橙色实线，表示通道的中心趋势线
-            - **上沿线**：红色虚线，表示通道的上边界
-            - **下沿线**：绿色虚线，表示通道的下边界
-            - **锚点**：橙色菱形标记，表示通道的起始点
-            - 通道状态包括：NORMAL（正常）、BREAKOUT（上沿突破）、BREAKDOWN（跌破/失效）
             """)
 
         # 显示基本信息
@@ -1095,7 +743,7 @@ def main():
             **💡 推荐设置：**
             - 数据周期：日线数据
             - 日期范围：最近一年
-            - 技术指标：均线、成交量、上升通道
+            - 技术指标：均线、成交量
             """)
 
         with col2:
@@ -1143,7 +791,7 @@ def main():
         st.markdown("---")
         st.markdown("### ✨ 功能特色")
 
-        feature_col1, feature_col2, feature_col3 = st.columns(3)
+        feature_col1, feature_col2 = st.columns(2)
 
         with feature_col1:
             st.markdown("""
@@ -1154,14 +802,6 @@ def main():
             """)
 
         with feature_col2:
-            st.markdown("""
-            **📈 上升通道分析**
-            - 智能通道识别
-            - 实时状态监控
-            - 质量评估报告
-            """)
-
-        with feature_col3:
             st.markdown("""
             **🔍 数据搜索**
             - 日期范围搜索
