@@ -19,7 +19,7 @@ from jinja2 import Environment, FileSystemLoader, Template
 # 尝试导入logger，如果失败则使用简单的print
 try:
     from backend.utils.logger import setup_logger
-    logger = setup_logger("factor_report_generator")
+    logger = setup_logger("backtest_factor")
 except ImportError:
     # 简单的logger替代
     class SimpleLogger:

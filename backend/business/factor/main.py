@@ -56,6 +56,134 @@ class FactorResearchFramework:
 
         logger.info("因子研究框架初始化完成")
 
+    def run_and_report(self, factor_names: List[str], batch_name: str, output_dir: str,
+                      start_date: str = DEFAULT_START_DATE,
+                      end_date: str = DEFAULT_END_DATE,
+                      stock_codes: Optional[List[str]] = None,
+                      stock_pool: str = DEFAULT_STOCK_POOL,
+                      top_n: int = DEFAULT_TOP_N,
+                      n_groups: int = DEFAULT_N_GROUPS,
+                      **kwargs):
+        """
+        Runs the complete factor study and generates a report in a single, linear flow.
+        """
+        logger.info(f"开始执行完整的因子研究和报告生成流程: {factor_names}")
+
+        try:
+            # Step 1: 数据准备
+            logger.info("步骤1: 数据准备")
+            data = self.data_manager.prepare_factor_data(
+                start_date=start_date,
+                end_date=end_date,
+                stock_codes=stock_codes,
+                stock_pool=stock_pool
+            )
+
+            # Step 2: 因子计算
+            logger.info("步骤2: 因子计算")
+            factor_data = self.factor_engine.calculate_factors(factor_names)
+
+            # Step 3: 因子预处理
+            logger.info("步骤3: 因子预处理")
+            standardized_factors = self.factor_engine.standardize_factors(factor_names)
+            winsorized_factors = self.factor_engine.winsorize_factors(factor_names)
+
+            # Step 4: 因子有效性分析
+            logger.info("步骤4: 因子有效性分析")
+            effectiveness_results = {}
+            for factor_name in factor_names:
+                effectiveness_results[factor_name] = self.analyzer.analyze_factor_effectiveness(
+                    factor_name, forward_period=kwargs.get('forward_period', 1)
+                )
+
+            # Step 5: 回测分析
+            logger.info("步骤5: 回测分析")
+            self.run_backtest_analysis(
+                factor_names=factor_names,
+                top_n=top_n,
+                n_groups=n_groups
+            )
+
+            # Step 6: 收集所有结果直接来自实例的引擎
+            logger.info("正在从引擎收集所有最终结果...")
+            merged_results = {
+                'backtest_results': self.backtest_engine.get_backtest_results(),
+                'effectiveness_results': effectiveness_results
+            }
+
+            # Step 7: 生成报告
+            logger.info("开始生成最终报告...")
+            report_path = self.generate_report(
+                batch_name=batch_name,
+                merged_results=merged_results,
+                output_dir=output_dir,
+                start_date=start_date,
+                end_date=end_date,
+                stock_pool=stock_pool,
+                top_n=top_n,
+                n_groups=n_groups
+            )
+
+            logger.info(f"完整的因子研究和报告生成流程完成，报告路径: {report_path}")
+            return report_path
+
+        except Exception as e:
+            logger.error(f"因子研究和报告生成失败: {e}")
+            raise
+
+    def generate_report(self, batch_name: str, merged_results: Dict[str, Any], 
+                       output_dir: str, start_date: str, end_date: str, 
+                       stock_pool: str, top_n: int, n_groups: int) -> str:
+        """
+        生成报告
+        
+        Args:
+            batch_name: 批次名称
+            merged_results: 合并的结果
+            output_dir: 输出目录
+            start_date: 开始日期
+            end_date: 结束日期
+            stock_pool: 股票池
+            top_n: 选股数量
+            n_groups: 分组数量
+            
+        Returns:
+            报告路径
+        """
+        # 准备报告数据
+        factor_names = list(merged_results.get('effectiveness_results', {}).keys())
+        
+        # 从回测结果中提取性能指标，按因子名称组织
+        performance_metrics = {}
+        for factor_name in factor_names:
+            # 提取TopN回测结果
+            topn_key = f'topn_{factor_name}'
+            backtest_results = merged_results.get('backtest_results', {})
+            if topn_key in backtest_results:
+                performance_metrics[factor_name] = backtest_results[topn_key]
+        
+        report_data = {
+            'factor_names': factor_names,
+            'performance_metrics': performance_metrics,
+            'ic_metrics': merged_results.get('effectiveness_results', {}),
+            'time_series_returns': {},  # 需要从回测结果中提取
+            'detailed_analysis': {}     # 需要从回测结果中提取
+        }
+        
+        # 生成批次报告
+        report_path = self.report_generator.generate_batch_report(
+            batch_name=batch_name,
+            report_data=report_data,
+            output_path=os.path.join(output_dir, f"{batch_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"),
+            start_date=start_date,
+            end_date=end_date,
+            stock_pool=stock_pool,
+            top_n=top_n,
+            n_groups=n_groups
+        )
+        
+        return report_path
+
     def run_factor_research(self,
                             factor_names: List[str],
                             start_date: str = DEFAULT_START_DATE,
@@ -236,61 +364,6 @@ class FactorResearchFramework:
                 logger.error(f"多因子回测失败: {e}", exc_info=True)
 
         logger.info("所有回测分析流程执行完毕。")
-
-    def run_factor_comparison(self,
-                              factor_names: List[str],
-                              start_date: str = DEFAULT_START_DATE,
-                              end_date: str = DEFAULT_END_DATE,
-                              stock_codes: Optional[List[str]] = None,
-                              stock_pool: str = DEFAULT_STOCK_POOL,
-                              **kwargs) -> Dict[str, Any]:
-        """
-        运行因子对比分析
-        
-        Args:
-            factor_names: 因子名称列表
-            start_date: 开始日期
-            end_date: 结束日期
-            stock_codes: 股票代码列表
-            stock_pool: 股票池
-            **kwargs: 其他参数
-            
-        Returns:
-            对比分析结果
-        """
-        logger.info(f"开始因子对比分析: {factor_names}")
-
-        # 运行完整研究
-        results = self.run_factor_research(
-            factor_names, start_date, end_date, stock_codes, stock_pool, **kwargs
-        )
-
-        # 添加对比分析
-        comparison_results = {}
-
-        # 对比因子有效性
-        ic_comparison = {}
-        for factor_name in factor_names:
-            if factor_name in results['effectiveness_results']:
-                ic_comparison[factor_name] = results['effectiveness_results'][factor_name].get('ic_mean', 0)
-
-        comparison_results['ic_comparison'] = ic_comparison
-
-        # 对比回测表现
-        performance_comparison = {}
-        for factor_name in factor_names:
-            topn_key = f'topn_{factor_name}'
-            if topn_key in results['backtest_results']:
-                topn_result = results['backtest_results'][topn_key]
-                if 'stats' in topn_result:
-                    performance_comparison[factor_name] = topn_result['stats']
-
-        comparison_results['performance_comparison'] = performance_comparison
-
-        results['comparison_results'] = comparison_results
-
-        logger.info("因子对比分析完成")
-        return results
 
     def get_available_factors(self, category: Optional[str] = None) -> pd.DataFrame:
         """
