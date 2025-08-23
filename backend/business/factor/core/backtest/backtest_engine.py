@@ -448,8 +448,13 @@ class FactorBacktestEngine:
             logger.debug(f"计算得到max_drawdown: {max_drawdown}")
 
             stats = {
-                'total_return': total_return,
-                'max_drawdown': max_drawdown,
+                'total_return': total_return * 100,
+                'max_drawdown': max_drawdown * 100,
+                'sharpe_ratio': 0.0,
+                'annual_return': 0.0,
+                'volatility': 0.0,
+                'trading_days': 0,
+                'Period': 0,
             }
             logger.debug(f"返回stats: {stats}")
         except Exception as e:
@@ -531,11 +536,25 @@ class FactorBacktestEngine:
             omega_ratio = (positive_returns.sum() / abs(negative_returns.sum()) 
                           if negative_returns.sum() != 0 else float('inf'))
             
-            # 构建统计指标字典，使用与vectorbt一致的名称
+            # 构建统计指标字典，使用与模板期望一致的名称
             stats = {
+                # 主要性能指标（与模板字段对应）
+                'total_return': total_return * 100,
+                'annual_return': annual_return * 100,
+                'volatility': volatility * 100,
+                'sharpe_ratio': sharpe_ratio,
+                'max_drawdown': max_drawdown * 100,
+                'trading_days': len(returns),
+                'Period': len(returns),
+                
+                # 兼容vectorbt格式的字段
                 'Total Return [%]': total_return * 100,
                 'Max Drawdown [%]': max_drawdown * 100,
                 'Sharpe Ratio': sharpe_ratio,
+                'Annual Return [%]': annual_return * 100,
+                'Annual Volatility [%]': volatility * 100,
+                
+                # 其他详细指标
                 'Calmar Ratio': calmar_ratio,
                 'Sortino Ratio': sortino_ratio,
                 'Win Rate [%]': win_rate,
@@ -543,8 +562,6 @@ class FactorBacktestEngine:
                 'Omega Ratio': omega_ratio,
                 'Value at Risk [%]': var_95 * 100,
                 'Conditional VaR [%]': cvar_95 * 100,
-                'Annual Return [%]': annual_return * 100,
-                'Annual Volatility [%]': volatility * 100,
                 'Best Trade [%]': returns_clean.max() * 100,
                 'Worst Trade [%]': returns_clean.min() * 100,
                 'Avg Winning Trade [%]': avg_win * 100,
@@ -559,7 +576,6 @@ class FactorBacktestEngine:
                 'Avg Losing Trade Duration': 1.0,   # 简化处理
                 'Start': returns.index[0] if len(returns) > 0 else None,
                 'End': returns.index[-1] if len(returns) > 0 else None,
-                'Period': len(returns),
                 'Start Value': 10000.0,  # 假设初始资金
                 'End Value': 10000.0 * (1 + total_return),
                 'Benchmark Return [%]': 0.0,  # 简化处理
@@ -581,9 +597,23 @@ class FactorBacktestEngine:
             默认统计指标字典
         """
         return {
+            # 主要性能指标（与模板字段对应）
             'total_return': 0.0,
-            'max_drawdown': 0.0,
+            'annual_return': 0.0,
+            'volatility': 0.0,
             'sharpe_ratio': 0.0,
+            'max_drawdown': 0.0,
+            'trading_days': 0,
+            'Period': 0,
+            
+            # 兼容vectorbt格式的字段
+            'Total Return [%]': 0.0,
+            'Max Drawdown [%]': 0.0,
+            'Sharpe Ratio': 0.0,
+            'Annual Return [%]': 0.0,
+            'Annual Volatility [%]': 0.0,
+            
+            # 其他详细指标
             'calmar_ratio': 0.0,
             'sortino_ratio': 0.0,
             'win_rate': 0.0,
@@ -591,8 +621,6 @@ class FactorBacktestEngine:
             'omega_ratio': 0.0,
             'var_95': 0.0,
             'cvar_95': 0.0,
-            'annual_return': 0.0,
-            'annual_volatility': 0.0,
             'best_trade': 0.0,
             'worst_trade': 0.0,
             'avg_winning_trade': 0.0,
@@ -607,7 +635,6 @@ class FactorBacktestEngine:
             'avg_losing_trade_duration': 0.0,
             'start': None,
             'end': None,
-            'period': 0.0,
             'start_value': 10000.0,
             'end_value': 10000.0,
             'benchmark_return': 0.0,

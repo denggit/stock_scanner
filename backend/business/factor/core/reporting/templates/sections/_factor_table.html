@@ -29,22 +29,22 @@
                     <strong>{{ factor_name }}</strong>
                     <br>
                     <small style="color: #666;">
-                        {% if performance.get('trading_days') %}
-                        交易天数: {{ performance.get('trading_days', 0) }}
+                        {% if performance.get('trading_days') or performance.get('Period') %}
+                        交易天数: {{ performance.get('trading_days', performance.get('Period', 0)) }}
                         {% endif %}
                     </small>
                 </td>
-                <td class="{% if performance.get('total_return', 0) > 0 %}positive{% else %}negative{% endif %}">
-                    {{ "%.2f"|format(performance.get('total_return', 0) * 100) }}%
+                <td class="{% if (performance.get('total_return', 0) or performance.get('Total Return [%]', 0)) > 0 %}positive{% else %}negative{% endif %}">
+                    {{ "%.2f"|format((performance.get('total_return', 0) or performance.get('Total Return [%]', 0) / 100) * 100) }}%
                 </td>
-                <td class="{% if performance.get('annual_return', 0) > 0 %}positive{% else %}negative{% endif %}">
-                    {{ "%.2f"|format(performance.get('annual_return', 0) * 100) }}%
+                <td class="{% if (performance.get('annual_return', 0) or performance.get('Annual Return [%]', 0)) > 0 %}positive{% else %}negative{% endif %}">
+                    {{ "%.2f"|format((performance.get('annual_return', 0) or performance.get('Annual Return [%]', 0) / 100) * 100) }}%
                 </td>
-                <td>{{ "%.2f"|format(performance.get('volatility', 0) * 100) }}%</td>
-                <td class="{% if performance.get('sharpe_ratio', 0) > 0 %}positive{% else %}negative{% endif %}">
-                    {{ "%.2f"|format(performance.get('sharpe_ratio', 0)) }}
+                <td>{{ "%.2f"|format((performance.get('volatility', 0) or performance.get('Annual Volatility [%]', 0) / 100) * 100) }}%</td>
+                <td class="{% if (performance.get('sharpe_ratio', 0) or performance.get('Sharpe Ratio', 0)) > 0 %}positive{% else %}negative{% endif %}">
+                    {{ "%.2f"|format(performance.get('sharpe_ratio', 0) or performance.get('Sharpe Ratio', 0)) }}
                 </td>
-                <td class="negative">{{ "%.2f"|format(performance.get('max_drawdown', 0) * 100) }}%</td>
+                <td class="negative">{{ "%.2f"|format((performance.get('max_drawdown', 0) or performance.get('Max Drawdown [%]', 0) / 100) * 100) }}%</td>
                 <td class="{% if ic.get('mean_ic', 0) > 0 %}positive{% else %}negative{% endif %}">
                     {{ "%.4f"|format(ic.get('mean_ic', 0)) }}
                 </td>

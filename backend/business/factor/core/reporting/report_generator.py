@@ -71,54 +71,41 @@ class FactorReportGenerator:
         
         logger.info(f"报告生成器初始化完成，模板路径: {template_path}")
     
-    def _get_metric(self, 
-                   stats: Dict[str, Any], 
-                   keys: List[str], 
-                   default: float = 0.0, 
-                   is_percent: bool = False) -> float:
+    def _get_metric(self, stats: dict, keys: list, default: float = 0.0) -> float:
         """
-        健壮的指标提取方法
-        
-        安全地从统计字典中提取数值指标，支持各种数值类型包括NumPy类型
-        
-        Args:
-            stats: 统计字典
-            keys: 可能的键名列表，按优先级排序
-            default: 默认值
-            is_percent: 是否为百分比值（如果是，会除以100）
-            
-        Returns:
-            提取的数值，如果无法提取则返回默认值
+        健壮地从stats字典中获取指标值。
+        它会尝试多个可能的键，并正确处理不同数据类型（包括numpy和字符串）。
         """
         if not isinstance(stats, dict):
-            logger.warning(f"stats不是字典类型: {type(stats)}")
+            logger.warning(f"输入的stats不是一个字典，而是一个 {type(stats)}")
             return default
-        
-        # 尝试从keys中获取值
+
+        value = None
+        found_key = None
         for key in keys:
             if key in stats:
                 value = stats[key]
-                
-                # 检查是否为数值类型
-                if self._is_numeric(value):
-                    try:
-                        # 转换为float
-                        float_value = float(value)
-                        
-                        # 如果是百分比且值大于1，则除以100
-                        if is_percent and abs(float_value) > 1.0:
-                            float_value = float_value / 100.0
-                        
-                        return float_value
-                    except (ValueError, TypeError) as e:
-                        logger.warning(f"无法转换值 {value} 为float: {e}")
-                        continue
-                else:
-                    logger.warning(f"键 {key} 的值 {value} 不是数值类型: {type(value)}")
-                    continue
-        
-        logger.warning(f"在keys {keys} 中未找到有效的数值")
-        return default
+                found_key = key
+                break
+
+        if value is None:
+            logger.warning(f"在keys {keys} 中未找到任何有效键")
+            return default
+
+        # 如果值是字符串 (例如 '52.5%' 或 '-10.2%'), 尝试转换
+        if isinstance(value, str):
+            try:
+                # 去除 '%' 并转换为浮点数，然后除以100
+                value = float(value.strip().replace('%', '')) / 100.0
+            except (ValueError, TypeError):
+                logger.warning(f"无法将字符串 '{value}' 从键 '{found_key}' 转换为浮点数")
+                return default
+
+        if not isinstance(value, (int, float, np.number)):
+            logger.warning(f"键 '{found_key}' 的值 '{value}' (类型: {type(value)}) 不是有效的数值")
+            return default
+
+        return float(value)
     
     def _is_numeric(self, value: Any) -> bool:
         """
@@ -433,6 +420,14 @@ class FactorReportGenerator:
         # 去重因子名称
         merged_data['factor_names'] = list(set(merged_data['factor_names']))
         
+        # 处理嵌套结构 - 提取性能数据和IC数据
+        merged_data['performance_data'] = self._extract_performance_data({
+            'performance_metrics': merged_data['performance_data']
+        })
+        merged_data['ic_data'] = self._extract_ic_data({
+            'ic_metrics': merged_data['ic_data']
+        })
+        
         return merged_data
     
     def _perform_advanced_analysis(self, merged_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -455,37 +450,23 @@ class FactorReportGenerator:
             performance = performance_data.get(factor_name, {})
             ic = ic_data.get(factor_name, {})
             
-            # 使用健壮的指标提取方法
+            # 直接使用提取后的数据（已经处理了嵌套结构）
             sharpe_ratio = self._get_metric(
                 performance, 
-                ['sharpe_ratio', 'sharpe', 'sharpe_ratio_annual'], 
+                ['sharpe_ratio', 'sharpe', 'sharpe_ratio_annual', 'Sharpe Ratio'], 
                 default=0.0
             )
             
-            # 提取IC IR - 支持嵌套结构
-            ic_ir = 0.0
-            if isinstance(ic, dict):
-                # 方法1: 直接查找
-                ic_ir = self._get_metric(
-                    ic, 
-                    ['ic_ir', 'ic_information_ratio', 'information_ratio', 'ir'], 
-                    default=0.0
-                )
-                
-                # 方法2: 查找嵌套结构 ic_analysis.ic_stats
-                if ic_ir == 0.0 and 'ic_analysis' in ic:
-                    ic_analysis = ic['ic_analysis']
-                    if isinstance(ic_analysis, dict) and 'ic_stats' in ic_analysis:
-                        ic_stats_nested = ic_analysis['ic_stats']
-                        ic_ir = self._get_metric(
-                            ic_stats_nested, 
-                            ['ic_ir', 'ic_information_ratio', 'information_ratio', 'ir'], 
-                            default=0.0
-                        )
-            
             annual_return = self._get_metric(
                 performance, 
-                ['annual_return', 'annual_ret', 'return_annual'], 
+                ['annual_return', 'annual_ret', 'return_annual', 'Annual Return [%]'], 
+                default=0.0
+            )
+            
+            # 提取IC IR - 直接使用提取后的数据（已经处理了嵌套结构）
+            ic_ir = self._get_metric(
+                ic, 
+                ['ic_ir', 'ic_information_ratio', 'information_ratio', 'ir'], 
                 default=0.0
             )
             
@@ -564,7 +545,29 @@ class FactorReportGenerator:
             
             elif isinstance(performance_metrics, dict):
                 logger.info(f"性能指标数据是字典，包含 {len(performance_metrics)} 个因子")
-                return performance_metrics
+                
+                # 检查是否为嵌套结构，如果是，提取stats或portfolio_stats
+                processed_performance_dict = {}
+                for factor_name, performance_data in performance_metrics.items():
+                    if isinstance(performance_data, dict):
+                        # 检查是否有嵌套的stats结构
+                        if 'stats' in performance_data and isinstance(performance_data['stats'], dict):
+                            # 提取嵌套的stats
+                            processed_performance_dict[factor_name] = performance_data['stats']
+                            logger.debug(f"提取因子 {factor_name} 的嵌套stats")
+                        elif 'portfolio_stats' in performance_data and isinstance(performance_data['portfolio_stats'], dict):
+                            # 提取嵌套的portfolio_stats
+                            processed_performance_dict[factor_name] = performance_data['portfolio_stats']
+                            logger.debug(f"提取因子 {factor_name} 的嵌套portfolio_stats")
+                        else:
+                            # 使用原始数据
+                            processed_performance_dict[factor_name] = performance_data
+                    else:
+                        # 非字典类型，保持原样
+                        processed_performance_dict[factor_name] = performance_data
+                
+                logger.info(f"处理后的性能指标数据包含 {len(processed_performance_dict)} 个因子")
+                return processed_performance_dict
             else:
                 logger.warning(f"性能指标数据类型不支持: {type(performance_metrics)}")
                 return {}
@@ -803,46 +806,29 @@ class FactorReportGenerator:
         ic_means = []
         
         for factor_name, performance in performance_data.items():
-            # 提取夏普比率
+            # 直接使用提取后的数据（已经处理了嵌套结构）
             sharpe_ratio = self._get_metric(
                 performance, 
-                ['sharpe_ratio', 'sharpe', 'sharpe_ratio_annual'], 
+                ['sharpe_ratio', 'sharpe', 'sharpe_ratio_annual', 'Sharpe Ratio'], 
                 default=0.0
             )
-            sharpe_ratios.append(sharpe_ratio)
             
-            # 提取年化收益率
             annual_return = self._get_metric(
                 performance, 
-                ['annual_return', 'annual_ret', 'return_annual'], 
+                ['annual_return', 'annual_ret', 'return_annual', 'Annual Return [%]'], 
                 default=0.0
             )
+            
+            sharpe_ratios.append(sharpe_ratio)
             annual_returns.append(annual_return)
         
-        # 处理IC数据 - 支持嵌套结构
+        # 处理IC数据 - 直接使用提取后的数据（已经处理了嵌套结构）
         for factor_name, ic_stats in ic_data.items():
-            # 尝试多种IC数据结构
-            ic_mean = 0.0
-            
-            # 方法1: 直接查找
-            if isinstance(ic_stats, dict):
-                ic_mean = self._get_metric(
-                    ic_stats, 
-                    ['mean_ic', 'ic_mean', 'ic'], 
-                    default=0.0
-                )
-                
-                # 方法2: 查找嵌套结构 ic_analysis.ic_stats
-                if ic_mean == 0.0 and 'ic_analysis' in ic_stats:
-                    ic_analysis = ic_stats['ic_analysis']
-                    if isinstance(ic_analysis, dict) and 'ic_stats' in ic_analysis:
-                        ic_stats_nested = ic_analysis['ic_stats']
-                        ic_mean = self._get_metric(
-                            ic_stats_nested, 
-                            ['mean_ic', 'ic_mean', 'ic'], 
-                            default=0.0
-                        )
-            
+            ic_mean = self._get_metric(
+                ic_stats, 
+                ['mean_ic', 'ic_mean', 'ic'], 
+                default=0.0
+            )
             ic_means.append(ic_mean)
         
         return {
@@ -936,3 +922,60 @@ class FactorReportGenerator:
         """
         template = self.env.get_template(template_name)
         return template.render(**context)
+    
+    def _generate_topn_results_html(self, factor_names: List[str], backtest_results: Dict[str, Any]) -> str:
+        """生成TopN回测结果HTML (使用正确的QuantStats键名)"""
+        # ... (函数的第一部分保持不变: a lot of html) ...
+        html = """
+        <table>
+            <thead>
+                <tr>
+                    <th>因子名称</th>
+                    <th>总收益率</th>
+                    <th>年化收益率</th>
+                    <th>年化波动率</th>
+                    <th>夏普比率</th>
+                    <th>最大回撤</th>
+                    <th>交易天数</th>
+                </tr>
+            </thead>
+            <tbody>
+        """
+        for factor_name in factor_names:
+            topn_key = next((k for k in backtest_results if k.startswith(f'topn_{factor_name}')), None)
+            if topn_key and topn_key in backtest_results:
+                result = backtest_results[topn_key]
+                stats = result.get('stats', {})
+
+                # 使用完全正确的键名列表
+                total_return = self._get_metric(stats, ['Cumulative Return'])
+                annual_return = self._get_metric(stats, ['Annual Return'])
+                annual_volatility = self._get_metric(stats, ['Annual Volatility'])
+                sharpe_ratio = self._get_metric(stats, ['Sharpe Ratio'])
+                max_drawdown = self._get_metric(stats, ['Max Drawdown'])
+                # 'period' 的值可能是 '100 days' 这样的字符串，需要特殊处理
+                trading_days_str = stats.get('Period', '0 days')
+                trading_days = int(''.join(filter(str.isdigit, trading_days_str)))
+
+
+                html += f"""
+                <tr>
+                    <td>{factor_name}</td>
+                    <td class="{'positive' if total_return > 0 else 'negative'}">{total_return:.2%}</td>
+                    <td class="{'positive' if annual_return > 0 else 'negative'}">{annual_return:.2%}</td>
+                    <td>{annual_volatility:.2%}</td>
+                    <td class="{'positive' if sharpe_ratio > 0.5 else 'negative'}">{sharpe_ratio:.2f}</td>
+                    <td class="negative">{max_drawdown:.2%}</td>
+                    <td>{trading_days}</td>
+                </tr>
+                """
+            else:
+                html += f"""
+                <tr>
+                    <td>{factor_name}</td>
+                    <td colspan="6" style="text-align:center;">N/A</td>
+                </tr>
+                """
+
+        html += "</tbody></table>"
+        return html
