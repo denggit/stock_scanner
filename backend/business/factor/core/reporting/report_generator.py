@@ -2743,14 +2743,21 @@ class FactorReportGenerator:
             topn_key = f'topn_{factor_name}'
             if topn_key in backtest_results:
                 result = backtest_results[topn_key]
+                # 兼容不同的数据结构
+                stats = None
                 if 'portfolio_stats' in result:
                     stats = result['portfolio_stats']
-                    total_return = stats.get('total_return', 0)
-                    annual_return = stats.get('annual_return', 0)
-                    annual_volatility = stats.get('annual_volatility', 0)
-                    sharpe_ratio = stats.get('sharpe_ratio', 0)
-                    max_drawdown = stats.get('max_drawdown', 0)
-                    trading_days = stats.get('trading_days', 0)
+                elif 'stats' in result:
+                    stats = result['stats']
+                
+                if stats is not None:
+                    # 兼容不同的字段名称
+                    total_return = stats.get('total_return', stats.get('Total Return [%]', 0)) / 100 if isinstance(stats.get('total_return', stats.get('Total Return [%]', 0)), (int, float)) else 0
+                    annual_return = stats.get('annual_return', stats.get('Annual Return [%]', 0)) / 100 if isinstance(stats.get('annual_return', stats.get('Annual Return [%]', 0)), (int, float)) else 0
+                    annual_volatility = stats.get('annual_volatility', stats.get('Annual Volatility [%]', 0)) / 100 if isinstance(stats.get('annual_volatility', stats.get('Annual Volatility [%]', 0)), (int, float)) else 0
+                    sharpe_ratio = stats.get('sharpe_ratio', stats.get('Sharpe Ratio', 0))
+                    max_drawdown = stats.get('max_drawdown', stats.get('Max Drawdown [%]', 0)) / 100 if isinstance(stats.get('max_drawdown', stats.get('Max Drawdown [%]', 0)), (int, float)) else 0
+                    trading_days = stats.get('trading_days', stats.get('Period', 0))
 
                     html += f"""
                     <tr>
@@ -2791,8 +2798,14 @@ class FactorReportGenerator:
             group_key = f'group_{factor_name}'
             if group_key in backtest_results:
                 result = backtest_results[group_key]
+                # 兼容不同的数据结构
+                group_stats = None
                 if 'group_stats' in result:
                     group_stats = result['group_stats']
+                elif 'stats' in result:
+                    group_stats = result['stats']
+                
+                if group_stats is not None:
 
                     html += f"""
                     <h3>{factor_name} 分组表现</h3>
@@ -2812,12 +2825,13 @@ class FactorReportGenerator:
                     """
 
                     for _, row in group_stats.iterrows():
-                        total_return = row.get('total_return', 0)
-                        annual_return = row.get('annual_return', 0)
-                        annual_volatility = row.get('annual_volatility', 0)
-                        sharpe_ratio = row.get('sharpe_ratio', 0)
-                        max_drawdown = row.get('max_drawdown', 0)
-                        trading_days = row.get('trading_days', 0)
+                        # 兼容不同的字段名称
+                        total_return = row.get('total_return', row.get('Total Return [%]', 0)) / 100 if isinstance(row.get('total_return', row.get('Total Return [%]', 0)), (int, float)) else 0
+                        annual_return = row.get('annual_return', row.get('Annual Return [%]', 0)) / 100 if isinstance(row.get('annual_return', row.get('Annual Return [%]', 0)), (int, float)) else 0
+                        annual_volatility = row.get('annual_volatility', row.get('Annual Volatility [%]', 0)) / 100 if isinstance(row.get('annual_volatility', row.get('Annual Volatility [%]', 0)), (int, float)) else 0
+                        sharpe_ratio = row.get('sharpe_ratio', row.get('Sharpe Ratio', 0))
+                        max_drawdown = row.get('max_drawdown', row.get('Max Drawdown [%]', 0)) / 100 if isinstance(row.get('max_drawdown', row.get('Max Drawdown [%]', 0)), (int, float)) else 0
+                        trading_days = row.get('trading_days', row.get('Period', 0))
 
                         html += f"""
                         <tr>
@@ -2842,32 +2856,46 @@ class FactorReportGenerator:
         """生成多因子回测结果HTML"""
         if 'multifactor' in backtest_results:
             result = backtest_results['multifactor']
+            # 兼容不同的数据结构
+            stats = None
             if 'portfolio_stats' in result:
                 stats = result['portfolio_stats']
+            elif 'stats' in result:
+                stats = result['stats']
+            
+            if stats is not None:
+
+                # 兼容不同的字段名称
+                total_return = stats.get('total_return', stats.get('Total Return [%]', 0)) / 100 if isinstance(stats.get('total_return', stats.get('Total Return [%]', 0)), (int, float)) else 0
+                annual_return = stats.get('annual_return', stats.get('Annual Return [%]', 0)) / 100 if isinstance(stats.get('annual_return', stats.get('Annual Return [%]', 0)), (int, float)) else 0
+                annual_volatility = stats.get('annual_volatility', stats.get('Annual Volatility [%]', 0)) / 100 if isinstance(stats.get('annual_volatility', stats.get('Annual Volatility [%]', 0)), (int, float)) else 0
+                sharpe_ratio = stats.get('sharpe_ratio', stats.get('Sharpe Ratio', 0))
+                max_drawdown = stats.get('max_drawdown', stats.get('Max Drawdown [%]', 0)) / 100 if isinstance(stats.get('max_drawdown', stats.get('Max Drawdown [%]', 0)), (int, float)) else 0
+                trading_days = stats.get('trading_days', stats.get('Period', 0))
 
                 html = f"""
                 <div class="metric-card">
-                    <div class="metric-value {'positive' if stats.get('total_return', 0) > 0 else 'negative'}">{stats.get('total_return', 0):.2%}</div>
+                    <div class="metric-value {'positive' if total_return > 0 else 'negative'}">{total_return:.2%}</div>
                     <div class="metric-label">总收益率</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value {'positive' if stats.get('annual_return', 0) > 0 else 'negative'}">{stats.get('annual_return', 0):.2%}</div>
+                    <div class="metric-value {'positive' if annual_return > 0 else 'negative'}">{annual_return:.2%}</div>
                     <div class="metric-label">年化收益率</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value">{stats.get('annual_volatility', 0):.2%}</div>
+                    <div class="metric-value">{annual_volatility:.2%}</div>
                     <div class="metric-label">年化波动率</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value {'positive' if stats.get('sharpe_ratio', 0) > 0 else 'negative'}">{stats.get('sharpe_ratio', 0):.2f}</div>
+                    <div class="metric-value {'positive' if sharpe_ratio > 0 else 'negative'}">{sharpe_ratio:.2f}</div>
                     <div class="metric-label">夏普比率</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value negative">{stats.get('max_drawdown', 0):.2%}</div>
+                    <div class="metric-value negative">{max_drawdown:.2%}</div>
                     <div class="metric-label">最大回撤</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value">{stats.get('trading_days', 0)}</div>
+                    <div class="metric-value">{trading_days}</div>
                     <div class="metric-label">交易天数</div>
                 </div>
                 """

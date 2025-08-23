@@ -16,11 +16,9 @@ from backend.business.data.data_fetcher import StockDataFetcher
 from backend.business.strategies.breakout import BreakoutStrategy
 from backend.business.strategies.continuous_rise import ContinuousRiseStrategy
 from backend.business.strategies.double_up import DoubleUpStrategy
-from backend.business.strategies.explosive_stock import ExplosiveStockStrategy
 from backend.business.strategies.hs_bottom import HSBottom
 from backend.business.strategies.long_term_uptrend import LongTermUpTrendStrategy
 from backend.business.strategies.ma_pullback import MAPullbackStrategy
-from backend.business.strategies.rising_channel import RisingChannelStrategy
 from backend.business.strategies.swing_trading import SwingTradingStrategy
 from backend.utils.api_response import convert_to_python_types
 from backend.utils.logger import setup_logger
@@ -38,8 +36,6 @@ class StrategyService:
             "扫描翻倍股": DoubleUpStrategy,
             "长期上涨策略": LongTermUpTrendStrategy,
             "头肩底形态策略": HSBottom,
-            "爆发式选股策略": ExplosiveStockStrategy,
-            "上升通道策略": RisingChannelStrategy
         }
         self.simple_strategies = {
             "放量上涨策略": ContinuousRiseStrategy,
