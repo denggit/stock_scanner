@@ -261,9 +261,9 @@ def run_worldquant_factors_merged(start_date: str = DEFAULT_START_DATE, end_date
             merged_results=merged_results,
             start_date=start_date,
             end_date=end_date,
-            stock_pool='no_st',
-            top_n=10,
-            n_groups=5
+            stock_pool=stock_pool,
+            top_n=top_n,
+            n_groups=n_groups
         )
 
         logger.info(f"合并综合报告生成成功: {report_path}")

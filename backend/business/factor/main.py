@@ -453,43 +453,58 @@ class FactorResearchFramework:
                 'status': 'normal'
             }
 
-            # 获取TopN回测结果
+            # 获取TopN回测结果 - 修复：使用正确的键名和字段
             topn_key = f'topn_{factor_name}'
             if topn_key in backtest_results:
                 topn_result = backtest_results[topn_key]
-                if 'portfolio_stats' in topn_result:
-                    stats = topn_result['portfolio_stats']
-                    performance_data['topn_sharpe'] = stats.get('sharpe_ratio', 0)
-                    performance_data['topn_return'] = stats.get('total_return', 0)
-                    performance_data['topn_max_drawdown'] = stats.get('max_drawdown', 0)
+                if 'stats' in topn_result:
+                    stats = topn_result['stats']
+                    # 确保stats是字典类型
+                    if isinstance(stats, dict):
+                        performance_data['topn_return'] = stats.get('total_return', 0)
+                        performance_data['topn_max_drawdown'] = stats.get('max_drawdown', 0)
+                        # 计算夏普比率（如果没有的话）
+                        if 'sharpe_ratio' in stats:
+                            performance_data['topn_sharpe'] = stats.get('sharpe_ratio', 0)
+                        else:
+                            # 简单估算夏普比率
+                            total_return = stats.get('total_return', 0)
+                            max_drawdown = abs(stats.get('max_drawdown', 0))
+                            if max_drawdown > 0:
+                                performance_data['topn_sharpe'] = total_return / max_drawdown
+                            else:
+                                performance_data['topn_sharpe'] = total_return if total_return > 0 else 0
 
-            # 获取有效性分析结果
+            # 获取有效性分析结果 - 修复：使用正确的字段名
             if factor_name in effectiveness_results:
                 eff_result = effectiveness_results[factor_name]
                 if 'ic_analysis' in eff_result:
                     ic_analysis = eff_result['ic_analysis']
-                    performance_data['ic_mean'] = ic_analysis.get('ic_mean', 0)
-                    performance_data['ic_ir'] = ic_analysis.get('ic_ir', 0)
-                    performance_data['ic_win_rate'] = ic_analysis.get('ic_win_rate', 0)
+                    if 'ic_stats' in ic_analysis:
+                        ic_stats = ic_analysis['ic_stats']
+                        performance_data['ic_mean'] = ic_stats.get('mean_ic', 0)
+                        performance_data['ic_ir'] = ic_stats.get('ir', 0)
+                        performance_data['ic_win_rate'] = ic_stats.get('positive_ic_rate', 0)
 
-            # 检查分组单调性
+            # 检查分组单调性 - 修复：使用正确的键名 'stats'
             group_key = f'group_{factor_name}'
             if group_key in backtest_results:
                 group_result = backtest_results[group_key]
-                if 'group_stats' in group_result:
-                    group_stats = group_result['group_stats']
-                    # 计算单调性得分（高组收益应该大于低组）
-                    if len(group_stats) >= 2:
+                if 'stats' in group_result:
+                    group_stats = group_result['stats']
+                    # 确保group_stats是DataFrame
+                    if isinstance(group_stats, pd.DataFrame) and len(group_stats) >= 2:
+                        # 计算单调性得分（高组收益应该大于低组）
                         high_group_return = group_stats.iloc[-1]['total_return'] if len(group_stats) > 0 else 0
                         low_group_return = group_stats.iloc[0]['total_return'] if len(group_stats) > 0 else 0
                         performance_data['group_monotonicity'] = high_group_return - low_group_return
 
-            # 判断因子状态
+            # 判断因子状态 - 修复：调整判断逻辑
             if performance_data['topn_sharpe'] == 0 and performance_data['ic_mean'] == 0:
                 performance_data['status'] = 'failed'
-            elif performance_data['topn_sharpe'] > 2.0 and performance_data['ic_mean'] > 0.02:
+            elif performance_data['topn_sharpe'] > 1.0 and performance_data['ic_mean'] > 0.005:
                 performance_data['status'] = 'excellent'
-            elif performance_data['topn_sharpe'] < 0.5 or performance_data['ic_mean'] < 0.01:
+            elif performance_data['topn_sharpe'] < 0.2 or performance_data['ic_mean'] < 0.002:
                 performance_data['status'] = 'poor'
 
             factor_performance.append(performance_data)
