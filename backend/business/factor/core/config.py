@@ -16,7 +16,7 @@ from typing import Dict, Any
 # =============================================================================
 
 # 默认日期配置
-DEFAULT_START_DATE = '2025-01-01'
+DEFAULT_START_DATE = '2020-01-01'
 DEFAULT_END_DATE = date.today().strftime("%Y-%m-%d")
 
 # 默认股票池配置

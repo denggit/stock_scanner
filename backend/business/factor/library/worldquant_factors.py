@@ -591,7 +591,7 @@ def alpha_21(data: pd.DataFrame, **kwargs) -> pd.Series:
     sum_close_8 = close.rolling(8).sum() / 8
     sum_close_2 = close.rolling(2).sum() / 2
     stddev_close_8 = close.rolling(8).std()
-    
+
     # 增加epsilon防止除零错误
     epsilon = 1e-10
     volume_adv20_ratio = volume / (adv20 + epsilon)
@@ -799,22 +799,22 @@ def alpha_29(data: pd.DataFrame, **kwargs) -> pd.Series:
     rank_delta_returns_5 = (-1 * returns.diff(5)).rank(pct=True)
     rank_rank_delta = rank_delta_returns_5.rank(pct=True)
     ts_min_rank_rank = rank_rank_delta.rolling(2).min()
-    
+
     # 修正：移除了多余的 .rolling(1).sum()
     sum_ts_min = ts_min_rank_rank
-    
+
     # 使用 np.log1p 增强数值稳定性，处理可能的0值
     log_sum = np.log1p(sum_ts_min.fillna(0))
-    
+
     # scale函数：标准化。注意：原始窗口为252，对于短期回测可能全为NaN。
     # 调整为150以适应测试数据。
     scaling_window = 150
     mean_log_sum = log_sum.rolling(scaling_window).mean()
-    std_log_sum = log_sum.rolling(scaling_window).std().replace(0, 1) # 替换标准差为0的情况
+    std_log_sum = log_sum.rolling(scaling_window).std().replace(0, 1)  # 替换标准差为0的情况
     scale_log = (log_sum - mean_log_sum) / std_log_sum
-    
+
     rank_rank_scale = scale_log.rank(pct=True).rank(pct=True)
-    product_rank = rank_rank_scale # .rolling(1).apply(lambda x: x.prod()) 是多余的
+    product_rank = rank_rank_scale  # .rolling(1).apply(lambda x: x.prod()) 是多余的
     min_product = product_rank.rolling(5).min()
 
     # 外层计算
@@ -1620,8 +1620,8 @@ def alpha_57(data: pd.DataFrame, **kwargs) -> pd.Series:
 # 注释掉的因子：需要行业中性化数据
 #
 
-@register_worldquant_factor(name='alpha_58',
-                            description='Alpha#58: (-1 * Ts_Rank(decay_linear(correlation(IndNeutralize(vwap, IndClass.sector), volume, 3.92795), 7.89291), 5.50322))')
+# @register_worldquant_factor(name='alpha_58',
+#                             description='Alpha#58: (-1 * Ts_Rank(decay_linear(correlation(IndNeutralize(vwap, IndClass.sector), volume, 3.92795), 7.89291), 5.50322))')
 # def alpha_58(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
 #     """Alpha#58: 需要行业中性化数据，暂时注释"""
 #     # 需要行业分类数据，暂时无法实现
@@ -1738,8 +1738,8 @@ def alpha_62(data: pd.DataFrame, **kwargs) -> pd.Series:
 # 注释掉的因子：需要行业中性化数据
 #
 
-@register_worldquant_factor(name='alpha_63',
-                            description='Alpha#63: ((rank(decay_linear(delta(IndNeutralize(close, IndClass.industry), 2.25164), 8.22237)) - rank(decay_linear(correlation(((vwap * 0.318108) + (open * (1 - 0.318108))), sum(adv180, 37.2467), 13.557), 12.2883))) * -1)')
+# @register_worldquant_factor(name='alpha_63',
+#                             description='Alpha#63: ((rank(decay_linear(delta(IndNeutralize(close, IndClass.industry), 2.25164), 8.22237)) - rank(decay_linear(correlation(((vwap * 0.318108) + (open * (1 - 0.318108))), sum(adv180, 37.2467), 13.557), 12.2883))) * -1)')
 # def alpha_63(close: pd.Series, open: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
 #     """Alpha#63: 需要行业中性化数据，暂时注释"""
 #     # 需要行业分类数据，暂时无法实现
@@ -1862,8 +1862,8 @@ def alpha_66(data: pd.DataFrame, **kwargs) -> pd.Series:
 # 注释掉的因子：需要行业中性化数据
 #
 
-@register_worldquant_factor(name='alpha_67',
-                            description='Alpha#67: ((rank((high - ts_min(high, 2.14593)))^rank(correlation(IndNeutralize(vwap, IndClass.sector), IndNeutralize(adv20, IndClass.subindustry), 6.02936))) * -1)')
+# @register_worldquant_factor(name='alpha_67',
+#                             description='Alpha#67: ((rank((high - ts_min(high, 2.14593)))^rank(correlation(IndNeutralize(vwap, IndClass.sector), IndNeutralize(adv20, IndClass.subindustry), 6.02936))) * -1)')
 # def alpha_67(close: pd.Series, high: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
 #     """Alpha#67: 需要行业中性化数据，暂时注释"""
 #     # 需要行业分类数据，暂时无法实现
@@ -1905,8 +1905,8 @@ def alpha_68(data: pd.DataFrame, **kwargs) -> pd.Series:
 # 注释掉的因子：需要行业中性化数据
 #
 
-@register_worldquant_factor(name='alpha_69',
-                            description='Alpha#69: ((rank(ts_max(delta(IndNeutralize(vwap, IndClass.industry), 2.72412), 4.79344))^Ts_Rank(correlation(((close * 0.490655) + (vwap * (1 - 0.490655))), adv20, 4.92416), 9.0615)) * -1)')
+# @register_worldquant_factor(name='alpha_69',
+#                             description='Alpha#69: ((rank(ts_max(delta(IndNeutralize(vwap, IndClass.industry), 2.72412), 4.79344))^Ts_Rank(correlation(((close * 0.490655) + (vwap * (1 - 0.490655))), adv20, 4.92416), 9.0615)) * -1)')
 # def alpha_69(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
 #     """Alpha#69: 需要行业中性化数据，暂时注释"""
 #     # 需要行业分类数据，暂时无法实现
@@ -2245,8 +2245,8 @@ def alpha_78(data: pd.DataFrame, **kwargs) -> pd.Series:
 # 注释掉的因子：需要行业中性化数据
 #
 
-@register_worldquant_factor(name='alpha_79',
-                            description='Alpha#79: (rank(decay_linear(correlation(IndNeutralize(vwap, IndClass.industry), volume, 4.25197), 16.2289)) < rank(delta(IndNeutralize(close, IndClass.industry), 2.25164)))')
+# @register_worldquant_factor(name='alpha_79',
+#                             description='Alpha#79: (rank(decay_linear(correlation(IndNeutralize(vwap, IndClass.industry), volume, 4.25197), 16.2289)) < rank(delta(IndNeutralize(close, IndClass.industry), 2.25164)))')
 # def alpha_79(close: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
 #     """Alpha#79: 需要行业中性化数据，暂时注释"""
 #     # 需要行业分类数据，暂时无法实现
@@ -2290,8 +2290,8 @@ def alpha_80(data: pd.DataFrame, **kwargs) -> pd.Series:
 # 注释掉的因子：需要行业中性化数据
 #
 
-@register_worldquant_factor(name='alpha_81',
-                            description='Alpha#81: (rank(decay_linear(delta(IndNeutralize(close, IndClass.subindustry), 2.25164), 8.22237)) - rank(decay_linear(correlation(((vwap * 0.318108) + (open * (1 - 0.318108))), sum(adv180, 37.2467), 13.557), 12.2883))) * -1)')
+# @register_worldquant_factor(name='alpha_81',
+#                             description='Alpha#81: (rank(decay_linear(delta(IndNeutralize(close, IndClass.subindustry), 2.25164), 8.22237)) - rank(decay_linear(correlation(((vwap * 0.318108) + (open * (1 - 0.318108))), sum(adv180, 37.2467), 13.557), 12.2883))) * -1)')
 # def alpha_81(close: pd.Series, open: pd.Series, vwap: pd.Series, volume: pd.Series, **kwargs) -> pd.Series:
 #     """Alpha#81: 需要行业中性化数据，暂时注释"""
 #     # 需要行业分类数据，暂时无法实现
