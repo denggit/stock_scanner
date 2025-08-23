@@ -279,6 +279,55 @@ class FactorEngine:
             else:
                 data = self.data_manager._processed_data.copy()
 
+        # 数据验证和调试信息
+        logger.info("=== 因子计算数据验证 ===")
+        logger.info(f"输入数据形状: {data.shape}")
+        logger.info(f"输入数据列: {list(data.columns)}")
+        
+        # 检查关键字段
+        required_fields = ['code', 'trade_date']
+        missing_fields = [field for field in required_fields if field not in data.columns]
+        if missing_fields:
+            raise ValueError(f"输入数据缺少关键字段: {missing_fields}")
+        
+        # 检查数据完整性
+        if len(data) == 0:
+            raise ValueError("输入数据为空")
+        
+        # 检查股票数量和日期范围
+        unique_codes = data['code'].nunique()
+        unique_dates = data['trade_date'].nunique()
+        logger.info(f"股票数量: {unique_codes}")
+        logger.info(f"交易日数量: {unique_dates}")
+        
+        if unique_codes < 10:
+            logger.warning(f"股票数量过少: {unique_codes} < 10，可能影响IC计算")
+        
+        if unique_dates < 20:
+            logger.warning(f"交易日数量过少: {unique_dates} < 20，可能影响因子分析")
+        
+        # 检查数据质量
+        data_quality = {
+            'total_records': len(data),
+            'unique_codes': unique_codes,
+            'unique_dates': unique_dates,
+            'date_range': f"{data['trade_date'].min()} -> {data['trade_date'].max()}",
+            'missing_code': data['code'].isna().sum(),
+            'missing_date': data['trade_date'].isna().sum()
+        }
+        logger.info(f"数据质量统计: {data_quality}")
+        
+        # 检查是否有足够的close价格数据（用于收益率计算）
+        if 'close' in data.columns:
+            close_missing = data['close'].isna().sum()
+            close_missing_ratio = close_missing / len(data)
+            logger.info(f"close价格缺失: {close_missing} ({close_missing_ratio:.2%})")
+            
+            if close_missing_ratio > 0.5:
+                logger.warning(f"close价格缺失比例过高: {close_missing_ratio:.2%}")
+        else:
+            logger.warning("数据中缺少close价格字段，可能影响收益率计算")
+
         # 获取注册的因子并检查是否存在
         missing_factors = []
         factor_funcs = {}

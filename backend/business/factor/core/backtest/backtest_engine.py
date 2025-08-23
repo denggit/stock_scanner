@@ -433,70 +433,24 @@ class FactorBacktestEngine:
             统计指标字典
         """
         try:
-            # 获取组合的整体收益率序列
+            # 直接基于收益率序列使用手动统计逻辑，避免返回0的占位值
             returns = portfolio.returns()
             if returns is None or returns.empty:
                 logger.warning("portfolio.returns()返回None或空")
                 return self._get_default_stats()
             
-            # 计算组合的整体收益率（所有股票的平均收益率）
+            # 组合整体收益率（对多列取按时点平均）
             if hasattr(returns, 'mean'):
-                # 如果returns是DataFrame，计算每行的平均值
                 portfolio_returns = returns.mean(axis=1)
                 logger.debug(f"使用DataFrame.mean(axis=1)，portfolio_returns长度: {len(portfolio_returns)}")
             else:
-                # 如果returns是Series，直接使用
                 portfolio_returns = returns
                 logger.debug(f"直接使用Series，portfolio_returns长度: {len(portfolio_returns)}")
             
-            # 计算总收益率
-            total_return = (1 + portfolio_returns).prod() - 1
-            logger.debug(f"计算得到total_return: {total_return}")
-            
-            # 确保total_return是标量值
-            if hasattr(total_return, 'iloc'):
-                total_return = total_return.iloc[0] if len(total_return) > 0 else 0.0
-                logger.debug(f"使用.iloc[0]后total_return: {total_return}")
-            elif hasattr(total_return, 'item'):
-                total_return = total_return.item()
-                logger.debug(f"使用.item()后total_return: {total_return}")
-            else:
-                total_return = float(total_return) if total_return is not None else 0.0
-                logger.debug(f"使用float()后total_return: {total_return}")
-
-            # 计算最大回撤
-            max_drawdown = self._calculate_simple_max_drawdown(portfolio_returns)
-            logger.debug(f"计算得到max_drawdown: {max_drawdown}")
-
-            stats = {
-                'total_return': total_return * 100,
-                'max_drawdown': max_drawdown * 100,
-                'sharpe_ratio': 0.0,
-                'annual_return': 0.0,
-                'volatility': 0.0,
-                'trading_days': 0,
-                'Period': 0,
-            }
-            logger.debug(f"返回stats: {stats}")
+            return self._calculate_manual_portfolio_stats(portfolio_returns)
         except Exception as e:
-            logger.warning(f"计算portfolio统计指标失败: {e}，使用手动计算的详细指标")
-            # 使用手动计算的详细统计指标
-            try:
-                returns = portfolio.returns()
-                if returns is not None and not returns.empty:
-                    # 计算组合的整体收益率
-                    if hasattr(returns, 'mean'):
-                        portfolio_returns = returns.mean(axis=1)
-                    else:
-                        portfolio_returns = returns
-                    stats = self._calculate_manual_portfolio_stats(portfolio_returns)
-                else:
-                    stats = self._get_default_stats()
-            except Exception as e2:
-                logger.error(f"计算手动统计指标也失败: {e2}")
-                stats = self._get_default_stats()
-
-        return stats
+            logger.error(f"计算组合统计指标失败: {e}")
+            return self._get_default_stats()
 
     def _calculate_manual_portfolio_stats(self, returns: pd.Series) -> Dict[str, float]:
         """
@@ -511,6 +465,8 @@ class FactorBacktestEngine:
         try:
             # 移除NaN值
             returns_clean = returns.dropna()
+            # 截断极端收益，避免异常价格突变导致失真
+            returns_clean = returns_clean.clip(-0.99, 0.99)
             
             if len(returns_clean) == 0:
                 return self._get_default_stats()

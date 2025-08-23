@@ -371,6 +371,21 @@ class FactorDataManager:
             logger.error("无法获取市场数据")
             return pd.DataFrame()
 
+        # 数据质量检查 - 市场数据
+        logger.info("=== 市场数据质量检查 ===")
+        logger.info(f"市场数据总记录数: {len(market_data)}")
+        logger.info(f"市场数据股票数量: {market_data['code'].nunique()}")
+        logger.info(f"市场数据日期范围: {market_data['trade_date'].min()} -> {market_data['trade_date'].max()}")
+        
+        # 检查关键字段的缺失值
+        key_fields = ['code', 'trade_date', 'close']
+        for field in key_fields:
+            if field in market_data.columns:
+                missing_ratio = market_data[field].isna().mean()
+                logger.info(f"字段 {field} 缺失比例: {missing_ratio:.2%}")
+            else:
+                logger.error(f"关键字段 {field} 缺失！")
+
         # 获取财务数据（季度数据）
         if fetch_plan and fetch_plan['fetch_strategy']['financial_data']:
             logger.info(f"需要财务数据，类型: {fetch_plan['fetch_strategy']['financial_types']}")
@@ -379,15 +394,53 @@ class FactorDataManager:
             logger.info("不需要财务数据，跳过财务数据获取")
             financial_data = pd.DataFrame()
 
+        # 数据质量检查 - 财务数据
+        if not financial_data.empty:
+            logger.info("=== 财务数据质量检查 ===")
+            logger.info(f"财务数据总记录数: {len(financial_data)}")
+            logger.info(f"财务数据股票数量: {financial_data['code'].nunique()}")
+            if 'statDate' in financial_data.columns:
+                logger.info(f"财务数据日期范围: {financial_data['statDate'].min()} -> {financial_data['statDate'].max()}")
+
         # 合并市场数据和财务数据
         processed_data = self._merge_market_and_financial_data(market_data, financial_data)
 
         # 数据预处理
         processed_data = self._preprocess_data(processed_data)
 
+        # 最终数据质量检查
+        logger.info("=== 最终数据质量检查 ===")
+        logger.info(f"处理后数据总记录数: {len(processed_data)}")
+        logger.info(f"处理后数据股票数量: {processed_data['code'].nunique()}")
+        logger.info(f"处理后数据日期范围: {processed_data['trade_date'].min()} -> {processed_data['trade_date'].max()}")
+        
+        # 检查关键字段的最终状态
+        for field in key_fields:
+            if field in processed_data.columns:
+                missing_ratio = processed_data[field].isna().mean()
+                logger.info(f"最终字段 {field} 缺失比例: {missing_ratio:.2%}")
+                
+                if missing_ratio > 0.5:
+                    logger.warning(f"字段 {field} 缺失比例过高: {missing_ratio:.2%}")
+            else:
+                logger.error(f"最终数据中关键字段 {field} 缺失！")
+
+        # 检查数据完整性
+        if len(processed_data) == 0:
+            logger.error("处理后数据为空！")
+            return pd.DataFrame()
+        
+        if processed_data['code'].nunique() < 10:
+            logger.warning(f"股票数量过少: {processed_data['code'].nunique()} < 10，可能影响IC计算")
+        
+        # 检查是否有足够的交易日
+        trading_days = processed_data['trade_date'].nunique()
+        if trading_days < 20:
+            logger.warning(f"交易日数量过少: {trading_days} < 20，可能影响因子分析")
+
         self._processed_data = processed_data
         logger.info(f"数据准备完成，共 {len(processed_data)} 条记录，包含 {processed_data['code'].nunique()} 只股票")
-
+        
         return processed_data
 
     def _merge_market_and_financial_data(self, market_data: pd.DataFrame, financial_data: pd.DataFrame) -> pd.DataFrame:
@@ -465,6 +518,16 @@ class FactorDataManager:
             
             logger.info(f"数据合并完成，共 {len(merged_data)} 条记录")
             logger.info(f"合并效率提升: 使用 merge_asof 替代嵌套循环")
+            # 合并后缺失值概览
+            try:
+                nan_ratio = merged_data.isna().mean()
+                overall_nan_ratio = float(merged_data.isna().sum().sum() / (merged_data.shape[0] * merged_data.shape[1])) if merged_data.size > 0 else 0.0
+                logger.debug(f"合并后整体NaN占比: {overall_nan_ratio:.2%}")
+                high_nan_cols = nan_ratio[nan_ratio > 0.8].sort_values(ascending=False).head(10)
+                if not high_nan_cols.empty:
+                    logger.warning(f"NaN占比>80%的列(前10): {high_nan_cols.to_dict()}")
+            except Exception as e_info:
+                logger.debug(f"统计NaN信息失败: {e_info}")
             
             return merged_data
             
@@ -668,6 +731,8 @@ class FactorDataManager:
         # 计算收益率
         if 'close' in data.columns:
             data['returns'] = data.groupby('code')['close'].pct_change()
+            # 限制收益率范围，防止极端值
+            data['returns'] = data['returns'].clip(-0.99, 0.99)
 
         # 计算对数收益率
         if 'close' in data.columns:
@@ -676,6 +741,8 @@ class FactorDataManager:
                 stock_data = data[data['code'] == code].copy()
                 stock_data = stock_data.sort_values('trade_date')
                 log_returns = np.log(stock_data['close'] / stock_data['close'].shift(1))
+                # 将对数收益限制在等价于简单收益[-0.99, 0.99]的范围内
+                log_returns = log_returns.clip(np.log(0.01), np.log(1.99))
                 stock_data['log_returns'] = log_returns
                 log_returns_list.append(stock_data)
 

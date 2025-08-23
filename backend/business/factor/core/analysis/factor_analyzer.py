@@ -257,27 +257,100 @@ class FactorAnalyzer:
         Returns:
             IC时间序列
         """
-        ic_series = pd.Series(index=factor_matrix.index, dtype=float)
+        # 增强的调试信息
+        logger.info(f"=== IC计算调试信息 ===")
+        logger.info(f"factor_matrix shape: {factor_matrix.shape}")
+        logger.info(f"forward_returns shape: {forward_returns.shape}")
+        
+        if len(factor_matrix.index) > 0:
+            logger.info(f"factor_matrix 日期范围: {factor_matrix.index.min()} -> {factor_matrix.index.max()}")
+            logger.info(f"factor_matrix 非空值统计: {factor_matrix.count().sum()}")
+        if len(forward_returns.index) > 0:
+            logger.info(f"forward_returns 日期范围: {forward_returns.index.min()} -> {forward_returns.index.max()}")
+            logger.info(f"forward_returns 非空值统计: {forward_returns.count().sum()}")
+        
+        # 检查数据质量
+        factor_nonnull_ratio = factor_matrix.count().sum() / (factor_matrix.shape[0] * factor_matrix.shape[1])
+        returns_nonnull_ratio = forward_returns.count().sum() / (forward_returns.shape[0] * forward_returns.shape[1])
+        logger.info(f"factor_matrix 非空比例: {factor_nonnull_ratio:.2%}")
+        logger.info(f"forward_returns 非空比例: {returns_nonnull_ratio:.2%}")
+        
+        # 对齐日期
+        common_dates = factor_matrix.index.intersection(forward_returns.index)
+        logger.info(f"共同日期数量: {len(common_dates)}")
+        
+        if len(common_dates) == 0:
+            logger.error("没有共同的日期，无法计算IC")
+            return pd.Series(dtype=float)
+        
+        # 检查股票代码对齐
+        common_codes = factor_matrix.columns.intersection(forward_returns.columns)
+        logger.info(f"共同股票代码数量: {len(common_codes)}")
+        
+        if len(common_codes) < 10:
+            logger.error(f"共同股票代码数量不足: {len(common_codes)} < 10，无法计算IC")
+            return pd.Series(dtype=float)
 
-        for date in factor_matrix.index:
-            if date in forward_returns.index:
-                factor_values = factor_matrix.loc[date].dropna()
-                return_values = forward_returns.loc[date].dropna()
+        ic_series = pd.Series(index=common_dates, dtype=float)
+        valid_ic_count = 0
+        total_dates = len(common_dates)
 
-                # 对齐数据
-                common_codes = factor_values.index.intersection(return_values.index)
-                if len(common_codes) > 10:  # 至少需要10个观测值
-                    factor_values = factor_values[common_codes]
-                    return_values = return_values[common_codes]
+        for date in common_dates:
+            try:
+                factor_values = factor_matrix.loc[date, common_codes].dropna()
+                return_values = forward_returns.loc[date, common_codes].dropna()
 
-                    if method == 'pearson':
-                        ic = factor_values.corr(return_values)
-                    else:  # spearman
-                        ic = factor_values.corr(return_values, method='spearman')
+                # 进一步对齐数据
+                common_codes_at_date = factor_values.index.intersection(return_values.index)
+                
+                if len(common_codes_at_date) > 10:  # 至少需要10个观测值
+                    factor_values_aligned = factor_values[common_codes_at_date]
+                    return_values_aligned = return_values[common_codes_at_date]
+                    
+                    # 检查数据有效性
+                    if len(factor_values_aligned) > 0 and len(return_values_aligned) > 0:
+                        # 移除极端值
+                        factor_q1, factor_q99 = factor_values_aligned.quantile([0.01, 0.99])
+                        return_q1, return_q99 = return_values_aligned.quantile([0.01, 0.99])
+                        
+                        factor_clean = factor_values_aligned.clip(factor_q1, factor_q99)
+                        return_clean = return_values_aligned.clip(return_q1, return_q99)
+                        
+                        # 计算相关系数
+                        if method == 'pearson':
+                            ic = factor_clean.corr(return_clean)
+                        else:  # spearman
+                            ic = factor_clean.corr(return_clean, method='spearman')
+                        
+                        # 检查相关系数是否有效
+                        if pd.notna(ic) and not np.isinf(ic):
+                            ic_series[date] = ic
+                            valid_ic_count += 1
+                        else:
+                            logger.debug(f"日期 {date} 的IC值无效: {ic}")
+                    else:
+                        logger.debug(f"日期 {date} 对齐后数据为空")
+                else:
+                    logger.debug(f"日期 {date} 对齐不足: factor_nonnull={len(factor_values)}, returns_nonnull={len(return_values)}, common_codes={len(common_codes_at_date)}")
+                    
+            except Exception as e:
+                logger.debug(f"计算日期 {date} 的IC时出错: {e}")
 
-                    ic_series[date] = ic
-
-        return ic_series.dropna()
+        # 统计结果
+        ic_series = ic_series.dropna()
+        logger.info(f"有效IC计算数量: {valid_ic_count}/{total_dates} ({valid_ic_count/total_dates:.2%})")
+        
+        if ic_series.empty:
+            logger.error("IC时间序列为空：数据对齐失败或观测值不足")
+            logger.error("可能的原因：")
+            logger.error("1. 因子数据和收益率数据日期不匹配")
+            logger.error("2. 股票代码不匹配")
+            logger.error("3. 数据质量差，大量缺失值")
+            logger.error("4. 观测值数量不足（<10）")
+        else:
+            logger.info(f"IC时间序列统计: 均值={ic_series.mean():.4f}, 标准差={ic_series.std():.4f}, IR={ic_series.mean()/ic_series.std():.4f}")
+        
+        return ic_series
 
     def _calculate_ic_stats(self, ic_series: pd.Series) -> Dict[str, float]:
         """
