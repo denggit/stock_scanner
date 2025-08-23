@@ -516,11 +516,11 @@ class FactorBacktestEngine:
             # 构建统计指标字典，使用与模板期望一致的名称
             stats = {
                 # 主要性能指标（与模板字段对应）
-                'total_return': total_return * 100,
-                'annual_return': annual_return * 100,
-                'volatility': volatility * 100,
+                'total_return': total_return,
+                'annual_return': annual_return,
+                'volatility': volatility,
                 'sharpe_ratio': sharpe_ratio,
-                'max_drawdown': max_drawdown * 100,
+                'max_drawdown': max_drawdown,
                 'trading_days': len(returns),
                 'Period': len(returns),
                 

@@ -93,7 +93,8 @@ class FactorDataManager:
                     code,
                     start_date=start_date,
                     end_date=end_date,
-                    period='daily'
+                    period='daily',
+                    adjust="1"
                 )
                 if df is not None and not df.empty:
                     # 确保trade_date是datetime类型
@@ -777,7 +778,7 @@ class FactorDataManager:
                    (self._processed_data['trade_date'] <= end_date)
             return self._processed_data[mask].copy()
         else:
-            return self.data_fetcher.fetch_stock_data(stock_code, start_date=start_date)
+            return self.data_fetcher.fetch_stock_data(stock_code, start_date=start_date, adjust="1")
 
     def get_cross_section_data(self, date: str) -> pd.DataFrame:
         """
