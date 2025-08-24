@@ -9,7 +9,7 @@
 import os
 import sys
 from datetime import date
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
 
@@ -71,6 +71,63 @@ class FactorRunner:
         
         logger.info("因子运行器初始化完成")
 
+    def _generate_merged_report(self, all_results: Dict[str, Any], batch_name: str, 
+                               start_date: str, end_date: str, stock_pool: str,
+                               top_n: int, n_groups: int, shared_sub_dir: str = None) -> str:
+        """
+        生成合并的综合报告
+        
+        Args:
+            all_results: 所有批次的结果字典
+            batch_name: 批次名称
+            start_date: 开始日期
+            end_date: 结束日期
+            stock_pool: 股票池
+            top_n: 选股数量
+            n_groups: 分组数量
+            shared_sub_dir: 共享的子目录路径
+            
+        Returns:
+            合并报告路径
+        """
+        logger.info(f"开始生成合并报告: {batch_name}")
+        
+        try:
+            # 收集所有因子名称
+            all_factor_names = []
+            for batch_key, batch_data in all_results.items():
+                if batch_key != 'merged_report' and 'factors' in batch_data:
+                    all_factor_names.extend(batch_data['factors'])
+            
+            # 去重并排序
+            all_factor_names = sorted(list(set(all_factor_names)))
+            logger.info(f"合并报告包含 {len(all_factor_names)} 个因子")
+            
+            # 使用共享目录或默认目录
+            output_dir = shared_sub_dir if shared_sub_dir else self.report_dir
+            
+            # 创建新的FactorFramework实例用于生成合并报告
+            framework = main.FactorResearchFramework(output_dir=output_dir)
+            
+            # 重新运行完整的因子研究流程，但这次包含所有因子
+            merged_report_path = framework.run_and_report(
+                factor_names=all_factor_names,
+                batch_name=batch_name,
+                output_dir=output_dir,
+                start_date=start_date,
+                end_date=end_date,
+                stock_pool=stock_pool,
+                top_n=top_n,
+                n_groups=n_groups
+            )
+            
+            logger.info(f"合并报告生成完成: {merged_report_path}")
+            return merged_report_path
+            
+        except Exception as e:
+            logger.error(f"生成合并报告失败: {e}")
+            raise
+
     def run_single_factor_type(self, factor_type: str, stock_pool: str, start_date: str, end_date: str,
                               top_n: int = DEFAULT_TOP_N, n_groups: int = DEFAULT_N_GROUPS):
         """
@@ -119,6 +176,13 @@ class FactorRunner:
 
         logger.info(f"找到 {len(worldquant_factors)} 个WorldQuant Alpha因子")
 
+        # 创建共享的时间戳目录
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        shared_sub_dir = os.path.join(self.report_dir, timestamp)
+        os.makedirs(shared_sub_dir, exist_ok=True)
+        logger.info(f"创建共享目录: {shared_sub_dir}")
+
         # 分批运行
         all_results = {}
         for i in range(0, len(worldquant_factors), batch_size):
@@ -126,14 +190,14 @@ class FactorRunner:
             logger.info(f"运行第 {i // batch_size + 1} 批WorldQuant因子: {batch_factors}")
 
             try:
-                # 创建唯一的 FactorFramework 实例
-                framework = main.FactorResearchFramework(output_dir=self.report_dir)
+                # 创建唯一的 FactorFramework 实例，但使用共享目录
+                framework = main.FactorResearchFramework(output_dir=shared_sub_dir)
                 
                 # 调用新的、统一的执行和报告方法
                 report_path = framework.run_and_report(
                     factor_names=batch_factors,
                     batch_name=f"WorldQuant因子批次{i // batch_size + 1}",
-                    output_dir=self.report_dir,
+                    output_dir=shared_sub_dir,
                     start_date=start_date,
                     end_date=end_date,
                     stock_pool=stock_pool,
@@ -151,6 +215,26 @@ class FactorRunner:
                 logger.error(f"第 {i // batch_size + 1} 批WorldQuant因子运行失败: {e}")
 
         logger.info("所有WorldQuant Alpha因子分析完成")
+        
+        # 生成合并的综合报告
+        if all_results:
+            logger.info("开始生成WorldQuant Alpha因子综合分析报告...")
+            try:
+                merged_report_path = self._generate_merged_report(
+                    all_results=all_results,
+                    batch_name="WorldQuant Alpha因子综合分析报告",
+                    start_date=start_date,
+                    end_date=end_date,
+                    stock_pool=stock_pool,
+                    top_n=top_n,
+                    n_groups=n_groups,
+                    shared_sub_dir=shared_sub_dir
+                )
+                logger.info(f"WorldQuant Alpha因子综合分析报告生成完成: {merged_report_path}")
+                all_results['merged_report'] = merged_report_path
+            except Exception as e:
+                logger.error(f"生成合并报告失败: {e}")
+        
         return all_results
 
     def run_single_factor(self, factor_name: str, start_date: str, end_date: str, stock_pool: str,
@@ -193,6 +277,13 @@ class FactorRunner:
 
         logger.info(f"找到 {len(factor_names)} 个因子")
 
+        # 创建共享的时间戳目录
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        shared_sub_dir = os.path.join(self.report_dir, timestamp)
+        os.makedirs(shared_sub_dir, exist_ok=True)
+        logger.info(f"创建共享目录: {shared_sub_dir}")
+
         # 分批运行
         all_results = {}
         for i in range(0, len(factor_names), batch_size):
@@ -200,14 +291,14 @@ class FactorRunner:
             logger.info(f"运行第 {i // batch_size + 1} 批因子: {batch_factors}")
 
             try:
-                # 创建唯一的 FactorFramework 实例
-                batch_framework = main.FactorResearchFramework(output_dir=self.report_dir)
+                # 创建唯一的 FactorFramework 实例，但使用共享目录
+                batch_framework = main.FactorResearchFramework(output_dir=shared_sub_dir)
                 
                 # 调用新的、统一的执行和报告方法
                 report_path = batch_framework.run_and_report(
                     factor_names=batch_factors,
                     batch_name=f"全因子分析批次{i // batch_size + 1}",
-                    output_dir=self.report_dir,
+                    output_dir=shared_sub_dir,
                     start_date=start_date,
                     end_date=end_date,
                     stock_pool=stock_pool,
@@ -223,6 +314,26 @@ class FactorRunner:
                 logger.error(f"第 {i // batch_size + 1} 批因子运行失败: {e}")
 
         logger.info("所有因子分析完成")
+        
+        # 生成合并的综合报告
+        if all_results:
+            logger.info("开始生成全因子综合分析报告...")
+            try:
+                merged_report_path = self._generate_merged_report(
+                    all_results=all_results,
+                    batch_name="全因子综合分析报告",
+                    start_date=start_date,
+                    end_date=end_date,
+                    stock_pool=stock_pool,
+                    top_n=top_n,
+                    n_groups=n_groups,
+                    shared_sub_dir=shared_sub_dir
+                )
+                logger.info(f"全因子综合分析报告生成完成: {merged_report_path}")
+                all_results['merged_report'] = merged_report_path
+            except Exception as e:
+                logger.error(f"生成合并报告失败: {e}")
+        
         return all_results
 
 

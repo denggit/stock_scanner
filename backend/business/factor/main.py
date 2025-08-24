@@ -201,15 +201,16 @@ class FactorResearchFramework:
         }
         
         # 创建带时间戳的子目录
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        sub_dir = os.path.join(output_dir, timestamp)
-        os.makedirs(sub_dir, exist_ok=True)
+        # timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        # sub_dir = os.path.join(output_dir, timestamp)
+        # os.makedirs(sub_dir, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
         
         # 生成批次报告
         report_path = self.report_generator.generate_batch_report(
             batch_name=batch_name,
             report_data=report_data,
-            output_path=os.path.join(sub_dir, f"{batch_name}.html"),
+            output_path=os.path.join(output_dir, f"{batch_name}.html"),
             start_date=start_date,
             end_date=end_date,
             stock_pool=stock_pool,
