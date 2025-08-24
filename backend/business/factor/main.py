@@ -200,11 +200,16 @@ class FactorResearchFramework:
             'detailed_analysis': detailed_analysis
         }
         
+        # 创建带时间戳的子目录
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        sub_dir = os.path.join(output_dir, timestamp)
+        os.makedirs(sub_dir, exist_ok=True)
+        
         # 生成批次报告
         report_path = self.report_generator.generate_batch_report(
             batch_name=batch_name,
             report_data=report_data,
-            output_path=os.path.join(output_dir, f"{batch_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"),
+            output_path=os.path.join(sub_dir, f"{batch_name}.html"),
             start_date=start_date,
             end_date=end_date,
             stock_pool=stock_pool,
@@ -374,11 +379,16 @@ class FactorResearchFramework:
                 'detailed_analysis': {}     # 需要从回测结果中提取
             }
             
+            # 创建带时间戳的子目录
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            sub_dir = os.path.join(self.output_dir, timestamp)
+            os.makedirs(sub_dir, exist_ok=True)
+            
             # 生成批次报告
             report_path = self.report_generator.generate_batch_report(
                 batch_name="因子分析报告",
                 report_data=report_data,
-                output_path=os.path.join(self.output_dir, f"factor_analysis_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"),
+                output_path=os.path.join(sub_dir, "factor_analysis_report.html"),
                 start_date=start_date,
                 end_date=end_date,
                 stock_pool=stock_pool,
@@ -584,10 +594,15 @@ class FactorResearchFramework:
             'detailed_analysis': {}
         }
         
+        # 创建带时间戳的子目录
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        sub_dir = os.path.join(self.output_dir, timestamp)
+        os.makedirs(sub_dir, exist_ok=True)
+        
         return self.report_generator.generate_batch_report(
             batch_name="汇总报告",
             report_data=report_data,
-            output_path=os.path.join(self.output_dir, "summary_report.html")
+            output_path=os.path.join(sub_dir, "summary_report.html")
         )
 
     def generate_comprehensive_report(self,
@@ -626,10 +641,15 @@ class FactorResearchFramework:
             'detailed_analysis': {}
         }
         
+        # 创建带时间戳的子目录
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        sub_dir = os.path.join(self.output_dir, timestamp)
+        os.makedirs(sub_dir, exist_ok=True)
+        
         return self.report_generator.generate_batch_report(
             batch_name="综合分析报告",
             report_data=report_data,
-            output_path=os.path.join(self.output_dir, f"comprehensive_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"),
+            output_path=os.path.join(sub_dir, "comprehensive_report.html"),
             start_date=start_date,
             end_date=end_date,
             stock_pool=stock_pool,
