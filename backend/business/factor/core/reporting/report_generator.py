@@ -553,22 +553,31 @@ class FactorReportGenerator:
                 # 检查是否为嵌套结构，如果是，提取stats或portfolio_stats
                 processed_performance_dict = {}
                 for factor_name, performance_data in performance_metrics.items():
+                    # 清理因子名称，移除前缀（如topn_、group_等）
+                    clean_factor_name = factor_name
+                    if factor_name.startswith('topn_'):
+                        clean_factor_name = factor_name[5:]  # 移除'topn_'前缀
+                    elif factor_name.startswith('group_'):
+                        clean_factor_name = factor_name[6:]  # 移除'group_'前缀
+                    elif factor_name.startswith('multifactor_'):
+                        clean_factor_name = factor_name[12:]  # 移除'multifactor_'前缀
+                    
                     if isinstance(performance_data, dict):
                         # 检查是否有嵌套的stats结构
                         if 'stats' in performance_data and isinstance(performance_data['stats'], dict):
                             # 提取嵌套的stats
-                            processed_performance_dict[factor_name] = performance_data['stats']
-                            logger.debug(f"提取因子 {factor_name} 的嵌套stats")
+                            processed_performance_dict[clean_factor_name] = performance_data['stats']
+                            logger.debug(f"提取因子 {factor_name} -> {clean_factor_name} 的嵌套stats")
                         elif 'portfolio_stats' in performance_data and isinstance(performance_data['portfolio_stats'], dict):
                             # 提取嵌套的portfolio_stats
-                            processed_performance_dict[factor_name] = performance_data['portfolio_stats']
-                            logger.debug(f"提取因子 {factor_name} 的嵌套portfolio_stats")
+                            processed_performance_dict[clean_factor_name] = performance_data['portfolio_stats']
+                            logger.debug(f"提取因子 {factor_name} -> {clean_factor_name} 的嵌套portfolio_stats")
                         else:
                             # 使用原始数据
-                            processed_performance_dict[factor_name] = performance_data
+                            processed_performance_dict[clean_factor_name] = performance_data
                     else:
                         # 非字典类型，保持原样
-                        processed_performance_dict[factor_name] = performance_data
+                        processed_performance_dict[clean_factor_name] = performance_data
                 
                 logger.info(f"处理后的性能指标数据包含 {len(processed_performance_dict)} 个因子")
                 return processed_performance_dict
@@ -679,7 +688,9 @@ class FactorReportGenerator:
                         continue
                     
                     # 计算累计收益率
-                    cumulative_returns = (1 + clean_series).cumprod()
+                    # 从1开始计算累计倍数，然后转换为从0%开始的收益率
+                    cumulative_multiplier = (1 + clean_series).cumprod()
+                    cumulative_returns = cumulative_multiplier - 1  # 转换为从0%开始的收益率
                     
                     chart_data[factor_name] = {
                         'dates': clean_series.index.strftime('%Y-%m-%d').tolist(),

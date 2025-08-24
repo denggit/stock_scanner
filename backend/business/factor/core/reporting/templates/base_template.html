@@ -556,7 +556,13 @@
                 const layout = {
                     title: '因子累计收益率对比',
                     xaxis: { title: '时间' },
-                    yaxis: { title: '累计收益率' },
+                    yaxis: { 
+                        title: '累计收益率',
+                        tickformat: ',.0%',
+                        range: [0, null], // 确保Y轴从0开始
+                        zeroline: true,
+                        zerolinecolor: '#ccc'
+                    },
                     hovermode: 'x unified',
                     showlegend: true,
                     legend: {

@@ -697,6 +697,69 @@ class FactorBacktestEngine:
         else:
             return self._backtest_results.get(result_key)
 
+    def get_time_series_returns(self) -> Dict[str, pd.Series]:
+        """
+        获取所有因子的时间序列收益率数据
+        
+        Returns:
+            因子名称到收益率序列的字典
+        """
+        time_series_returns = {}
+        
+        for result_key, result in self._backtest_results.items():
+            # 提取因子名称
+            if result_key.startswith('topn_'):
+                factor_name = result_key[5:]  # 移除 'topn_' 前缀
+            elif result_key.startswith('group_'):
+                factor_name = result_key[6:]  # 移除 'group_' 前缀
+            elif result_key.startswith('multifactor_'):
+                factor_name = result_key[12:]  # 移除 'multifactor_' 前缀
+            else:
+                continue
+            
+            # 获取组合对象
+            portfolio = None
+            if 'portfolio' in result:
+                portfolio = result['portfolio']
+            elif 'portfolios' in result:
+                # 对于分组策略，使用第一个组合
+                portfolios = result['portfolios']
+                if portfolios:
+                    portfolio = list(portfolios.values())[0]
+            
+            if portfolio is not None:
+                try:
+                    # 获取收益率序列
+                    returns = portfolio.returns()
+                    if returns is not None and not returns.empty:
+                        # 如果是DataFrame，取平均值
+                        if isinstance(returns, pd.DataFrame):
+                            portfolio_returns = returns.mean(axis=1)
+                        else:
+                            portfolio_returns = returns
+                        
+                        # 确保索引是datetime类型
+                        if not isinstance(portfolio_returns.index, pd.DatetimeIndex):
+                            logger.warning(f"因子 {factor_name} 的收益率序列索引不是DatetimeIndex")
+                            continue
+                        
+                        # 移除NaN值
+                        clean_returns = portfolio_returns.dropna()
+                        
+                        if len(clean_returns) > 0:
+                            time_series_returns[factor_name] = clean_returns
+                            logger.info(f"成功提取因子 {factor_name} 的时间序列收益率，数据点数量: {len(clean_returns)}")
+                        else:
+                            logger.warning(f"因子 {factor_name} 的收益率序列为空")
+                    else:
+                        logger.warning(f"因子 {factor_name} 的收益率序列为None或空")
+                except Exception as e:
+                    logger.error(f"提取因子 {factor_name} 的时间序列收益率时出错: {e}")
+                    continue
+        
+        logger.info(f"成功提取 {len(time_series_returns)} 个因子的时间序列收益率数据")
+        return time_series_returns
+
     def compare_strategies(self, result_keys: List[str]) -> pd.DataFrame:
         """
         比较多个策略

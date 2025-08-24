@@ -106,9 +106,15 @@ class FactorResearchFramework:
 
             # Step 6: 收集所有结果直接来自实例的引擎
             logger.info("正在从引擎收集所有最终结果...")
+            
+            # 获取时间序列收益率数据
+            time_series_returns = self.backtest_engine.get_time_series_returns()
+            logger.info(f"获取到 {len(time_series_returns)} 个因子的时间序列收益率数据")
+            
             merged_results = {
                 'backtest_results': self.backtest_engine.get_backtest_results(),
-                'effectiveness_results': effectiveness_results
+                'effectiveness_results': effectiveness_results,
+                'time_series_returns': time_series_returns
             }
 
             # Step 7: 生成报告
@@ -166,7 +172,7 @@ class FactorResearchFramework:
             'factor_names': factor_names,
             'performance_metrics': performance_metrics,
             'ic_metrics': merged_results.get('effectiveness_results', {}),
-            'time_series_returns': {},  # 需要从回测结果中提取
+            'time_series_returns': merged_results.get('time_series_returns', {}),  # 添加时间序列收益率数据
             'detailed_analysis': {}     # 需要从回测结果中提取
         }
         
