@@ -24,15 +24,18 @@
             {% for factor_name in factor_names %}
             {% set performance = performance_data.get(factor_name, {}) %}
             {% set ic = ic_data.get(factor_name, {}) %}
-            <tr data-factor="{{ factor_name }}">
+            <tr data-factor="{{ factor_name }}" class="main-row">
                 <td>
-                    <strong>{{ factor_name }}</strong>
-                    <br>
-                    <small style="color: #666;">
-                        {% if performance.get('trading_days') or performance.get('Period') %}
-                        交易天数: {{ performance.get('trading_days', performance.get('Period', 0)) }}
-                        {% endif %}
-                    </small>
+                    <div class="factor-name-cell">
+                        <i class="fas fa-chevron-right expand-icon" data-factor="{{ factor_name }}"></i>
+                        <strong>{{ factor_name }}</strong>
+                        <br>
+                        <small style="color: #666;">
+                            {% if performance.get('trading_days') or performance.get('Period') %}
+                            交易天数: {{ performance.get('trading_days', performance.get('Period', 0)) }}
+                            {% endif %}
+                        </small>
+                    </div>
                 </td>
                 <td class="{% if (performance.get('total_return', 0) or performance.get('Total Return [%]', 0)) > 0 %}positive{% else %}negative{% endif %}">
                     {{ "%.2f"|format((performance.get('total_return', 0) or performance.get('Total Return [%]', 0) / 100) * 100) }}%
@@ -65,6 +68,118 @@
             {% endfor %}
         </tbody>
     </table>
+    
+    <!-- 详情容器 - 紧跟在表格后面 -->
+    <div id="detail-container">
+        {% for factor_name in factor_names %}
+        <div class="detail-row" data-factor="{{ factor_name }}" style="display: none;">
+            <div class="factor-details">
+                <div class="details-header">
+                    <h4><i class="fas fa-chart-bar"></i> {{ factor_name }} 分组回测详情</h4>
+                </div>
+                
+                <!-- 分组回测结果 -->
+                <div class="group-results">
+                    <h5><i class="fas fa-layer-group"></i> 分组回测结果</h5>
+                    <div class="group-table-container">
+                        <table class="group-table">
+                            <thead>
+                                <tr>
+                                    <th>分组</th>
+                                    <th>总收益率</th>
+                                    <th>年化收益率</th>
+                                    <th>夏普比率</th>
+                                    <th>最大回撤</th>
+                                    <th>胜率</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for group_id in range(5) %}
+                                {% set group_key = 'group_' + group_id|string %}
+                                {% set group_data = detailed_data.get(factor_name, {}).get('group_results', {}).get(group_key, {}) %}
+                                <tr>
+                                    <td><strong>第{{ group_id + 1 }}组</strong></td>
+                                    <td class="{% if group_data.get('total_return', 0) > 0 %}positive{% else %}negative{% endif %}">
+                                        {{ "%.2f"|format(group_data.get('total_return', 0) * 100) }}%
+                                    </td>
+                                    <td class="{% if group_data.get('annual_return', 0) > 0 %}positive{% else %}negative{% endif %}">
+                                        {{ "%.2f"|format(group_data.get('annual_return', 0) * 100) }}%
+                                    </td>
+                                    <td class="{% if group_data.get('sharpe_ratio', 0) > 0 %}positive{% else %}negative{% endif %}">
+                                        {{ "%.2f"|format(group_data.get('sharpe_ratio', 0)) }}
+                                    </td>
+                                    <td class="negative">
+                                        {{ "%.2f"|format(group_data.get('max_drawdown', 0) * 100) }}%
+                                    </td>
+                                    <td class="{% if group_data.get('win_rate', 0) > 0.5 %}positive{% else %}negative{% endif %}">
+                                        {{ "%.2f"|format(group_data.get('win_rate', 0) * 100) }}%
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- IC分析结果 -->
+                <div class="ic-analysis">
+                    <h5><i class="fas fa-chart-line"></i> IC分析结果</h5>
+                    <div class="ic-stats">
+                        {% set ic_stats = detailed_data.get(factor_name, {}).get('ic_stats', {}) %}
+                        <div class="ic-stat-item">
+                            <span class="stat-label">IC均值:</span>
+                            <span class="stat-value {% if ic_stats.get('mean_ic', 0) > 0 %}positive{% else %}negative{% endif %}">
+                                {{ "%.4f"|format(ic_stats.get('mean_ic', 0)) }}
+                            </span>
+                        </div>
+                        <div class="ic-stat-item">
+                            <span class="stat-label">IC标准差:</span>
+                            <span class="stat-value">{{ "%.4f"|format(ic_stats.get('std_ic', 0)) }}</span>
+                        </div>
+                        <div class="ic-stat-item">
+                            <span class="stat-label">IC IR:</span>
+                            <span class="stat-value {% if ic_stats.get('ic_ir', 0) > 0 %}positive{% else %}negative{% endif %}">
+                                {{ "%.2f"|format(ic_stats.get('ic_ir', 0)) }}
+                            </span>
+                        </div>
+                        <div class="ic-stat-item">
+                            <span class="stat-label">IC胜率:</span>
+                            <span class="stat-value {% if ic_stats.get('win_rate', 0) > 0.5 %}positive{% else %}negative{% endif %}">
+                                {{ "%.2f"|format(ic_stats.get('win_rate', 0) * 100) }}%
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 风险指标 -->
+                <div class="risk-metrics">
+                    <h5><i class="fas fa-shield-alt"></i> 风险指标</h5>
+                    <div class="risk-stats">
+                        {% set risk_metrics = detailed_data.get(factor_name, {}).get('risk_metrics', {}) %}
+                        <div class="risk-stat-item">
+                            <span class="stat-label">VaR (95%):</span>
+                            <span class="stat-value negative">{{ "%.2f"|format(risk_metrics.get('var_95', 0) * 100) }}%</span>
+                        </div>
+                        <div class="risk-stat-item">
+                            <span class="stat-label">CVaR (95%):</span>
+                            <span class="stat-value negative">{{ "%.2f"|format(risk_metrics.get('cvar_95', 0) * 100) }}%</span>
+                        </div>
+                        <div class="risk-stat-item">
+                            <span class="stat-label">Beta:</span>
+                            <span class="stat-value">{{ "%.4f"|format(risk_metrics.get('beta', 0)) }}</span>
+                        </div>
+                        <div class="risk-stat-item">
+                            <span class="stat-label">Alpha:</span>
+                            <span class="stat-value {% if risk_metrics.get('alpha', 0) > 0 %}positive{% else %}negative{% endif %}">
+                                {{ "%.2f"|format(risk_metrics.get('alpha', 0) * 100) }}%
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
 </div>
 
 <!-- 表格操作说明 -->
@@ -84,11 +199,153 @@
             点击"添加"按钮可以将因子添加到图表中，再次点击可移除
         </div>
         <div>
+            <strong>详情展开:</strong><br>
+            点击因子名称或三角图标可以展开/收起分组详情
+        </div>
+        <div>
             <strong>分页功能:</strong><br>
             使用底部的分页控件浏览更多因子
         </div>
     </div>
 </div>
+
+<style>
+/* 因子名称单元格样式 */
+.factor-name-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.expand-icon {
+    color: #667eea;
+    transition: transform 0.3s ease;
+    font-size: 12px;
+}
+
+.expand-icon.expanded {
+    transform: rotate(90deg);
+}
+
+/* 详情行样式 */
+.detail-row {
+    background: #f8f9fa;
+    margin: 0;
+    border-radius: 0;
+    overflow: hidden;
+    border-left: 4px solid #667eea;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    width: 100%;
+    display: block;
+}
+
+/* 确保详情行在表格外部时也能正确显示 */
+#detail-container .detail-row {
+    margin: 0;
+    display: none;
+}
+
+.factor-details {
+    padding: 20px;
+    background: white;
+    border-radius: 8px;
+    margin: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.details-header h4 {
+    color: #667eea;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #e9ecef;
+    padding-bottom: 10px;
+}
+
+.details-header h5 {
+    color: #495057;
+    margin: 20px 0 15px 0;
+    font-size: 16px;
+}
+
+/* 分组表格样式 */
+.group-table-container {
+    overflow-x: auto;
+    margin-bottom: 20px;
+}
+
+.group-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.group-table th,
+.group-table td {
+    padding: 12px 15px;
+    text-align: center;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.group-table th {
+    background: #667eea;
+    color: white;
+    font-weight: 600;
+}
+
+.group-table tr:hover {
+    background: #f8f9fa;
+}
+
+/* 统计指标样式 */
+.ic-stats,
+.risk-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.ic-stat-item,
+.risk-stat-item {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    border-left: 4px solid #667eea;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.stat-label {
+    font-weight: 600;
+    color: #495057;
+    display: block;
+    margin-bottom: 5px;
+}
+
+.stat-value {
+    font-size: 18px;
+    font-weight: 700;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .ic-stats,
+    .risk-stats {
+        grid-template-columns: 1fr;
+    }
+    
+    .group-table {
+        font-size: 14px;
+    }
+    
+    .group-table th,
+    .group-table td {
+        padding: 8px 10px;
+    }
+}
+</style>
 
 <script>
 // 切换因子图表显示
@@ -103,11 +360,69 @@ function toggleFactorChart(factorName) {
     }
 }
 
+// 切换因子详情展开
+function toggleFactorDetails(factorName) {
+    const detailRow = $(`.detail-row[data-factor="${factorName}"]`);
+    const expandIcon = $(`.expand-icon[data-factor="${factorName}"]`);
+    const mainRow = $(`tr.main-row[data-factor="${factorName}"]`);
+    const isExpanded = detailRow.is(':visible');
+    
+    if (isExpanded) {
+        // 收起详情
+        detailRow.slideUp(300, function() {
+            // 将详情行移回容器，而不是detach
+            detailRow.appendTo('#detail-container');
+        });
+        expandIcon.removeClass('expanded');
+    } else {
+        // 收起其他已展开的详情
+        $('.detail-row').slideUp(300, function() {
+            // 将所有详情行移回容器
+            $(this).appendTo('#detail-container');
+        });
+        $('.expand-icon').removeClass('expanded');
+        
+        // 将详情行插入到对应主行后面
+        detailRow.insertAfter(mainRow);
+        
+        // 展开当前详情
+        detailRow.slideDown(300);
+        expandIcon.addClass('expanded');
+        
+        // 滚动到详情位置
+        $('html, body').animate({
+            scrollTop: detailRow.offset().top - 100
+        }, 500);
+    }
+}
+
 // 表格行点击事件
 $(document).ready(function() {
-    $('#performance-table tbody').on('click', 'tr', function(e) {
-        // 如果点击的是按钮，不触发行点击事件
-        if ($(e.target).hasClass('chart-btn') || $(e.target).closest('.chart-btn').length) {
+    // 点击展开图标
+    $('#performance-table tbody').on('click', '.expand-icon', function(e) {
+        e.stopPropagation();
+        const factorName = $(this).data('factor');
+        toggleFactorDetails(factorName);
+    });
+    
+    // 点击因子名称单元格
+    $('#performance-table tbody').on('click', '.factor-name-cell', function(e) {
+        // 如果点击的是展开图标，不触发详情展开
+        if ($(e.target).hasClass('expand-icon')) {
+            return;
+        }
+        
+        const factorName = $(this).closest('tr').data('factor');
+        toggleFactorDetails(factorName);
+    });
+    
+    // 点击表格行（只针对主行）
+    $('#performance-table tbody').on('click', 'tr.main-row', function(e) {
+        // 如果点击的是按钮或展开图标，不触发行点击事件
+        if ($(e.target).hasClass('chart-btn') || 
+            $(e.target).closest('.chart-btn').length ||
+            $(e.target).hasClass('expand-icon') ||
+            $(e.target).closest('.factor-name-cell').length) {
             return;
         }
         
@@ -115,12 +430,14 @@ $(document).ready(function() {
         toggleFactorChart(factorName);
     });
     
-    // 表格行悬停效果
-    $('#performance-table tbody').on('mouseenter', 'tr', function() {
+    // 表格行悬停效果（只针对主行）
+    $('#performance-table tbody').on('mouseenter', 'tr.main-row', function() {
         $(this).css('background-color', '#f8f9fa');
-    }).on('mouseleave', 'tr', function() {
+    }).on('mouseleave', 'tr.main-row', function() {
         $(this).css('background-color', '');
     });
+    
+
 });
 
 // 自定义DataTables配置

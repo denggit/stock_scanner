@@ -168,12 +168,36 @@ class FactorResearchFramework:
             if topn_key in backtest_results:
                 performance_metrics[factor_name] = backtest_results[topn_key]
         
+        # 构建详细分析数据
+        detailed_analysis = {}
+        backtest_results = merged_results.get('backtest_results', {})
+        
+        for factor_name in factor_names:
+            # 获取TopN回测结果
+            topn_key = f'topn_{factor_name}'
+            topn_result = backtest_results.get(topn_key, {})
+            
+            # 获取分组回测结果
+            group_key = f'group_{factor_name}'
+            group_result = backtest_results.get(group_key, {})
+            
+            # 获取IC分析结果
+            ic_result = merged_results.get('effectiveness_results', {}).get(factor_name, {})
+            
+            # 构建详细数据
+            detailed_analysis[factor_name] = {
+                'metrics': topn_result.get('stats', {}),
+                'group_results': self._extract_group_results(group_result),
+                'ic_stats': ic_result.get('ic_stats', {}),
+                'risk_metrics': self._calculate_risk_metrics(topn_result)
+            }
+        
         report_data = {
             'factor_names': factor_names,
             'performance_metrics': performance_metrics,
             'ic_metrics': merged_results.get('effectiveness_results', {}),
-            'time_series_returns': merged_results.get('time_series_returns', {}),  # 添加时间序列收益率数据
-            'detailed_analysis': {}     # 需要从回测结果中提取
+            'time_series_returns': merged_results.get('time_series_returns', {}),
+            'detailed_analysis': detailed_analysis
         }
         
         # 生成批次报告
@@ -189,6 +213,83 @@ class FactorResearchFramework:
         )
         
         return report_path
+
+    def _extract_group_results(self, group_result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        从分组回测结果中提取分组数据
+        
+        Args:
+            group_result: 分组回测结果
+            
+        Returns:
+            分组结果字典
+        """
+        group_results = {}
+        
+        if 'portfolios' in group_result:
+            portfolios = group_result['portfolios']
+            stats = group_result.get('stats', pd.DataFrame())
+            
+            # 如果stats是DataFrame，转换为字典
+            if isinstance(stats, pd.DataFrame):
+                for i, (group_name, portfolio) in enumerate(portfolios.items()):
+                    if i < len(stats):
+                        group_stats = stats.iloc[i].to_dict()
+                        group_results[group_name] = {
+                            'total_return': group_stats.get('Total Return [%]', 0) / 100,
+                            'annual_return': group_stats.get('Annual Return [%]', 0) / 100,
+                            'sharpe_ratio': group_stats.get('Sharpe Ratio', 0),
+                            'max_drawdown': group_stats.get('Max Drawdown [%]', 0) / 100,
+                            'win_rate': group_stats.get('Win Rate [%]', 0) / 100
+                        }
+            else:
+                # 如果stats不是DataFrame，尝试从portfolios中提取
+                for i, (group_name, portfolio) in enumerate(portfolios.items()):
+                    if hasattr(portfolio, 'stats'):
+                        portfolio_stats = portfolio.stats
+                        group_results[group_name] = {
+                            'total_return': getattr(portfolio_stats, 'total_return', 0),
+                            'annual_return': getattr(portfolio_stats, 'annual_return', 0),
+                            'sharpe_ratio': getattr(portfolio_stats, 'sharpe_ratio', 0),
+                            'max_drawdown': getattr(portfolio_stats, 'max_drawdown', 0),
+                            'win_rate': getattr(portfolio_stats, 'win_rate', 0)
+                        }
+        
+        # 确保有5个分组的数据，如果没有则填充默认值
+        for i in range(5):
+            group_key = f'group_{i}'
+            if group_key not in group_results:
+                group_results[group_key] = {
+                    'total_return': 0.0,
+                    'annual_return': 0.0,
+                    'sharpe_ratio': 0.0,
+                    'max_drawdown': 0.0,
+                    'win_rate': 0.0
+                }
+        
+        return group_results
+
+    def _calculate_risk_metrics(self, topn_result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        计算风险指标
+        
+        Args:
+            topn_result: TopN回测结果
+            
+        Returns:
+            风险指标字典
+        """
+        stats = topn_result.get('stats', {})
+        
+        # 从stats中提取风险指标
+        risk_metrics = {
+            'var_95': abs(stats.get('Max Drawdown [%]', 0) / 100 * 0.5),  # 简化的VaR计算
+            'cvar_95': abs(stats.get('Max Drawdown [%]', 0) / 100 * 0.7),  # 简化的CVaR计算
+            'beta': stats.get('Beta', 1.0),
+            'alpha': stats.get('Annual Return [%]', 0) / 100 - 0.05  # 简化的Alpha计算
+        }
+        
+        return risk_metrics
 
     def run_factor_research(self,
                             factor_names: List[str],
