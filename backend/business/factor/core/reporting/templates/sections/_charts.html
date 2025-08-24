@@ -169,9 +169,15 @@ function removeFactorFromChart(factorName) {
 function updateChartButtonState(factorName, isActive) {
     const button = $(`.chart-btn[data-factor="${factorName}"]`);
     if (isActive) {
-        button.addClass('active').text('移除');
+        button.addClass('active');
+        // 保持原始文字，只改变图标
+        const icon = button.find('i');
+        icon.removeClass('fa-plus').addClass('fa-minus');
     } else {
-        button.removeClass('active').text('添加');
+        button.removeClass('active');
+        // 恢复原始图标
+        const icon = button.find('i');
+        icon.removeClass('fa-minus').addClass('fa-plus');
     }
 }
 
@@ -194,8 +200,9 @@ $('#clear-all-btn').click(function() {
         }
     });
     
-    // 重置所有按钮状态
-    $('.chart-btn').removeClass('active').text('添加');
+            // 重置所有按钮状态
+        $('.chart-btn').removeClass('active');
+        $('.chart-btn i').removeClass('fa-minus').addClass('fa-plus');
 });
 
 // 切换对数坐标
