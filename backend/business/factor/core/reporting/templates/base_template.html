@@ -408,6 +408,78 @@
             visibility: visible;
             opacity: 1;
         }
+        
+        /* 图表相关样式 */
+        .chart-container {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin: 20px 0;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .chart-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .factor-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .factor-selector label {
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .factor-selector select {
+            padding: 8px 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            background: white;
+            font-size: 14px;
+            min-width: 200px;
+        }
+        
+        .chart-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .chart-buttons .btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        
+        .factor-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .chart-btn {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            transition: all 0.3s ease;
+        }
+        
+        .chart-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
     </style>
 </head>
 <body>
@@ -441,10 +513,7 @@
                     <i class="fas fa-trophy"></i> 表现对比
                 </a>
                 <a href="#charts" class="nav-link" data-section="charts">
-                    <i class="fas fa-chart-area"></i> 图表分析
-                </a>
-                <a href="#details" class="nav-link" data-section="details">
-                    <i class="fas fa-search"></i> 详细分析
+                    <i class="fas fa-chart-line"></i> 累计收益率
                 </a>
             </div>
         </div>
@@ -467,14 +536,9 @@
                 {% include 'sections/_factor_table.html' %}
             </div>
             
-            <!-- 图表分析部分 -->
+            <!-- 累计收益率图表部分 -->
             <div class="section" id="charts">
                 {% include 'sections/_charts.html' %}
-            </div>
-            
-            <!-- 详细分析部分 -->
-            <div class="section" id="details">
-                {% include 'sections/_details.html' %}
             </div>
         </div>
     </div>
@@ -484,16 +548,12 @@
         // 全局变量
         let chartData = {{ chart_data | safe }};
         let performanceData = {{ performance_data | safe }};
-        let icData = {{ ic_data | safe }};
-        let detailedData = {{ detailed_data | safe }};
         let isMergedReport = {{ 'true' if is_merged_report else 'false' }};
         
         // 页面加载完成后初始化
         $(document).ready(function() {
             initializeNavigation();
             initializeDataTables();
-            initializeCharts();
-            initializeDetails();
             hideLoading();
         });
         
@@ -550,191 +610,9 @@
             });
         }
         
-        // 图表初始化
-        function initializeCharts() {
-            if (chartData && Object.keys(chartData).length > 0) {
-                const layout = {
-                    title: '因子累计收益率对比',
-                    xaxis: { title: '时间' },
-                    yaxis: { 
-                        title: '累计收益率',
-                        tickformat: ',.0%',
-                        range: [0, null], // 确保Y轴从0开始
-                        zeroline: true,
-                        zerolinecolor: '#ccc'
-                    },
-                    hovermode: 'x unified',
-                    showlegend: true,
-                    legend: {
-                        orientation: 'h',
-                        y: -0.2
-                    }
-                };
-                
-                Plotly.newPlot('cumulative-chart', [], layout);
-                
-                // 默认显示排名第一的因子
-                const firstFactor = Object.keys(chartData)[0];
-                if (firstFactor) {
-                    addFactorToChart(firstFactor);
-                }
-            }
-        }
-        
-        // 添加因子到图表
-        function addFactorToChart(factorName) {
-            if (!chartData[factorName]) return;
-            
-            const trace = {
-                x: chartData[factorName].dates,
-                y: chartData[factorName].values,
-                type: 'scatter',
-                mode: 'lines',
-                name: factorName,
-                line: { width: 2 }
-            };
-            
-            Plotly.addTraces('cumulative-chart', trace);
-            
-            // 更新按钮状态
-            updateChartButtonState(factorName, true);
-        }
-        
-        // 从图表移除因子
-        function removeFactorFromChart(factorName) {
-            const traces = document.getElementById('cumulative-chart').data;
-            const traceIndex = traces.findIndex(trace => trace.name === factorName);
-            
-            if (traceIndex !== -1) {
-                Plotly.deleteTraces('cumulative-chart', traceIndex);
-            }
-            
-            // 更新按钮状态
-            updateChartButtonState(factorName, false);
-        }
-        
-        // 更新图表按钮状态
-        function updateChartButtonState(factorName, isActive) {
-            const button = $(`.chart-btn[data-factor="${factorName}"]`);
-            if (isActive) {
-                button.addClass('active').text('移除');
-            } else {
-                button.removeClass('active').text('添加');
-            }
-        }
-        
-        // 详细分析初始化
-        function initializeDetails() {
-            if (detailedData && Object.keys(detailedData).length > 0) {
-                const factorNames = Object.keys(detailedData);
-                const selector = $('#factor-selector');
-                
-                factorNames.forEach(factor => {
-                    selector.append(`<option value="${factor}">${factor}</option>`);
-                });
-                
-                // 默认选择第一个因子
-                if (factorNames.length > 0) {
-                    selector.val(factorNames[0]);
-                    updateFactorDetails(factorNames[0]);
-                }
-                
-                // 监听选择变化
-                selector.change(function() {
-                    updateFactorDetails($(this).val());
-                });
-            }
-        }
-        
-        // 更新因子详情
-        function updateFactorDetails(factorName) {
-            if (!detailedData[factorName]) return;
-            
-            const data = detailedData[factorName];
-            
-            // 更新指标卡片
-            updateMetricCards(data.metrics);
-            
-            // 更新分组回测表格
-            updateGroupTable(data.group_results);
-            
-            // 更新IC统计表格
-            updateICTable(data.ic_stats);
-            
-            // 更新分组图表
-            updateGroupChart(data.group_results);
-        }
-        
-        // 更新指标卡片
-        function updateMetricCards(metrics) {
-            Object.keys(metrics).forEach(key => {
-                const value = metrics[key];
-                const element = $(`#metric-${key}`);
-                if (element.length) {
-                    element.text(typeof value === 'number' ? value.toFixed(4) : value);
-                }
-            });
-        }
-        
-        // 更新分组表格
-        function updateGroupTable(groupResults) {
-            const tbody = $('#group-table tbody');
-            tbody.empty();
-            
-            Object.keys(groupResults).forEach(group => {
-                const result = groupResults[group];
-                const row = `
-                    <tr>
-                        <td>${group}</td>
-                        <td>${(result.total_return * 100).toFixed(2)}%</td>
-                        <td>${(result.annual_return * 100).toFixed(2)}%</td>
-                        <td>${result.sharpe_ratio.toFixed(2)}</td>
-                        <td>${(result.max_drawdown * 100).toFixed(2)}%</td>
-                    </tr>
-                `;
-                tbody.append(row);
-            });
-        }
-        
-        // 更新IC统计表格
-        function updateICTable(icStats) {
-            const tbody = $('#ic-table tbody');
-            tbody.empty();
-            
-            Object.keys(icStats).forEach(key => {
-                const value = icStats[key];
-                const row = `
-                    <tr>
-                        <td>${key}</td>
-                        <td>${typeof value === 'number' ? value.toFixed(4) : value}</td>
-                    </tr>
-                `;
-                tbody.append(row);
-            });
-        }
-        
-        // 更新分组图表
-        function updateGroupChart(groupResults) {
-            const groups = Object.keys(groupResults);
-            const returns = groups.map(group => groupResults[group].total_return);
-            
-            const trace = {
-                x: groups,
-                y: returns,
-                type: 'bar',
-                marker: {
-                    color: returns.map(r => r > 0 ? '#28a745' : '#dc3545')
-                }
-            };
-            
-            const layout = {
-                title: '分组回测收益率',
-                xaxis: { title: '分组' },
-                yaxis: { title: '总收益率' }
-            };
-            
-            Plotly.newPlot('group-chart', [trace], layout);
-        }
+
+
+
         
         // 显示/隐藏加载动画
         function showLoading() {

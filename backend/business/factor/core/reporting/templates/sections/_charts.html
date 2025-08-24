@@ -1,36 +1,35 @@
-<!-- 图表分析部分 -->
+<!-- 累计收益率走势图 -->
 <div class="chart-container">
-    <h3><i class="fas fa-chart-area"></i> 累计收益率走势图</h3>
+    <h3><i class="fas fa-chart-line"></i> 累计收益率走势图</h3>
     
-    <!-- 图表控制按钮 -->
     <div class="chart-controls">
-        <button onclick="showAllFactors()" class="chart-controls button">
-            <i class="fas fa-chart-line"></i> 显示所有因子
-        </button>
-        <button onclick="clearChart()" class="chart-controls button">
-            <i class="fas fa-trash"></i> 清空图表
-        </button>
-        <button onclick="toggleLogScale()" class="chart-controls button" id="log-scale-btn">
-            <i class="fas fa-chart-bar"></i> 对数坐标
-        </button>
-        <button onclick="exportChart()" class="chart-controls button">
-            <i class="fas fa-download"></i> 导出图表
-        </button>
+        <div class="factor-selector">
+            <label for="factor-selector">选择因子:</label>
+            <select id="factor-selector">
+                <!-- 动态填充因子选项 -->
+            </select>
+        </div>
+        
+        <div class="chart-buttons">
+            <button id="show-all-btn" class="btn btn-primary">
+                <i class="fas fa-eye"></i> 显示所有因子
+            </button>
+            <button id="clear-all-btn" class="btn btn-secondary">
+                <i class="fas fa-trash"></i> 清除所有
+            </button>
+            <button id="log-scale-btn" class="btn btn-info">
+                <i class="fas fa-chart-area"></i> 对数坐标
+            </button>
+        </div>
     </div>
     
-    <!-- 因子选择器 -->
-    <div style="margin-bottom: 20px;">
-        <label for="factor-selector-chart" style="font-weight: bold; margin-right: 10px;">快速选择因子:</label>
-        <select id="factor-selector-chart" style="padding: 8px; border: 2px solid #e9ecef; border-radius: 5px; min-width: 200px;">
-            <option value="">-- 选择因子 --</option>
-            {% for factor_name in factor_names %}
-            <option value="{{ factor_name }}">{{ factor_name }}</option>
-            {% endfor %}
-        </select>
-    </div>
+    <!-- 累计收益率图表 -->
+    <div id="cumulative-chart" style="height: 500px; margin: 20px 0;"></div>
     
-    <!-- 图表容器 -->
-    <div id="cumulative-chart" style="width: 100%; height: 500px;"></div>
+    <!-- 因子选择按钮 -->
+    <div class="factor-buttons">
+        <!-- 动态生成因子按钮 -->
+    </div>
     
     <!-- 图表说明 -->
     <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
@@ -45,60 +44,22 @@
     </div>
 </div>
 
-<!-- 统计图表 -->
-<div class="chart-container">
-    <h3><i class="fas fa-chart-bar"></i> 统计图表</h3>
-    
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
-        <!-- 夏普比率分布 -->
-        <div>
-            <h4>夏普比率分布</h4>
-            <div id="sharpe-distribution" style="height: 300px;"></div>
-        </div>
-        
-        <!-- IC分布 -->
-        <div>
-            <h4>IC分布</h4>
-            <div id="ic-distribution" style="height: 300px;"></div>
-        </div>
-        
-        <!-- 收益率vs夏普比率散点图 -->
-        <div>
-            <h4>收益率 vs 夏普比率</h4>
-            <div id="return-vs-sharpe" style="height: 300px;"></div>
-        </div>
-        
-        <!-- 最大回撤分布 -->
-        <div>
-            <h4>最大回撤分布</h4>
-            <div id="drawdown-distribution" style="height: 300px;"></div>
-        </div>
-    </div>
-</div>
-
 <script>
 let isLogScale = false;
 
-// 初始化图表
-$(document).ready(function() {
-    initializeCumulativeChart();
-    initializeStatisticalCharts();
-    initializeFactorSelector();
-});
-
 // 初始化累计收益率图表
 function initializeCumulativeChart() {
+    if (!chartData || Object.keys(chartData).length === 0) {
+        console.warn('chartData为空，跳过图表初始化');
+        return;
+    }
+    
+    // 初始化图表
     const layout = {
         title: '因子累计收益率对比',
-        xaxis: { 
-            title: '时间',
-            showgrid: true,
-            gridcolor: '#f0f0f0'
-        },
+        xaxis: { title: '时间' },
         yaxis: { 
             title: '累计收益率',
-            showgrid: true,
-            gridcolor: '#f0f0f0',
             tickformat: ',.0%',
             range: [0, null], // 确保Y轴从0开始
             zeroline: true,
@@ -108,21 +69,17 @@ function initializeCumulativeChart() {
         showlegend: true,
         legend: {
             orientation: 'h',
-            y: -0.2,
-            x: 0.5,
-            xanchor: 'center'
-        },
-        margin: {
-            l: 60,
-            r: 40,
-            t: 60,
-            b: 80
-        },
-        plot_bgcolor: 'white',
-        paper_bgcolor: 'white'
+            y: -0.2
+        }
     };
     
     Plotly.newPlot('cumulative-chart', [], layout);
+    
+    // 初始化因子选择器
+    initializeFactorSelector();
+    
+    // 初始化因子按钮
+    initializeFactorButtons();
     
     // 默认显示排名第一的因子
     const firstFactor = Object.keys(chartData)[0];
@@ -131,261 +88,138 @@ function initializeCumulativeChart() {
     }
 }
 
-// 初始化统计图表
-function initializeStatisticalCharts() {
-    // 检查数据是否存在
-    if (!performanceData || Object.keys(performanceData).length === 0) {
-        console.warn('performanceData为空，跳过统计图表初始化');
-        return;
-    }
-    
-    if (!icData || Object.keys(icData).length === 0) {
-        console.warn('icData为空，跳过统计图表初始化');
-        return;
-    }
-    
-    // 夏普比率分布
-    const sharpeValues = Object.values(performanceData).map(p => p.sharpe_ratio || 0);
-    const sharpeTrace = {
-        x: sharpeValues,
-        type: 'histogram',
-        nbinsx: 20,
-        name: '夏普比率分布',
-        marker: {
-            color: '#667eea',
-            opacity: 0.7
-        }
-    };
-    
-    const sharpeLayout = {
-        title: '夏普比率分布',
-        xaxis: { title: '夏普比率' },
-        yaxis: { title: '频次' },
-        showlegend: false
-    };
-    
-    Plotly.newPlot('sharpe-distribution', [sharpeTrace], sharpeLayout);
-    
-    // IC分布
-    const icValues = Object.values(icData).map(ic => ic.mean_ic || 0);
-    const icTrace = {
-        x: icValues,
-        type: 'histogram',
-        nbinsx: 20,
-        name: 'IC分布',
-        marker: {
-            color: '#28a745',
-            opacity: 0.7
-        }
-    };
-    
-    const icLayout = {
-        title: 'IC分布',
-        xaxis: { title: 'IC值' },
-        yaxis: { title: '频次' },
-        showlegend: false
-    };
-    
-    Plotly.newPlot('ic-distribution', [icTrace], icLayout);
-    
-    // 收益率vs夏普比率散点图
-    const factorNames = Object.keys(performanceData);
-    const returns = factorNames.map(name => performanceData[name].annual_return || 0);
-    const sharpes = factorNames.map(name => performanceData[name].sharpe_ratio || 0);
-    
-    const scatterTrace = {
-        x: returns,
-        y: sharpes,
-        mode: 'markers+text',
-        type: 'scatter',
-        text: factorNames,
-        textposition: 'top center',
-        marker: {
-            size: 8,
-            color: sharpes.map(s => s > 0 ? '#28a745' : '#dc3545'),
-            opacity: 0.7
-        },
-        name: '因子分布'
-    };
-    
-    const scatterLayout = {
-        title: '年化收益率 vs 夏普比率',
-        xaxis: { 
-            title: '年化收益率',
-            tickformat: ',.0%'
-        },
-        yaxis: { title: '夏普比率' },
-        showlegend: false
-    };
-    
-    Plotly.newPlot('return-vs-sharpe', [scatterTrace], scatterLayout);
-    
-    // 最大回撤分布
-    const drawdownValues = Object.values(performanceData).map(p => p.max_drawdown || 0);
-    const drawdownTrace = {
-        x: drawdownValues,
-        type: 'histogram',
-        nbinsx: 20,
-        name: '最大回撤分布',
-        marker: {
-            color: '#dc3545',
-            opacity: 0.7
-        }
-    };
-    
-    const drawdownLayout = {
-        title: '最大回撤分布',
-        xaxis: { 
-            title: '最大回撤',
-            tickformat: ',.0%'
-        },
-        yaxis: { title: '频次' },
-        showlegend: false
-    };
-    
-    Plotly.newPlot('drawdown-distribution', [drawdownTrace], drawdownLayout);
-}
-
 // 初始化因子选择器
 function initializeFactorSelector() {
-    $('#factor-selector-chart').change(function() {
+    const selector = $('#factor-selector');
+    const factorNames = Object.keys(chartData);
+    
+    factorNames.forEach(factor => {
+        selector.append(`<option value="${factor}">${factor}</option>`);
+    });
+    
+    // 监听选择变化
+    selector.change(function() {
         const selectedFactor = $(this).val();
         if (selectedFactor) {
-            // 清空图表
-            Plotly.newPlot('cumulative-chart', [], {
-                title: '因子累计收益率对比',
-                xaxis: { title: '时间' },
-                yaxis: { 
-                    title: '累计收益率',
-                    tickformat: ',.0%',
-                    range: [0, null], // 确保Y轴从0开始
-                    zeroline: true,
-                    zerolinecolor: '#ccc'
-                }
-            });
-            
-            // 添加选中的因子
             addFactorToChart(selectedFactor);
-            
-            // 重置所有按钮状态
-            $('.chart-btn').removeClass('active').text('添加');
-            $(`.chart-btn[data-factor="${selectedFactor}"]`).addClass('active').text('移除');
         }
     });
 }
 
-// 切换对数坐标
-function toggleLogScale() {
-    isLogScale = !isLogScale;
-    const button = $('#log-scale-btn');
+// 初始化因子按钮
+function initializeFactorButtons() {
+    const container = $('.factor-buttons');
+    const factorNames = Object.keys(chartData);
     
-    if (isLogScale) {
-        button.text('线性坐标');
-        Plotly.relayout('cumulative-chart', {
-            'yaxis.type': 'log',
-            'yaxis.tickformat': ',.0%'
-        });
-    } else {
-        button.text('对数坐标');
-        Plotly.relayout('cumulative-chart', {
-            'yaxis.type': 'linear',
-            'yaxis.tickformat': ',.0%'
-        });
-    }
-}
-
-// 导出图表
-function exportChart() {
-    const chartDiv = document.getElementById('cumulative-chart');
-    Plotly.downloadImage(chartDiv, {
-        format: 'png',
-        filename: 'factor_cumulative_returns',
-        height: 600,
-        width: 1200
-    });
-}
-
-// 增强的添加因子到图表函数
-function addFactorToChart(factorName) {
-    if (!chartData[factorName]) return;
-    
-    const data = chartData[factorName];
-    const trace = {
-        x: data.dates,
-        y: data.values,
-        type: 'scatter',
-        mode: 'lines',
-        name: factorName,
-        line: { 
-            width: 2,
-            color: getRandomColor(factorName)
-        },
-        hovertemplate: 
-            '<b>%{fullData.name}</b><br>' +
-            '时间: %{x}<br>' +
-            '累计收益率: %{y:.2%}<br>' +
-            '<extra></extra>'
-    };
-    
-    Plotly.addTraces('cumulative-chart', trace);
-    updateChartButtonState(factorName, true);
-}
-
-// 获取随机颜色（基于因子名称）
-function getRandomColor(factorName) {
-    const colors = [
-        '#667eea', '#764ba2', '#f093fb', '#f5576c',
-        '#4facfe', '#00f2fe', '#43e97b', '#38f9d7',
-        '#fa709a', '#fee140', '#a8edea', '#fed6e3',
-        '#ffecd2', '#fcb69f', '#ff9a9e', '#fecfef'
-    ];
-    
-    let hash = 0;
-    for (let i = 0; i < factorName.length; i++) {
-        hash = factorName.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    
-    return colors[Math.abs(hash) % colors.length];
-}
-
-// 显示所有因子
-function showAllFactors() {
-    if (chartData) {
-        // 清空图表
-        Plotly.newPlot('cumulative-chart', [], {
-            title: '因子累计收益率对比',
-            xaxis: { title: '时间' },
-            yaxis: { 
-                title: '累计收益率',
-                tickformat: ',.0%',
-                range: [0, null], // 确保Y轴从0开始
-                zeroline: true,
-                zerolinecolor: '#ccc'
+    factorNames.forEach(factor => {
+        const button = $(`
+            <button class="chart-btn btn btn-outline-primary" data-factor="${factor}">
+                <i class="fas fa-plus"></i> ${factor}
+            </button>
+        `);
+        
+        button.click(function() {
+            const factorName = $(this).data('factor');
+            const isActive = $(this).hasClass('active');
+            
+            if (isActive) {
+                removeFactorFromChart(factorName);
+            } else {
+                addFactorToChart(factorName);
             }
         });
         
-        // 添加所有因子
-        Object.keys(chartData).forEach(factor => {
-            addFactorToChart(factor);
-        });
+        container.append(button);
+    });
+}
+
+// 添加因子到图表
+function addFactorToChart(factorName) {
+    if (!chartData[factorName]) return;
+    
+    const trace = {
+        x: chartData[factorName].dates,
+        y: chartData[factorName].values,
+        type: 'scatter',
+        mode: 'lines',
+        name: factorName,
+        line: { width: 2 }
+    };
+    
+    Plotly.addTraces('cumulative-chart', trace);
+    
+    // 更新按钮状态
+    updateChartButtonState(factorName, true);
+}
+
+// 从图表移除因子
+function removeFactorFromChart(factorName) {
+    const traces = document.getElementById('cumulative-chart').data;
+    const traceIndex = traces.findIndex(trace => trace.name === factorName);
+    
+    if (traceIndex !== -1) {
+        Plotly.deleteTraces('cumulative-chart', traceIndex);
+    }
+    
+    // 更新按钮状态
+    updateChartButtonState(factorName, false);
+}
+
+// 更新图表按钮状态
+function updateChartButtonState(factorName, isActive) {
+    const button = $(`.chart-btn[data-factor="${factorName}"]`);
+    if (isActive) {
+        button.addClass('active').text('移除');
+    } else {
+        button.removeClass('active').text('添加');
     }
 }
 
-// 清空图表
-function clearChart() {
+// 显示所有因子
+$('#show-all-btn').click(function() {
+    const factorNames = Object.keys(chartData);
+    factorNames.forEach(factor => {
+        addFactorToChart(factor);
+    });
+});
+
+// 清除所有因子
+$('#clear-all-btn').click(function() {
     Plotly.newPlot('cumulative-chart', [], {
         title: '因子累计收益率对比',
         xaxis: { title: '时间' },
         yaxis: { 
             title: '累计收益率',
-            tickformat: ',.0%',
-            range: [0, null], // 确保Y轴从0开始
-            zeroline: true,
-            zerolinecolor: '#ccc'
+            tickformat: ',.0%'
         }
     });
     
     // 重置所有按钮状态
     $('.chart-btn').removeClass('active').text('添加');
-}
+});
+
+// 切换对数坐标
+$('#log-scale-btn').click(function() {
+    isLogScale = !isLogScale;
+    
+    const yaxis = {
+        title: '累计收益率',
+        tickformat: ',.0%'
+    };
+    
+    if (isLogScale) {
+        yaxis.type = 'log';
+        $(this).text('线性坐标');
+    } else {
+        yaxis.type = 'linear';
+        $(this).text('对数坐标');
+    }
+    
+    Plotly.relayout('cumulative-chart', { yaxis: yaxis });
+});
+
+// 页面加载完成后初始化
+$(document).ready(function() {
+    initializeCumulativeChart();
+});
 </script>
