@@ -358,92 +358,62 @@ function toggleFactorChart(factorName) {
     } else {
         addFactorToChart(factorName);
     }
+
+    console.log("Toggling chart for:", factorName);
+    // 假设你有一个全局函数来处理这个，比如 parent.window.toggleFactorChart
+    if (parent && parent.window && typeof parent.window.toggleFactorChart === 'function') {
+        parent.window.toggleFactorChart(factorName);
+    }
 }
 
 // 切换因子详情展开
 function toggleFactorDetails(factorName) {
-    const detailRow = $(`.detail-row[data-factor="${factorName}"]`);
     const expandIcon = $(`.expand-icon[data-factor="${factorName}"]`);
     const mainRow = $(`tr.main-row[data-factor="${factorName}"]`);
-    const isExpanded = detailRow.is(':visible');
-    
-    if (isExpanded) {
-        // 收起详情
-        detailRow.slideUp(300, function() {
-            // 将详情行移回容器，而不是detach
-            detailRow.appendTo('#detail-container');
+
+    // 查找是否已经存在详情行
+    const existingDetailWrapper = mainRow.next('tr.detail-row-wrapper');
+
+    if (existingDetailWrapper.length > 0) {
+        // 如果已展开，则收起并移除
+        existingDetailWrapper.find('td').slideUp(300, function() {
+            existingDetailWrapper.remove();
         });
-        expandIcon.removeClass('expanded');
+        expandIcon.removeClass('fa-chevron-down').addClass('fa-chevron-right');
     } else {
-        // 收起其他已展开的详情
-        $('.detail-row').slideUp(300, function() {
-            // 将所有详情行移回容器
-            $(this).appendTo('#detail-container');
-        });
-        $('.expand-icon').removeClass('expanded');
-        
-        // 将详情行插入到对应主行后面
-        detailRow.insertAfter(mainRow);
-        
-        // 展开当前详情
-        detailRow.slideDown(300);
-        expandIcon.addClass('expanded');
-        
-        // 滚动到详情位置
-        $('html, body').animate({
-            scrollTop: detailRow.offset().top - 100
-        }, 500);
+        // 如果未展开，则先关闭所有其他的详情行
+        $('tr.detail-row-wrapper').remove();
+        $('.expand-icon').removeClass('fa-chevron-down').addClass('fa-chevron-right');
+
+        // ✨ 核心修正 ✨
+        // 1. 从隐藏容器获取详情内容的 HTML
+        const detailContent = $(`#detail-container .detail-row[data-factor="${factorName}"]`).html();
+
+        // 2. 创建一个新的 <tr> 和一个带有 colspan="10" 的 <td> 来包裹详情内容
+        //    主表格有10列，所以 colspan 必须是 "10"
+        const newRowHtml = `<tr class="detail-row-wrapper">
+                                <td colspan="10" style="padding: 0; background: #f8f9fa;">
+                                    <div style="display: none;">${detailContent}</div>
+                                </td>
+                            </tr>`;
+
+        // 3. 将新创建的行插入到主行的后面
+        mainRow.after(newRowHtml);
+
+        // 4. 使用 slideDown 动画平滑地展开
+        mainRow.next('tr.detail-row-wrapper').find('td > div').slideDown(300);
+
+        // 5. 更新图标
+        expandIcon.removeClass('fa-chevron-right').addClass('fa-chevron-down');
     }
 }
 
-// 表格行点击事件
-$(document).ready(function() {
-    // 点击展开图标
-    $('#performance-table tbody').on('click', '.expand-icon', function(e) {
-        e.stopPropagation();
-        const factorName = $(this).data('factor');
-        toggleFactorDetails(factorName);
-    });
-    
-    // 点击因子名称单元格
-    $('#performance-table tbody').on('click', '.factor-name-cell', function(e) {
-        // 如果点击的是展开图标，不触发详情展开
-        if ($(e.target).hasClass('expand-icon')) {
-            return;
-        }
-        
-        const factorName = $(this).closest('tr').data('factor');
-        toggleFactorDetails(factorName);
-    });
-    
-    // 点击表格行（只针对主行）
-    $('#performance-table tbody').on('click', 'tr.main-row', function(e) {
-        // 如果点击的是按钮或展开图标，不触发行点击事件
-        if ($(e.target).hasClass('chart-btn') || 
-            $(e.target).closest('.chart-btn').length ||
-            $(e.target).hasClass('expand-icon') ||
-            $(e.target).closest('.factor-name-cell').length) {
-            return;
-        }
-        
-        const factorName = $(this).data('factor');
-        toggleFactorChart(factorName);
-    });
-    
-    // 表格行悬停效果（只针对主行）
-    $('#performance-table tbody').on('mouseenter', 'tr.main-row', function() {
-        $(this).css('background-color', '#f8f9fa');
-    }).on('mouseleave', 'tr.main-row', function() {
-        $(this).css('background-color', '');
-    });
-    
 
-});
-
-// 自定义DataTables配置
+// --- 主执行区：当页面加载完成后运行 ---
 $(document).ready(function() {
+    // 1. 初始化 DataTables 表格插件 (来自你的第二个 ready 函数)
     $('#performance-table').DataTable({
-        destroy: true, // 防止重复初始化
+        destroy: true,
         responsive: true,
         pageLength: 25,
         order: [[4, 'desc']], // 默认按夏普比率排序
@@ -451,40 +421,34 @@ $(document).ready(function() {
             url: 'https://cdn.datatables.net/plug-ins/1.13.7/i18n/zh.json'
         },
         columnDefs: [
-            {
-                targets: [0],
-                orderable: true,
-                searchable: true
-            },
-            {
-                targets: [1, 2, 3, 4, 5, 6, 7, 8],
-                orderable: true,
-                searchable: false
-            },
-            {
-                targets: [9],
-                orderable: false,
-                searchable: false
-            }
-        ],
-        dom: '<"top"lf>rt<"bottom"ip><"clear">',
-        initComplete: function() {
-            // 添加自定义搜索功能
-            this.api().columns().every(function() {
-                if (this.index() === 0) { // 因子名称列
-                    var column = this;
-                    var title = column.header().textContent;
-                    
-                    // 创建搜索输入框
-                    var input = $('<input type="text" placeholder="搜索 ' + title + '" />')
-                        .appendTo($(column.header()))
-                        .on('keyup change', function() {
-                            if (column.search() !== this.value) {
-                                column.search(this.value).draw();
-                            }
-                        });
-                }
-            });
+            { targets: [9], orderable: false, searchable: false } // 操作列不排序、不搜索
+        ]
+    });
+
+    // 2. 使用事件委托绑定点击事件 (合并并优化你的第一个 ready 函数)
+
+    // 当点击因子名称单元格时，展开/收起详情
+    $('#performance-table tbody').on('click', '.factor-name-cell', function() {
+        const factorName = $(this).closest('tr').data('factor');
+        toggleFactorDetails(factorName);
+    });
+
+    // 当点击主行的其他区域时，添加到图表
+    $('#performance-table tbody').on('click', 'tr.main-row', function(e) {
+        // 检查点击的是否是操作按钮或因子名称单元格，如果是，则不执行此操作
+        if ($(e.target).closest('.chart-btn').length || $(e.target).closest('.factor-name-cell').length) {
+            return;
+        }
+
+        const factorName = $(this).data('factor');
+        // 这里调用添加到图表的函数
+        toggleFactorChart(factorName);
+        // 并且可以顺便切换按钮的状态
+        const button = $(this).find('.chart-btn');
+        if (button.text().trim() === '添加') {
+            button.text('移除').addClass('button-remove');
+        } else {
+            button.text('添加').removeClass('button-remove');
         }
     });
 });
